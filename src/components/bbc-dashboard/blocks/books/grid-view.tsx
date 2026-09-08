@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import type { Field, Row } from "@/components/books/api";
 import { displayValue, editValue, FieldEditor, isNumeric } from "@/components/books/field-value";
@@ -103,7 +103,20 @@ export function GridView({ data, canWrite, canAppend, onOpenRecord }: Props) {
   // Таблица заканчивается там же, где окно: сколько бы панелей ни встало над
   // ней, вторая прокрутка не появляется.
   const { ref: scrollRef, height } = useFillHeight(240);
-  const [top, setTop] = useState(0);
+  /**
+   * Книга открывается в конце, а не в начале.
+   *
+   * Первая строка журнала — это операция трёхлетней давности. Работают всегда
+   * в конце: там последняя запись и там же черновая строка, в которую заводят
+   * новую. Открывая книгу сверху, мы каждый раз просили три с половиной тысячи
+   * строк промотать, прежде чем начать — и это при том, что смотреть по дороге
+   * не на что.
+   *
+   * Позиция считается сразу, начальным состоянием, а не задаётся эффектом
+   * после первой отрисовки: иначе один кадр показывал бы начало книги, и
+   * открытие каждый раз дёргалось бы сверху вниз.
+   */
+  const [top, setTop] = useState(() => Math.max(0, rowCount * ROW_H - height));
   /**
    * Что выделено. Выделение и правка разведены: выделять можно и без права писать.
    *
@@ -129,6 +142,17 @@ export function GridView({ data, canWrite, canAppend, onOpenRecord }: Props) {
   useEffect(() => {
     if (total > 0) ensure(first, last);
   }, [first, last, total, ensure]);
+
+  // Поставить саму полосу прокрутки в конец. Состояние `top` уже посчитано от
+  // конца книги, но оно решает лишь, какие строки нарисовать; без этой строчки
+  // полоса осталась бы вверху, и на экране оказалась бы пустота вместо строк.
+  //
+  // `useLayoutEffect`, а не `useEffect`: прокрутка должна случиться до того,
+  // как кадр покажут, иначе открытие книги мигало бы началом.
+  useLayoutEffect(() => {
+    const node = scrollRef.current;
+    if (node) node.scrollTop = node.scrollHeight;
+  }, [scrollRef]);
 
   /** Довести глаз до строки — после добавления записи и при переходе стрелками. */
   const scrollToRow = useCallback(

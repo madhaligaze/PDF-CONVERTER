@@ -273,15 +273,31 @@ export function useBookTable(
     async (row: Row) => {
       try {
         await booksApi.deleteRow(tableId, row.id, row.version);
-        caches.current.forEach((store, otherKey) => {
-          if (!otherKey.startsWith(`${tableId}|`)) return;
-          const at = store.rows.findIndex((item) => item?.id === row.id);
-          if (at === -1) return;
-          store.rows.splice(at, 1);
-          store.total = Math.max(0, store.total - 1);
-        });
+
+        // Из текущей выборки строку убираем на руках — иначе список дёрнулся бы
+        // ожиданием ответа на месте, где всё уже решено.
         const here = caches.current.get(key);
-        if (here) setCache({ ...here });
+        if (here) {
+          const at = here.rows.findIndex((item) => item?.id === row.id);
+          if (at !== -1) {
+            here.rows.splice(at, 1);
+            here.total = Math.max(0, here.total - 1);
+          }
+          setCache({ ...here });
+        }
+
+        // Остальные выборки той же вкладки выбрасываем целиком, а не правим.
+        // Поправить их нельзя честно: строка лежит в них на непрочитанной
+        // странице, и «есть ли она здесь» знает только сервер. Прошлая попытка
+        // вычитала единицу лишь там, где строка оказалась загружена, — и после
+        // удаления записи из отфильтрованного списка книга по-прежнему
+        // показывала прежний размер, пока страницу не обновят. Симметрично
+        // тому, как поступает `create`.
+        caches.current.forEach((_, otherKey) => {
+          if (otherKey !== key && otherKey.startsWith(`${tableId}|`)) {
+            caches.current.delete(otherKey);
+          }
+        });
         setTotalAll((now) => Math.max(0, now - 1));
         setError("");
         return true;
