@@ -224,6 +224,7 @@ export function Employees() {
           presets={payload.presets}
           departments={payload.departments}
           blocks={payload.blocks}
+          adminBlocks={payload.admin_blocks ?? []}
           aliases={aliases}
           onClose={() => setEditorOpen(false)}
           onSaved={async (login, password) => {
@@ -325,6 +326,7 @@ function EmployeeEditor({
   presets,
   departments,
   blocks,
+  adminBlocks,
   aliases,
   onClose,
   onSaved,
@@ -333,6 +335,7 @@ function EmployeeEditor({
   presets: BbcRolePreset[];
   departments: string[];
   blocks: string[];
+  adminBlocks: string[];
   aliases: BbcEmployeeAlias[];
   onClose: () => void;
   onSaved: (login: string, password?: string) => void | Promise<void>;
@@ -477,6 +480,16 @@ function EmployeeEditor({
               />
             ))}
           </div>
+          {/* Раньше эти галочки стояли здесь же, рядом с «Дебиторкой», и одна
+              из них открывала сотруднику ФОТ всей компании с фамилиями. Ни
+              журнал, ни лист ОМиП не режутся по отделу — резать в них нечем,
+              — поэтому раздела больше нет в списке, и сказано почему. */}
+          {adminBlocks.length ? (
+            <p className="bbc-micro" style={{ color: "var(--text-muted)" }}>
+              Только администратору: {adminBlocks.map((key) => blockTitle(key)).join(", ")} — эти
+              листы не делятся по отделам, и выдать их частично нельзя.
+            </p>
+          ) : null}
         </fieldset>
 
         <fieldset className="flex flex-col gap-1.5">

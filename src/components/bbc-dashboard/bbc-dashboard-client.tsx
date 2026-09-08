@@ -397,24 +397,36 @@ export function BbcDashboardClient() {
                 Книги
               </button>
             </div>
-            <button
-              type="button"
-              onClick={() => void reload(true)}
-              disabled={loading || refreshCooldown > 0 || source === "books"}
-              className="btn-ghost text-xs px-2.5 py-1.5 flex items-center gap-1.5"
-              title={
-                source === "books"
-                  ? "Цифры взяты из внутренней книги — перечитывать нечего. Книга обновляется, когда её привозят из Google в разделе «Книги»."
-                  : refreshCooldown > 0
-                    ? `Только что читали таблицу. Следующее ручное чтение через ${refreshCooldown} с — фоновое обновление идёт само каждые 15 секунд.`
-                    : "Перечитать таблицу сейчас"
-              }
-            >
-              <RefreshIcon size={15} />
-              <span className="hidden sm:inline">
-                {loading ? "Обновление…" : refreshCooldown > 0 ? `${refreshCooldown} с` : "Обновить"}
-              </span>
-            </button>
+            {/* Ручное чтение Google — только администратору, и сервер это
+                проверяет (403). Кнопка прячется, потому что показывать её
+                тому, кому в ответ прилетит отказ, значит обещать несделанное.
+                Остальным таблицу перечитывает фоновый цикл раз в 15 секунд:
+                кнопка была ускорением, а не единственным путём к свежим
+                цифрам — зато ею можно было выбрать квоту Google на всех. */}
+            {me?.is_admin ? (
+              <button
+                type="button"
+                onClick={() => void reload(true)}
+                disabled={loading || refreshCooldown > 0 || source === "books"}
+                className="btn-ghost text-xs px-2.5 py-1.5 flex items-center gap-1.5"
+                title={
+                  source === "books"
+                    ? "Цифры взяты из внутренней книги — перечитывать нечего. Книга обновляется, когда её привозят из Google в разделе «Книги»."
+                    : refreshCooldown > 0
+                      ? `Только что читали таблицу. Следующее ручное чтение через ${refreshCooldown} с — фоновое обновление идёт само каждые 15 секунд.`
+                      : "Перечитать таблицу сейчас"
+                }
+              >
+                <RefreshIcon size={15} />
+                <span className="hidden sm:inline">
+                  {loading
+                    ? "Обновление…"
+                    : refreshCooldown > 0
+                      ? `${refreshCooldown} с`
+                      : "Обновить"}
+                </span>
+              </button>
+            ) : null}
             {/* Кабинет открыт всем, у кого есть учётка: сотруднику там видны
                 заходы в его дашборд и кнопка отключить чужое устройство.
                 Держателю ссылки отдела — нет: у ссылки нет учётки, а значит и

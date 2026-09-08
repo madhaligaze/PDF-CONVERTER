@@ -123,7 +123,15 @@ export type BbcEmployeesPayload = {
   employees: BbcEmployee[];
   presets: BbcRolePreset[];
   departments: string[];
+  /** Разделы, которые учётке можно выдать. */
   blocks: string[];
+  /**
+   * Разделы, которые открыты только администратору: журнал операций и отдел
+   * продаж. Их не режет ни отдел, ни сотрудник — резать нечем, — поэтому
+   * галочки у них нет. Список приходит с сервера, чтобы сказать об этом на
+   * экране, а не оставить человека гадать, куда делся раздел.
+   */
+  admin_blocks?: string[];
   data_scopes: BbcDataScope[];
 };
 
@@ -535,7 +543,8 @@ export type BbcMsfoExport = {
 export type BbcRevision = {
   revision: number;
   changed_at: string | null;
-  rows: number;
+  /** Размер всей книги — приходит только администратору. */
+  rows?: number;
   sources: Record<string, BbcSourceState>;
 };
 

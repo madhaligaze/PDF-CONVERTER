@@ -20,7 +20,7 @@ import type { BbcDataset, BbcMode, BbcRow } from "../../types";
 import type { FilterKey } from "../../controls";
 import type { Filters } from "../../use-dataset";
 import { OVERDUE_DAYS } from "./age-track";
-import { buildRegistry, debtByDepartment, registryTotals } from "./debt";
+import { buildRegistry, debtByDepartment, registryTotals, totalDebt } from "./debt";
 import { Registry } from "./registry";
 import { Toolbar } from "./toolbar";
 import { TotalsSheet } from "./totals-sheet";
@@ -55,6 +55,8 @@ export function ReceivablesBlock({
 
   const registry = useMemo(() => buildRegistry(rows), [rows]);
   const byDepartment = useMemo(() => debtByDepartment(rows), [rows]);
+  // Не сумма карты выше: строка на несколько отделов лежит в ней несколько раз.
+  const allDepartmentsDebt = useMemo(() => totalDebt(rows), [rows]);
 
   /**
    * Сколько касаний по каждому должнику.
@@ -131,6 +133,7 @@ export function ReceivablesBlock({
         onClear={onClearFilters}
         activeFilterCount={activeFilterCount}
         debtByDepartment={byDepartment}
+        totalDebt={allDepartmentsDebt}
         minDebt={minDebt}
         onMinDebt={setMinDebt}
         overdueOnly={overdueOnly}

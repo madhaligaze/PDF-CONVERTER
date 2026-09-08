@@ -112,11 +112,15 @@ async function proxyRequest(
         : "Unknown proxy error";
     console.error(`Proxy error calling ${targetUrl}:`, errorMsg);
 
+    // Ни адреса, ни текста ошибки в ответ браузеру: `targetUrl` — это внутренний
+    // адрес API внутри Docker/Railway, а `errorMsg` регулярно содержит его же.
+    // Читать это будет человек, которому нужно знать одно: сервер не ответил.
+    // Разбираться будет тот, у кого есть лог сервера, — там оба и лежат.
     return NextResponse.json(
       {
-        detail: "Backend proxy request failed. Check that API_URL points to a running backend service.",
-        error: errorMsg,
-        targetUrl,
+        detail: aborted
+          ? "Сервер не ответил вовремя. Попробуйте ещё раз."
+          : "Сервер не отвечает. Попробуйте ещё раз через минуту.",
       },
       { status: 502 },
     );

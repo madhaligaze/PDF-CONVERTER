@@ -26,6 +26,14 @@ export type ToolbarProps = {
   activeFilterCount: number;
   /** Долг по отделам — подпись под кнопкой отдела, чтобы выбор был осмысленным. */
   debtByDepartment: Map<string, number>;
+  /**
+   * Долг целиком, посчитанный по строкам один раз.
+   *
+   * Отдельным полем, а не суммой карты выше: строка, числящаяся за четырьмя
+   * отделами, лежит в карте четырежды — так и надо для подписи отдела и так
+   * нельзя для итога.
+   */
+  totalDebt: number;
   minDebt: number;
   onMinDebt: (value: number) => void;
   overdueOnly: boolean;
@@ -42,6 +50,7 @@ export function Toolbar({
   onClear,
   activeFilterCount,
   debtByDepartment,
+  totalDebt,
   minDebt,
   onMinDebt,
   overdueOnly,
@@ -81,7 +90,7 @@ export function Toolbar({
             <DepartmentButton
               label="Вся компания"
               active={allDepartments}
-              amount={[...debtByDepartment.values()].reduce((sum, value) => sum + value, 0)}
+              amount={totalDebt}
               onClick={() => {
                 for (const code of filters.departments) onToggleFilter("departments", code);
               }}

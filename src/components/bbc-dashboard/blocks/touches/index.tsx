@@ -17,7 +17,14 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { BbcApiError, deleteTouch, fetchTouchOptions, fetchTouches, touchFileUrl } from "../../api";
+import {
+  BbcApiError,
+  deleteTouch,
+  fetchTouchOptions,
+  fetchTouches,
+  openFileAccess,
+  touchFileUrl,
+} from "../../api";
 import { ConfirmDialog } from "../../confirm-dialog";
 import { dateLabel, plural } from "../../format";
 import { ChevronRightIcon, TouchesIcon } from "../../icon";
@@ -78,6 +85,10 @@ export function TouchesBlock({
   useEffect(() => {
     void load();
     void fetchTouchOptions().then(setOptions).catch(() => setOptions(null));
+    // Cookie для вложений. Нужна только пришедшему по ссылке отдела: `<a href>`
+    // заголовок X-BBC-Link поставить не может, а класть токен в адрес файла
+    // нельзя — он оттуда уезжает в историю браузера и в пересланную ссылку.
+    void openFileAccess();
   }, [load]);
 
   useEffect(() => {

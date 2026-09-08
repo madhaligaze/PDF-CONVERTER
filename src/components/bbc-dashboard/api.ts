@@ -338,15 +338,35 @@ export function deleteTouchFile(fileId: number): Promise<BbcOk> {
 }
 
 /**
+ * Обменять токен ссылки на HttpOnly-cookie для файлов. Зовётся один раз при
+ * открытии журнала касаний; у вошедшего по логину токена нет и звать нечего.
+ *
+ * Отказ молчаливый: без cookie файлы просто не откроются, а журнал работает.
+ * Ронять из-за этого весь экран было бы хуже, чем показать его без вложений.
+ */
+export async function openFileAccess(): Promise<boolean> {
+  const token = currentLinkToken();
+  if (!token) return false;
+  try {
+    await request<BbcOk>("/files/access", { method: "POST" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Адрес файла. Скачивание идёт через свой эндпоинт с проверкой прав, а не
  * ссылкой на бакет: скрин переписки о долге не должен открываться по угаданному
  * или пересланному адресу.
+ *
+ * Без `?k=` намеренно. `<a href>` и `<img src>` заголовок `X-BBC-Link` не
+ * ставят, и токен раньше возвращался в адрес — оттуда он уезжал в историю
+ * браузера, Referer, логи прокси и в пересланную «ссылку на картинку». Теперь
+ * его несёт cookie, которую ставит `openFileAccess`.
  */
 export function touchFileUrl(fileId: number): string {
-  const token = currentLinkToken();
-  // Токен ссылки здесь приходится вернуть в URL: <a href> и <img src> заголовок
-  // X-BBC-Link поставить не могут.
-  return `${BASE}/files/${fileId}${token ? `?k=${encodeURIComponent(token)}` : ""}`;
+  return `${BASE}/files/${fileId}`;
 }
 
 /* ── Data ───────────────────────────────────────────────────────────────────── */
