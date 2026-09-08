@@ -256,29 +256,45 @@ export function BooksSheet({ data, name, isAdmin, canWrite, onError }: Props) {
       const bottom = firstBlankRow(state.current.total);
       let tries = 0;
       let timer = 0;
+
+      /**
+       * Довезти вид до конца книги и УБЕДИТЬСЯ, что доехали.
+       *
+       * Раньше здесь было три попытки подряд, и «получилось» означало «вызов не
+       * бросил исключение». Этого хватало на быстрой книге и не хватало на
+       * большой: лист измеряет себя позже, чем готов фасад, вызов проходил
+       * молча и ничего не двигал. Курсор при этом уезжал в конец, а на экране
+       * оставалось начало книги — то есть признак «сработало» был, а
+       * результата не было.
+       *
+       * Теперь спрашиваем сам лист, где он стоит, и повторяем, пока не встанет
+       * куда надо. Как только встал — прекращаем: человек мог начать листать
+       * сам, и дёргать его обратно нельзя.
+       */
       const drive = () => {
         tries += 1;
-        let moved = false;
+        let arrived = false;
         try {
           const sheet = api.getActiveWorkbook()?.getActiveSheet();
           if (sheet) {
-            sheet.setActiveRange(sheet.getRange(bottom, 0, 1, 1));
             // Прокрутка ставит названную строку ВВЕРХ экрана. Назови мы пустую
             // строку — она и встала бы первой, а последние записи книги ушли бы
             // выше края: человек видел бы экран пустых строк и ни одной своей.
             // Поэтому наверх отправляем строку на экран выше, и пустая
             // оказывается внизу, сразу под последней записью.
-            sheet.scrollToCell?.(Math.max(0, bottom - visibleRows(heightRef.current) + 2), 0);
-            moved = true;
+            const target = Math.max(0, bottom - visibleRows(heightRef.current) + 2);
+            sheet.setActiveRange(sheet.getRange(bottom, 0, 1, 1));
+            sheet.scrollToCell?.(target, 0);
+            const at = sheet.getScrollState?.()?.sheetViewStartRow;
+            arrived = typeof at === "number" ? at >= target - 2 : false;
           }
         } catch {
           /* лист ещё не измерил себя — попробуем следующим тактом */
         }
-        // Несколько попыток, а не одна: лист становится готов к прокрутке не в
-        // тот же кадр, что фасад, и по одной попытке курсор уезжал в конец
-        // книги, а на экране оставалось её начало. Три такта — это доли
-        // секунды; не доехали и за них — книга всё равно открыта и листается.
-        if (!moved && tries < 3) timer = window.setTimeout(drive, 120);
+        // До полутора секунд: на книге в три с половиной тысячи строк лист
+        // готов к прокрутке не сразу. Не доехали и за них — книга всё равно
+        // открыта и листается руками.
+        if (!arrived && tries < 12) timer = window.setTimeout(drive, 120);
       };
       timer = window.setTimeout(drive, 60);
       disposers.push(() => window.clearTimeout(timer));
