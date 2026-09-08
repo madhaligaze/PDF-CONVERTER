@@ -21,6 +21,7 @@ import type {
   BbcOk,
   BbcRevision,
   BbcSalesReport,
+  BbcSession,
   BbcSheetInfo,
   BbcSnapshot,
   BbcStatus,
@@ -152,6 +153,18 @@ export function login(username: string, password: string): Promise<BbcMe> {
 
 export function logout(): Promise<BbcOk> {
   return request<BbcOk>("/auth/logout", { method: "POST" });
+}
+
+/**
+ * Открытые заходы. Кто что видит, решает сервер, а не этот вызов: сотруднику
+ * он вернёт только его собственные, администратору — ещё и заходы сотрудников.
+ */
+export function fetchSessions(): Promise<{ sessions: BbcSession[] }> {
+  return request<{ sessions: BbcSession[] }>("/account/sessions");
+}
+
+export function endSession(id: string): Promise<BbcOk> {
+  return request<BbcOk>(`/account/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
 export function changeCredentials(body: {

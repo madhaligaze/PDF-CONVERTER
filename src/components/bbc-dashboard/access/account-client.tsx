@@ -1,10 +1,15 @@
 "use client";
 
 /**
- * Личный кабинет: credentials + department access links.
+ * Личный кабинет.
  *
- * Admin-only. Changing the password ends every session, including this one, so
- * the screen says that up front rather than dropping the user without warning.
+ * Раньше страница целиком была админской и не-админу отвечала «доступно только
+ * администратору». Теперь она разделена по разделам: заходы в дашборд —
+ * личная безопасность, и она нужна каждому, у кого есть учётка; смена
+ * реквизитов, сотрудники и ссылки отделов остались за администратором.
+ *
+ * Смена пароля завершает все сессии, включая текущую, — экран говорит об этом
+ * заранее, а не роняет человека без предупреждения.
  */
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
@@ -15,6 +20,7 @@ import { BbcDashboardIcon, LogoutIcon, UserIcon } from "../icon";
 import { DepartmentLinks } from "./department-links";
 import { Employees } from "./employees";
 import { LoginScreen } from "./login-screen";
+import { Sessions } from "./sessions";
 import type { BbcLink, BbcMe } from "../types";
 
 /**
@@ -84,21 +90,6 @@ export function AccountClient() {
     return <LoginScreen needsSetup={me?.needs_setup ?? false} onSignedIn={reload} />;
   }
 
-  if (!me.is_admin) {
-    return (
-      <div className="min-h-screen min-h-[100dvh] flex items-center justify-center px-5" style={{ background: "var(--page-bg)" }}>
-        <div className="card p-6 max-w-sm text-center">
-          <p className="text-sm mb-3" style={{ color: "var(--text-primary)" }}>
-            Личный кабинет доступен только администратору
-          </p>
-          <Link href="/bbc-dashboard" className="btn-ghost text-xs px-3 py-2 inline-flex">
-            К дашборду
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen min-h-[100dvh] flex flex-col" style={{ background: "var(--page-bg)" }}>
       <header
@@ -141,10 +132,22 @@ export function AccountClient() {
         </div>
       </header>
 
+      {/*
+        Кабинет перестал быть админской страницей, но не стал общей: каждый
+        раздел показывается тому, чей он.
+
+        Заходы — единственное, что видит здесь сотрудник, и это ровно то, что
+        ему и полагается: список устройств, с которых открыт ЕГО дашборд, и
+        кнопка отключить незнакомое. Смена логина и пароля, учётки и ссылки
+        отделов остались за администратором — их эндпоинты как были админскими,
+        так и остались, и показывать сотруднику форму, которая ответит 401,
+        значило бы врать интерфейсом.
+      */}
       <main className="flex-1 w-full max-w-4xl mx-auto px-5 py-8 flex flex-col gap-5">
-        <CredentialsCard onChanged={reload} />
-        <Employees />
-        <DepartmentLinks initialLinks={links} loading={linksLoading} />
+        {me.is_admin && <CredentialsCard onChanged={reload} />}
+        <Sessions isAdmin={me.is_admin} />
+        {me.is_admin && <Employees />}
+        {me.is_admin && <DepartmentLinks initialLinks={links} loading={linksLoading} />}
       </main>
     </div>
   );

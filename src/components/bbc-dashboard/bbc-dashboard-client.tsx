@@ -415,7 +415,11 @@ export function BbcDashboardClient() {
                 {loading ? "Обновление…" : refreshCooldown > 0 ? `${refreshCooldown} с` : "Обновить"}
               </span>
             </button>
-            {isAdmin ? (
+            {/* Кабинет открыт всем, у кого есть учётка: сотруднику там видны
+                заходы в его дашборд и кнопка отключить чужое устройство.
+                Держателю ссылки отдела — нет: у ссылки нет учётки, а значит и
+                своих заходов, и кабинет ответил бы ему пустотой. */}
+            {me?.authenticated && !me?.link_label ? (
               <Link
                 href="/bbc-dashboard/account"
                 prefetch

@@ -2564,6 +2564,74 @@ html, body { overflow-x: clip; }
 .bbc-reg-form .bbc-modal-body { flex: 1; min-height: 0; overflow-y: auto; }
 .bbc-reg-foot { flex-shrink: 0; }
 
+/* ── Заходы в дашборд (личный кабинет) ──────────────────────────────────────
+ *
+ * Свой заход отличается подписью «этот браузер» и рамкой, а не цветной
+ * отметкой: цвет в этом продукте значит отказ, и зелёная точка на «всё
+ * хорошо» — ровно тот шум, который перестают замечать.
+ */
+.bbc-sess { display: flex; flex-direction: column; gap: 0.5rem; }
+
+.bbc-sess-split {
+  margin-top: 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.bbc-sess-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.75rem;
+  background: var(--bg-surface);
+}
+.bbc-sess-row[data-current] { border-color: var(--border-strong); }
+
+.bbc-sess-device {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.bbc-sess-here {
+  font-size: 0.625rem;
+  font-weight: 400;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* Подписи идут в строку и переносятся; разделитель рисуется псевдоэлементом,
+ * а не символом в разметке, — иначе он оставался бы висеть на переносе. */
+.bbc-sess-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  margin-top: 0.1875rem;
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+}
+.bbc-sess-meta > * + *::before {
+  content: "·";
+  margin-right: 0.5rem;
+  color: var(--text-muted);
+}
+.bbc-sess-meta b { font-weight: 600; color: var(--text-primary); }
+
+.bbc-sess-ask { display: flex; gap: 0.375rem; flex-shrink: 0; }
+
+@media (max-width: 640px) {
+  .bbc-sess-row { align-items: flex-start; flex-direction: column; }
+  .bbc-sess-ask { align-self: flex-end; }
+}
+
 /* ── Два вида одной книги: таблица и карточки ───────────────────────────────
  *
  * Переключатель, счётчик, решётка и карточки. Всё, что ниже, обслуживает одну

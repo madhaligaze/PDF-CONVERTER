@@ -5,6 +5,32 @@
 
 /* ── Access ─────────────────────────────────────────────────────────────────── */
 
+/**
+ * Один открытый заход в дашборд.
+ *
+ * `user_agent` приходит вместе с разобранным `device` намеренно: разбор — это
+ * догадка по строке, которую браузер сообщает о себе сам, и когда он говорит
+ * «неизвестное устройство», человеку нужно чем-то это перепроверить.
+ */
+export type BbcSession = {
+  id: string;
+  user_id: number;
+  username: string;
+  full_name: string;
+  role: string;
+  /** Заход этого же человека. У сотрудника всегда true, у админа — не всегда. */
+  mine: boolean;
+  /** Тот самый заход, из которого открыт экран. Завершить его — выйти. */
+  current: boolean;
+  device: string;
+  mobile: boolean;
+  user_agent: string;
+  ip: string;
+  created_at: string | null;
+  last_seen_at: string | null;
+  expires_at: string | null;
+};
+
 export type BbcMe = {
   authenticated: boolean;
   username: string | null;
