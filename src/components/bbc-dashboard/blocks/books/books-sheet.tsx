@@ -61,6 +61,15 @@ type Props = {
   isAdmin: boolean;
   /** Право писать вообще. Ложь у держателя ссылки отдела. */
   canWrite: boolean;
+  /**
+   * Можно ли дописывать строки. Ложь, когда книга сужена поиском или отбором.
+   *
+   * Дописать в суженный список нельзя честно: новая строка либо не подойдёт
+   * под условия и исчезнет с глаз в тот же миг, либо подойдёт случайно и
+   * встанет не туда. И в том и в другом случае человек не поймёт, что
+   * произошло с тем, что он напечатал.
+   */
+  canAppend: boolean;
   onError: (message: string) => void;
 };
 
@@ -84,7 +93,7 @@ const visibleRows = (height: number) => Math.max(4, Math.floor((height - CHROME_
 const INSERT_COL = "sheet.command.insert-col";
 const REMOVE_COL = "sheet.command.remove-col";
 
-export function BooksSheet({ data, name, isAdmin, canWrite, onError }: Props) {
+export function BooksSheet({ data, name, isAdmin, canWrite, canAppend, onError }: Props) {
   const { fields, rows, total } = data;
   const [busy, setBusy] = useState(false);
   /**
@@ -110,8 +119,8 @@ export function BooksSheet({ data, name, isAdmin, canWrite, onError }: Props) {
   // Всё, что нужно обработчикам Univer, живёт в ref: подписки ставятся один
   // раз на книгу, а колонки и строки приезжают заново. Без этого обработчик
   // помнил бы первый набор полей и писал бы правки не в те ключи.
-  const state = useRef({ data, fields, rows, total, isAdmin, canWrite });
-  state.current = { data, fields, rows, total, isAdmin, canWrite };
+  const state = useRef({ data, fields, rows, total, isAdmin, canWrite, canAppend });
+  state.current = { data, fields, rows, total, isAdmin, canWrite, canAppend };
 
   const notify = useRef(onError);
   notify.current = onError;
@@ -141,6 +150,10 @@ export function BooksSheet({ data, name, isAdmin, canWrite, onError }: Props) {
 
     try {
       if (edit.index === null) {
+        if (!state.current.canAppend) {
+          report.current("пока книга отобрана, новые записи не заводятся");
+          return;
+        }
         // Печать под последней записью заводит строку. Пустое значение строку
         // не заводит: человек проехал по листу и стёр случайно набранное — это
         // не повод класть в книгу пустую запись.
@@ -360,7 +373,7 @@ export function BooksSheet({ data, name, isAdmin, canWrite, onError }: Props) {
               })}
             </span>
           </>
-        ) : canWrite ? (
+        ) : canWrite && canAppend ? (
           <span className="bbc-sheet-beat-hint">
             Записи заводят в пустой строке внизу — начните печатать, строка
             появится в книге сама.

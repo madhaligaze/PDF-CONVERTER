@@ -89,6 +89,30 @@ function whenOf(row: Row, layout: Layout): string {
   return date && date !== headOf(row, layout) ? date : "";
 }
 
+/**
+ * Сырая дата операции — по ней карточки собираются в дни.
+ *
+ * Именно сырое значение, а не показанное: показанное зависит от типа колонки и
+ * может оказаться пустым, а группировать надо по тому, что в книге записано.
+ */
+function dayOf(row: Row, layout: Layout): string {
+  if (!layout.date) return "";
+  const raw = row.values?.[layout.date.key];
+  return raw === null || raw === undefined ? "" : String(raw).slice(0, 10);
+}
+
+/** «4 августа 2026» — заголовок дня. Год не прячем: книга живёт годами. */
+function dayTitle(day: string): string {
+  const at = new Date(`${day}T12:00:00Z`);
+  if (Number.isNaN(at.getTime())) return day || "Без даты";
+  return at.toLocaleDateString("ru-RU", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 type Props = {
   data: BookTable;
   canWrite: boolean;
@@ -132,16 +156,80 @@ export function CardsView({ data, canWrite, onOpenRecord }: Props) {
     return () => window.cancelAnimationFrame(timer);
   }, [fresh]);
 
-  const visible = rows.slice(0, Math.min(shown, total));
+  // Только что заведённые записи держим отдельно и не показываем дважды.
+  const justAdded = data.added;
+  const freshIds = new Set(justAdded.map((row) => row.id));
+  const visible = rows
+    .slice(0, Math.min(shown, total))
+    .filter((row) => !row || !freshIds.has(row.id));
+
+  /**
+   * Карточки собраны в дни.
+   *
+   * Без этого экран был россыпью одинаковых плиток: три с половиной тысячи
+   * карточек подряд, и ни одной опоры для глаза — человек не понимал, где он и
+   * по какому правилу это разложено. Журнал ведут по дням, и день — та самая
+   * опора, которой не хватало.
+   *
+   * Порядок задаёт сервер (хроникой), здесь только расставляются заголовки:
+   * группировать заново на клиенте значило бы разложить по дням ту сотню
+   * строк, что доехала, и назвать это днями всей книги.
+   */
+  const days: Array<{ day: string; from: number; rows: Array<Row | undefined> }> = [];
+  visible.forEach((row, index) => {
+    const day = row ? dayOf(row, layout) : days[days.length - 1]?.day ?? "";
+    const last = days[days.length - 1];
+    if (last && last.day === day) last.rows.push(row);
+    else days.push({ day, from: index, rows: [row] });
+  });
 
   return (
     <div className="bbc-cards" ref={box} style={{ height }}>
-      {visible.map((row, index) =>
-        row ? (
+      {/*
+        Заведённое только что — наверху и до перечитывания книги.
+
+        В хронике новой записи места нет: даты у неё ещё нет, и она уезжает в
+        конец, за три с половиной тысячи строк. Человек заполнил форму и не
+        увидел результата — этот дефект в разделе уже случался, и порядок «по
+        дате» вернул бы его.
+      */}
+      {justAdded.length > 0 && (
+        <section className="bbc-day" data-fresh-group="">
+          <h3 className="bbc-day-title">
+            Только что добавлено
+            <span className="bbc-day-count">
+              {justAdded.length} {plural(justAdded.length, "запись", "записи", "записей")}
+            </span>
+          </h3>
+          <div className="bbc-day-cards">
+            {justAdded.map((row) => renderCard(row, -1, ""))}
+          </div>
+        </section>
+      )}
+
+      {days.map((group) => (
+        <section key={`${group.day}|${group.from}`} className="bbc-day">
+          <h3 className="bbc-day-title">
+            {group.day ? dayTitle(group.day) : "Без даты"}
+            <span className="bbc-day-count">
+              {group.rows.length} {plural(group.rows.length, "запись", "записи", "записей")}
+            </span>
+          </h3>
+          <div className="bbc-day-cards">
+            {group.rows.map((row, at) => renderCard(row, group.from + at, group.day))}
+          </div>
+        </section>
+      ))}
+      <div ref={sentinel} className="bbc-cards-end" />
+    </div>
+  );
+
+  function renderCard(row: Row | undefined, index: number, day: string) {
+    return row ? (
           <article
             key={row.id}
             className="bbc-card"
-            data-fresh={data.lastAdded === index ? "" : undefined}
+            data-fresh={index === -1 ? "" : undefined}
           >
             <button
               type="button"
@@ -172,7 +260,10 @@ export function CardsView({ data, canWrite, onOpenRecord }: Props) {
               })}
             </header>
 
-            {whenOf(row, layout) && (
+            {/* Дата в карточке — только если она НЕ та, что стоит в заголовке
+                дня. Под «1 сентября 2026» каждая карточка со своим «01.09.2026»
+                — это девяносто семь раз повторённое одно и то же. */}
+            {dayOf(row, layout) !== day && whenOf(row, layout) && (
               <p className="bbc-card-when">{whenOf(row, layout)}</p>
             )}
 
@@ -190,11 +281,18 @@ export function CardsView({ data, canWrite, onOpenRecord }: Props) {
               })}
             </dl>
           </article>
-        ) : (
-          <article key={`slot-${index}`} className="bbc-card" data-pending="" aria-hidden />
-        ),
-      )}
-      <div ref={sentinel} className="bbc-cards-end" />
-    </div>
-  );
+    ) : (
+      <article key={`slot-${index}`} className="bbc-card" data-pending="" aria-hidden />
+    );
+  }
+}
+
+/** Русское склонение по числу. */
+function plural(n: number, one: string, few: string, many: string): string {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return many;
+  const mod10 = n % 10;
+  if (mod10 === 1) return one;
+  if (mod10 >= 2 && mod10 <= 4) return few;
+  return many;
 }

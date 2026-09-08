@@ -2869,10 +2869,12 @@ html, body { overflow-x: clip; }
 
 /* ── Карточки ───────────────────────────────────────────────────────────── */
 
+/* Карточки собраны в дни: у списка на три с половиной тысячи записей должна
+ * быть опора для глаза, иначе это россыпь одинаковых плиток. */
 .bbc-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
-  gap: 0.625rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
   /* Как у таблицы: высоту ставит замер, здесь — запасная на первый кадр. */
   height: clamp(15rem, 60vh, 46rem);
   overflow-y: auto;
@@ -2883,7 +2885,10 @@ html, body { overflow-x: clip; }
   display: flex;
   flex-direction: column;
   gap: 0.375rem;
-  min-height: 6.5rem;
+  /* Ровно столько, чтобы карточки в ряду были одного роста. Было 6,5rem —
+   * от времени, когда в карточке стояла ещё и дата; после того как её унёс
+   * заголовок дня, на её месте оставалась дыра в треть карточки. */
+  min-height: 4.5rem;
   padding: 0.75rem;
   border: 1px solid var(--border-subtle);
   border-radius: 0.75rem;
@@ -3043,3 +3048,63 @@ html, body { overflow-x: clip; }
 .bbc-sheet-beat-what { color: var(--text-secondary); }
 .bbc-sheet-beat-when { font-variant-numeric: tabular-nums; }
 .bbc-sheet-beat-hint { color: var(--text-muted); }
+
+/* ── День в карточках ───────────────────────────────────────────────────────
+ *
+ * Заголовок дня — единственное, что отвечает на вопрос «где я» в журнале на
+ * три с половиной тысячи записей. Он липкий: пролистав середину августа,
+ * человек должен видеть, какой это август, не возвращаясь наверх.
+ */
+.bbc-day { display: flex; flex-direction: column; gap: 0.5rem; }
+.bbc-day-title {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: baseline;
+  gap: 0.625rem;
+  padding: 0.375rem 0.125rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--page-bg);
+}
+.bbc-day-count { font-size: 0.6875rem; font-weight: 400; color: var(--text-muted); }
+.bbc-day-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  gap: 0.625rem;
+}
+
+/* ── Панель отборов ─────────────────────────────────────────────────────────
+ *
+ * Подпись над полем, а не внутри: в выпадающем списке уже стоит выбранное
+ * значение, и «все» без подписи не говорит, все чего именно.
+ */
+.bbc-books-picks { align-items: flex-end; }
+.bbc-pick { display: flex; flex-direction: column; gap: 0.1875rem; min-width: 0; flex: 1 1 11rem; }
+.bbc-pick-when { flex: 0 1 9.5rem; }
+.bbc-pick-name {
+  font-size: 0.625rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.bbc-pick select,
+.bbc-pick input { width: 100%; font-size: 0.8125rem; }
+
+/* На телефоне отборы — одна прокручиваемая вбок строка, а не четыре ряда.
+ *
+ * Стопкой они занимали больше двухсот пикселей и выдавливали таблицу за край
+ * экрана: страница становилась 975 пикселей при окне 844, и человек тянул
+ * страницу вместо листа. Прокрутка вбок оставляет доступным всё то же самое и
+ * стоит одной строки. */
+@media (max-width: 640px) {
+  .bbc-books-picks {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 0.25rem;
+  }
+  .bbc-books-picks > * { flex: 0 0 10rem; }
+  .bbc-books-picks > button { flex: 0 0 auto; }
+}

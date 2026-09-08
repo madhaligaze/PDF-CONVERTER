@@ -89,6 +89,8 @@ export type Row = {
 };
 
 export type TableView = {
+  /** Чем можно отобрать эту книгу. Пусто — отбирать нечем. */
+  facets?: Facet[];
   table: { id: string; name: string; book_id: string; header_row: number };
   fields: Field[];
   bindings: Record<string, string>;
@@ -142,6 +144,27 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+/**
+ * Три порядка строк, каждый под свою поверхность.
+ *
+ * `position` — порядок самой книги, для таблицы: строка обязана оставаться
+ * там, где стояла, иначе правка ячейки телепортирует её под руками.
+ * `date` — хроникой по дате операции, для карточек: журнал читается по дням.
+ * `recent` — по времени правки, для «что я только что вводил».
+ */
+export type RowOrder = "position" | "date" | "recent";
+
+/** Чем сузили книгу: величины и период. */
+export type Picked = {
+  /** {ключ роли: выбранное значение}. Пустая строка означает «не выбрано». */
+  by?: Record<string, string>;
+  since?: string;
+  until?: string;
+};
+
+/** Величина, по которой можно отобрать книгу, и значения, что в ней есть. */
+export type Facet = { role: string; title: string; values: string[] };
+
 export const booksApi = {
   sources: () => request<{ books: SourceBook[] }>("/sources"),
   sourceTabs: (id: string) => request<SourceMeta>(`/sources/${encodeURIComponent(id)}`),
@@ -163,13 +186,21 @@ export const booksApi = {
     tableId: string,
     limit = 100,
     offset = 0,
-    order: "position" | "recent" = "position",
+    order: RowOrder = "position",
     q = "",
-  ) =>
-    request<TableView>(
-      `/tables/${tableId}?limit=${limit}&offset=${offset}&order=${order}` +
-        (q ? `&q=${encodeURIComponent(q)}` : ""),
-    ),
+    picked: Picked = {},
+  ) => {
+    const parts = [`limit=${limit}`, `offset=${offset}`, `order=${order}`];
+    if (q) parts.push(`q=${encodeURIComponent(q)}`);
+    // Отбор — «роль:значение». Роль, а не имя колонки: у следующей компании
+    // колонка называется иначе, а фирма остаётся фирмой.
+    for (const [role, value] of Object.entries(picked.by ?? {})) {
+      if (value) parts.push(`f=${encodeURIComponent(`${role}:${value}`)}`);
+    }
+    if (picked.since) parts.push(`since=${picked.since}`);
+    if (picked.until) parts.push(`until=${picked.until}`);
+    return request<TableView>(`/tables/${tableId}?${parts.join("&")}`);
+  },
   board: (tableId: string) => request<Board>(`/tables/${tableId}/board`),
 
   /**

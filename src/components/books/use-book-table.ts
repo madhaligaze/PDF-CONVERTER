@@ -2,7 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { booksApi, type Field, type Row, type TableView } from "@/components/books/api";
+import {
+  booksApi,
+  type Facet,
+  type Field,
+  type Picked,
+  type Row,
+  type RowOrder,
+  type TableView,
+} from "@/components/books/api";
 
 /**
  * Один склад строк вкладки на все виды показа.
@@ -39,7 +47,7 @@ import { booksApi, type Field, type Row, type TableView } from "@/components/boo
 /** Сколько строк в одной странице. Меньше — чаще дёргаем сеть, больше — дольше ждём первую. */
 export const PAGE = 250;
 
-export type Order = "position" | "recent";
+export type Order = RowOrder;
 
 type Page = { rows: Row[]; total: number };
 
@@ -77,6 +85,8 @@ export type BookTable = {
   allFields: Field[];
   bindings: Record<string, string>;
   roleTitles: Record<string, string>;
+  /** Чем можно отобрать эту книгу — считается сервером по самой книге. */
+  facets: Facet[];
   /** Строк в текущей выборке: с поиском — сколько нашлось. */
   total: number;
   /** Строк во вкладке целиком. Без него «нашлось 12» не с чем сравнить. */
@@ -92,6 +102,15 @@ export type BookTable = {
   remove: (row: Row) => Promise<boolean>;
   /** Индекс последней добавленной строки — чтобы вид довёл до неё глаз. */
   lastAdded: number | null;
+  /**
+   * Записи, заведённые за этот заход в раздел.
+   *
+   * Нужны, потому что в хронике новой записи не место: даты у неё ещё нет, и
+   * она уезжает в самый конец, за три с половиной тысячи строк. Человек
+   * заполнил форму и не увидел результата — этот дефект в разделе уже был, и
+   * порядок «по дате» вернул бы его. Вид показывает их отдельно, наверху.
+   */
+  added: Row[];
   forgetLastAdded: () => void;
   reload: () => void;
 };
@@ -110,6 +129,13 @@ export function useBookTable(
   order: Order,
   query: string,
   /**
+   * Чем сузили книгу: величины и период.
+   *
+   * Отбор идёт на сервере, как и поиск, и по той же причине: отобрать среди
+   * приехавших двухсот строк из 3632 значит показать неполный ответ полным.
+   */
+  picked: Picked = {},
+  /**
    * Сколько строк тянуть за раз.
    *
    * Карточкам хватает страницы: человек листает сверху вниз и до конца книги
@@ -124,6 +150,7 @@ export function useBookTable(
   const [cache, setCache] = useState<Cache>(emptyCache);
   const [error, setError] = useState("");
   const [lastAdded, setLastAdded] = useState<number | null>(null);
+  const [added, setAdded] = useState<Row[]>([]);
   const [epoch, setEpoch] = useState(0);
   // Размер вкладки целиком запоминается при первом же чтении без поиска —
   // раздел всегда открывается без него, так что к моменту первого запроса
@@ -135,7 +162,10 @@ export function useBookTable(
   // адресует тот кэш, для которого было создано. Ref для этого не годится —
   // читать его во время отрисовки нельзя, а после смены ключа старое
   // замыкание с ним полезло бы в чужой кэш.
-  const key = `${tableId}|${order}|${query}|${pageSize}`;
+  // Отбор входит в ключ наравне с поиском: это такая же часть вопроса, и
+  // строки одного отбора не должны показываться как ответ на другой.
+  const chosen = JSON.stringify(picked);
+  const key = `${tableId}|${order}|${query}|${pageSize}|${chosen}`;
   const caches = useRef(new Map<string, Cache>());
   // `epoch` растёт на `reload()` и заставляет эффект перечитать вкладку.
   void epoch;
@@ -152,7 +182,7 @@ export function useBookTable(
     const cached = caches.current.get(key);
     if (cached) setCache(cached);
 
-    booksApi.table(tableId, pageSize, 0, order, query).then(
+    booksApi.table(tableId, pageSize, 0, order, query, picked).then(
       (next) => {
         if (cancelled) return;
         setView(next);
@@ -180,7 +210,10 @@ export function useBookTable(
     return () => {
       cancelled = true;
     };
-  }, [tableId, order, query, key, epoch, pageSize, fail]);
+    // `picked` приходит новым объектом на каждую отрисовку, поэтому в
+    // зависимостях стоит его слепок строкой, а не он сам.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tableId, order, query, key, epoch, pageSize, chosen, fail]);
 
   /** Страница под видимым куском. Уже привезённое и уже едущее не трогаем. */
   const ensure = useCallback(
@@ -196,7 +229,7 @@ export function useBookTable(
         if (current.loaded.has(page) || current.loading.has(page)) continue;
         current.loading.add(page);
         const at = key;
-        booksApi.table(tableId, pageSize, page * pageSize, order, query).then(
+        booksApi.table(tableId, pageSize, page * pageSize, order, query, picked).then(
           (next: Page) => {
             const store = caches.current.get(at);
             if (!store) return;
@@ -215,7 +248,9 @@ export function useBookTable(
         );
       }
     },
-    [tableId, order, query, key, pageSize, fail],
+    // Тот же слепок, та же причина, что и у эффекта выше.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tableId, order, query, key, pageSize, chosen, fail],
   );
 
   /** Положить строку, пришедшую с сервера, во все кэши, где она встречается. */
@@ -225,6 +260,17 @@ export function useBookTable(
         const at = store.rows.findIndex((row) => row?.id === saved.id);
         if (at !== -1) store.rows[at] = saved;
       });
+      // И в списке заведённого за этот заход тоже.
+      //
+      // Он держит копии строк, и без этой строчки они устаревают на первой же
+      // правке: версия остаётся прежней, а строка в базе уходит вперёд.
+      // Следующее действие над такой копией — удаление, например, — уезжало со
+      // старой версией и молча отклонялось как чужая правка.
+      setAdded((now) =>
+        now.some((row) => row.id === saved.id)
+          ? now.map((row) => (row.id === saved.id ? saved : row))
+          : now,
+      );
       const here = caches.current.get(key);
       if (here) setCache({ ...here });
     },
@@ -268,6 +314,7 @@ export function useBookTable(
           }
         });
         setLastAdded(at);
+        setAdded((now) => [saved, ...now]);
         setTotalAll((now) => now + 1);
         setError("");
         return saved;
@@ -308,6 +355,7 @@ export function useBookTable(
             caches.current.delete(otherKey);
           }
         });
+        setAdded((now) => now.filter((item) => item.id !== row.id));
         setTotalAll((now) => Math.max(0, now - 1));
         setError("");
         return true;
@@ -320,6 +368,9 @@ export function useBookTable(
   );
 
   const reload = useCallback(() => {
+    // Перечитали книгу — заведённое в ней уже на своих местах, держать
+    // его отдельным списком незачем.
+    setAdded([]);
     caches.current.clear();
     setEpoch((value) => value + 1);
   }, []);
@@ -336,6 +387,7 @@ export function useBookTable(
     allFields,
     bindings: view?.bindings ?? {},
     roleTitles: view?.role_titles ?? {},
+    facets: view?.facets ?? [],
     total: cache.total,
     totalAll: query ? totalAll : cache.total,
     rows: cache.rows,
@@ -349,6 +401,8 @@ export function useBookTable(
     create,
     remove,
     lastAdded,
+    // Список привязан к вкладке: у другой книги свои записи.
+    added: view && view.table.id === tableId ? added : [],
     forgetLastAdded: () => setLastAdded(null),
     reload,
   };

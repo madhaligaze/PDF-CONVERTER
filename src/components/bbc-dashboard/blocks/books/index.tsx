@@ -51,8 +51,18 @@ import { RecordModal } from "@/components/bbc-dashboard/blocks/books/record-moda
 
 type Mode = "grid" | "cards";
 
-/** Порядок строк у вида — свойство вида, а не настройка. См. `useBookTable`. */
-const ORDER: Record<Mode, Order> = { grid: "position", cards: "recent" };
+/**
+ * Порядок строк у вида — свойство вида, а не настройка.
+ *
+ * Таблица держит порядок самой книги: строка обязана оставаться там, где
+ * стояла, иначе правка ячейки телепортирует её под руками.
+ *
+ * Карточки — хроникой по дате операции. Раньше здесь стояло «по времени
+ * правки», и для импортированной книги это порядок случайный: 3 августа,
+ * 27 июля, 20 июля, 4 августа подряд. Человек видел разброс и не мог понять,
+ * по какому правилу это разложено, — потому что правила и не было.
+ */
+const ORDER: Record<Mode, Order> = { grid: "position", cards: "date" };
 
 const MODE_KEY = "bbc.books.mode";
 const TAB_KEY = "bbc.books.tab";
@@ -131,6 +141,10 @@ export function BooksBlock({ canWrite, isAdmin }: Props) {
   const [importing, setImporting] = useState(false);
   const [typed, setTyped] = useState("");
   const [query, setQuery] = useState("");
+  /** Выбранные значения отборов: {ключ величины: значение}. */
+  const [by, setBy] = useState<Record<string, string>>({});
+  const [since, setSince] = useState("");
+  const [until, setUntil] = useState("");
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState("");
 
@@ -177,9 +191,26 @@ export function BooksBlock({ canWrite, isAdmin }: Props) {
     return () => clearTimeout(timer);
   }, [typed]);
 
+  const picked = useMemo(() => ({ by, since, until }), [by, since, until]);
+  /** Книга сужена — поиском или отбором. Влияет на то, можно ли дописывать. */
+  const narrowed =
+    !!query || !!since || !!until || Object.values(by).some(Boolean);
+
   // Таблице нужна вся книга сразу, карточкам хватает страницы. Подробности —
   // в самом хуке, там же замер на пилотной книге.
-  const data = useBookTable(tableId, ORDER[mode], query, mode === "grid" ? WHOLE_BOOK : undefined);
+  const data = useBookTable(
+    tableId,
+    ORDER[mode],
+    query,
+    picked,
+    mode === "grid" ? WHOLE_BOOK : undefined,
+  );
+
+  const clearPicked = () => {
+    setBy({});
+    setSince("");
+    setUntil("");
+  };
 
   /** Разметка читается только когда её открыли: на ежедневный ввод она не нужна. */
   const boardHere = board && board.table.id === tableId ? board : null;
@@ -263,6 +294,7 @@ export function BooksBlock({ canWrite, isAdmin }: Props) {
             value={tableId}
             onChange={(event) => {
               setChosen(event.target.value);
+              clearPicked();
               try {
                 localStorage.setItem(TAB_KEY, event.target.value);
               } catch {
@@ -369,6 +401,66 @@ export function BooksBlock({ canWrite, isAdmin }: Props) {
         </div>
       </div>
 
+      {/*
+        Панель отборов.
+
+        Показывается, только когда книга даёт чем отобрать: величины считает
+        сервер по самой книге, и у другой компании они будут свои. Пустая
+        панель с надписью «отборов нет» — это ровно тот шум, которого здесь
+        быть не должно.
+
+        Отбор применяется и к таблице, и к карточкам: вопрос «покажи август по
+        BBC HR» одинаково осмыслен в обоих видах.
+      */}
+      {!columnsOpen && data.facets.length > 0 && (
+        <div className="bbc-reg-bar bbc-books-picks">
+          {data.facets.map((facet) => (
+            <label key={facet.role} className="bbc-pick">
+              <span className="bbc-pick-name">{facet.title}</span>
+              <select
+                className="input-field"
+                value={by[facet.role] ?? ""}
+                onChange={(event) =>
+                  setBy((now) => ({ ...now, [facet.role]: event.target.value }))
+                }
+              >
+                <option value="">все</option>
+                {facet.values.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+
+          <label className="bbc-pick bbc-pick-when">
+            <span className="bbc-pick-name">С какого числа</span>
+            <input
+              className="input-field"
+              type="date"
+              value={since}
+              onChange={(event) => setSince(event.target.value)}
+            />
+          </label>
+          <label className="bbc-pick bbc-pick-when">
+            <span className="bbc-pick-name">По какое</span>
+            <input
+              className="input-field"
+              type="date"
+              value={until}
+              onChange={(event) => setUntil(event.target.value)}
+            />
+          </label>
+
+          {narrowed && (
+            <button className="btn-ghost text-xs px-3 py-1.5" onClick={clearPicked}>
+              Снять отборы
+            </button>
+          )}
+        </div>
+      )}
+
       {columnsOpen ? (
         boardHere ? (
           <BindingBoard
@@ -388,7 +480,9 @@ export function BooksBlock({ canWrite, isAdmin }: Props) {
         <p className="bbc-reg-hint">Открываем вкладку…</p>
       ) : data.total === 0 ? (
         <p className="bbc-reg-hint">
-          {query ? "По этому запросу в книге ничего нет" : "В этой вкладке пока нет строк"}
+          {narrowed
+            ? "Под эти условия в книге ничего не подошло"
+            : "В этой вкладке пока нет строк"}
         </p>
       ) : mode === "grid" ? (
         <BooksSheet
@@ -397,6 +491,9 @@ export function BooksBlock({ canWrite, isAdmin }: Props) {
           key={`${tableId}|${query}`}
           data={data}
           name={data.meta?.name ?? "Книга"}
+          // В суженной книге дописывать нечего: новая строка либо не подойдёт
+          // под отбор и исчезнет на глазах, либо подойдёт случайно.
+          canAppend={!narrowed}
           isAdmin={isAdmin}
           canWrite={canWrite}
           onError={setListError}
