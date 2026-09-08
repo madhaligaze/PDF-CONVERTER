@@ -2793,6 +2793,21 @@ html, body { overflow-x: clip; }
   outline: none;
 }
 
+/* Пустая строка в конце книги — та, в которую печатают новую запись.
+ *
+ * Отличается от обычной только приглушённым фоном и «+» вместо номера. Делать
+ * её заметнее нельзя: это не кнопка и не призыв, а место, которое в таблице
+ * всегда есть в конце. Человек, работавший в таблицах, узнаёт его сам. */
+.bbc-grid-row[data-draft] { background: var(--bg-raised); }
+.bbc-grid-row[data-draft] .bbc-grid-num {
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  justify-content: center;
+}
+.bbc-grid-row[data-draft]:hover,
+.bbc-grid-row[data-draft]:hover .bbc-grid-num { background: var(--bg-hover); }
+
 /* Строка, которой ещё нет на руках, выглядит незагруженной, а не пустой:
  * пустая читалась бы как «в книге здесь ничего нет». */
 .bbc-grid-row[data-pending] .bbc-grid-cell::after {

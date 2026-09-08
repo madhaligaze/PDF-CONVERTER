@@ -268,7 +268,16 @@ export function BooksBlock({ canWrite }: Props) {
         </div>
 
         <div className="bbc-books-acts">
-          {canWrite && (
+          {/*
+            «Добавить запись» — кнопка карточек, и только их.
+
+            В таблице записи заводят так же, как в любой таблице: доезжают до
+            пустой строки в конце (Ctrl+End) и печатают. Кнопка, открывающая
+            поверх таблицы модальное окно, — это просьба бросить таблицу и
+            заполнить анкету; человеку, пришедшему сюда именно за таблицей,
+            она сообщает, что таблица здесь ненастоящая.
+          */}
+          {canWrite && mode === "cards" && !columnsOpen && (
             <button
               className="btn-primary text-xs px-3 py-1.5"
               onClick={() => setAdding(true)}
@@ -316,7 +325,14 @@ export function BooksBlock({ canWrite }: Props) {
           {query ? "По этому запросу в книге ничего нет" : "В этой вкладке пока нет строк"}
         </p>
       ) : mode === "grid" ? (
-        <GridView data={data} canWrite={canWrite} onOpenRecord={setEditing} />
+        <GridView
+          data={data}
+          canWrite={canWrite}
+          // Во время поиска дописывать нечего: новая строка либо не подойдёт
+          // под запрос и исчезнет на глазах, либо подойдёт случайно.
+          canAppend={!query}
+          onOpenRecord={setEditing}
+        />
       ) : (
         // Ключ пересобирает вид при смене вкладки или запроса: у карточек своё
         // состояние — докуда долистали, — и переносить его на другую книгу

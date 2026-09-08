@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { Field, Row } from "@/components/books/api";
 import { displayValue, editValue, FieldEditor, isNumeric } from "@/components/books/field-value";
@@ -40,10 +40,24 @@ const ROW_H = 30;
 /** Сколько строк рисуем за пределами видимого — запас на быструю прокрутку. */
 const OVERSCAN = 12;
 const NUM_W = 56;
+/**
+ * Метка «сохраняем» для черновой строки.
+ *
+ * У неё ещё нет идентификатора — он появится вместе со строкой в базе, — а
+ * состояние «сохраняем» одно на всю таблицу и хранит именно его. Столкнуться
+ * с настоящим нельзя: те приходят с сервера как UUID.
+ */
+const DRAFT = "draft";
 
 type Props = {
   data: BookTable;
   canWrite: boolean;
+  /**
+   * Можно ли дописывать строки. Ложь во время поиска: дописать строку в
+   * отфильтрованный список нельзя честно — она либо не подойдёт под запрос и
+   * тут же исчезнет с глаз, либо подойдёт случайно и встанет не туда.
+   */
+  canAppend: boolean;
   /** Открыть строку карточкой — из таблицы тоже бывает нужно видеть всё сразу. */
   onOpenRecord: (row: Row) => void;
 };
@@ -64,8 +78,27 @@ function widthOf(field: Field): number {
   return Math.max(base, Math.min(320, field.title.length * 8 + 28));
 }
 
-export function GridView({ data, canWrite, onOpenRecord }: Props) {
+export function GridView({ data, canWrite, canAppend, onOpenRecord }: Props) {
   const { fields, rows, total, ensure } = data;
+
+  /**
+   * Пустая строка в конце книги — то, как в таблицах заводят записи.
+   *
+   * Кнопки «Добавить запись» в этом виде нет намеренно. Человек, пришедший
+   * сюда за таблицей, добавляет строку так же, как делал это двадцать лет:
+   * доезжает до низа и печатает. Модальное окно на этом месте — это просьба
+   * бросить таблицу и заполнить анкету, то есть ровно то, из-за чего он
+   * вернётся в Google Sheets.
+   *
+   * Строка заводится в базе на первой же заполненной ячейке, а не после того,
+   * как заполнят всю. Так ведёт себя таблица: значение, которое вы напечатали
+   * и подтвердили, уже сохранено. Курсор при этом остаётся на месте, и Tab
+   * ведёт дальше по той же — уже настоящей — строке.
+   */
+  const draftable = canWrite && canAppend;
+  /** Индекс черновой строки. Он же — число строк, когда её нет. */
+  const draftAt = total;
+  const rowCount = total + (draftable ? 1 : 0);
 
   // Таблица заканчивается там же, где окно: сколько бы панелей ни встало над
   // ней, вторая прокрутка не появляется.
@@ -91,7 +124,7 @@ export function GridView({ data, canWrite, onOpenRecord }: Props) {
   );
 
   const first = Math.max(0, Math.floor(top / ROW_H) - OVERSCAN);
-  const last = Math.min(total, Math.ceil((top + height) / ROW_H) + OVERSCAN);
+  const last = Math.min(rowCount, Math.ceil((top + height) / ROW_H) + OVERSCAN);
 
   useEffect(() => {
     if (total > 0) ensure(first, last);
@@ -135,31 +168,102 @@ export function GridView({ data, canWrite, onOpenRecord }: Props) {
     if (fresh !== null) scrollToRow(fresh);
   }, [fresh, scrollToRow]);
 
-  const commit = useCallback(async () => {
-    if (!edit) return;
-    const row = rows[edit.r];
-    const field = fields[edit.c];
-    setEdit(null);
-    if (!row || !field) return;
-    if (editValue(field, row.values?.[field.key]) === edit.value) return;
-    setSaving(row.id);
-    await data.patch(row, { [field.key]: edit.value });
-    setSaving(null);
-  }, [edit, rows, fields, data]);
+  /**
+   * Защёлка от повторного подтверждения одной и той же правки.
+   *
+   * Подтверждение снимает поле ввода и возвращает фокус решётке, а снятие
+   * фокуса само зовёт подтверждение. Без защёлки второй вызов приходил бы с
+   * тем же состоянием правки и в пустой строке заводил вторую запись: человек
+   * нажал Enter один раз, а строк появилось две.
+   */
+  const busy = useRef(false);
+
+  /**
+   * Подтвердить правку и встать туда, куда просили.
+   *
+   * `step` — куда уйти курсору: вниз по Enter, вбок по Tab, никуда при потере
+   * фокуса. Шаг приходит сюда, а не выполняется вызывающим отдельным `move`,
+   * из-за пустой строки: запись в ней сохраняется с ответом сервера, и `move`,
+   * выполненный до ответа, перебивался бы установкой курсора после.
+   *
+   * Фокус возвращается решётке всегда. Поле ввода при подтверждении исчезает,
+   * и вместе с ним фокус уходил в никуда: клавиатура переставала работать до
+   * следующего щелчка мышью. В таблице, которую заполняют с клавиатуры, это
+   * означает, что заполнить её с клавиатуры нельзя.
+   */
+  const commit = useCallback(
+    async (step?: { dr: number; dc: number }) => {
+      if (!edit || busy.current) return;
+      busy.current = true;
+      try {
+        const field = fields[edit.c];
+        const { r, c, value } = edit;
+        setEdit(null);
+        scrollRef.current?.focus();
+        if (!field) return;
+
+        /** Куда встать курсору: от строки `at`, но не ниже `limit`. */
+        const land = (at: number, limit: number) => {
+          if (!step) return { r: at, c };
+          const next = {
+            r: Math.max(0, Math.min(limit, at + step.dr)),
+            c: Math.max(0, Math.min(fields.length - 1, c + step.dc)),
+          };
+          if (step.dr) scrollToRow(next.r);
+          return next;
+        };
+
+        if (r === draftAt) {
+          // Пустую ячейку пустой строки записью не считаем: провести по ней
+          // курсор насквозь человек может и просто осматриваясь.
+          if (!value) {
+            setCursor(land(r, rowCount - 1));
+            return;
+          }
+          setSaving(DRAFT);
+          const saved = await data.create({ [field.key]: value });
+          setSaving(null);
+          // Строка под курсором только что стала настоящей, и ниже неё
+          // появилась новая пустая — потолок вырос на единицу. `setCursor`
+          // заодно снимает отметку «только что добавлена», иначе курсор увело
+          // бы к ней эффектом.
+          setCursor(saved ? land(r, r + 1) : { r, c });
+          return;
+        }
+
+        setCursor(land(r, rowCount - 1));
+        const row = rows[r];
+        if (!row) return;
+        if (editValue(field, row.values?.[field.key]) === value) return;
+        setSaving(row.id);
+        await data.patch(row, { [field.key]: value });
+        setSaving(null);
+      } finally {
+        busy.current = false;
+      }
+    },
+    [edit, rows, fields, data, draftAt, rowCount, setCursor, scrollRef, scrollToRow],
+  );
 
   const beginEdit = useCallback(
     (r: number, c: number, seed?: string) => {
       if (!canWrite) return;
-      const row = rows[r];
       const field = fields[c];
-      if (!row || !field) return;
+      if (!field) return;
+      if (r === draftAt) {
+        if (!draftable) return;
+        setEdit({ r, c, value: seed ?? "" });
+        return;
+      }
+      const row = rows[r];
+      if (!row) return;
       setEdit({
         r,
         c,
         value: seed ?? editValue(field, row.values?.[field.key]),
       });
     },
-    [canWrite, rows, fields],
+    [canWrite, rows, fields, draftAt, draftable],
   );
 
   const move = useCallback(
@@ -168,12 +272,12 @@ export function GridView({ data, canWrite, onOpenRecord }: Props) {
         setCursor({ r: 0, c: 0 });
         return;
       }
-      const r = Math.max(0, Math.min(total - 1, cursor.r + dr));
+      const r = Math.max(0, Math.min(rowCount - 1, cursor.r + dr));
       const c = Math.max(0, Math.min(fields.length - 1, cursor.c + dc));
       if (dr) scrollToRow(r);
       setCursor({ r, c });
     },
-    [cursor, setCursor, total, fields.length, scrollToRow],
+    [cursor, setCursor, rowCount, fields.length, scrollToRow],
   );
 
   /**
@@ -204,6 +308,16 @@ export function GridView({ data, canWrite, onOpenRecord }: Props) {
         move(-Math.floor(height / ROW_H), 0);
         return;
       }
+      // Ctrl+End и Ctrl+Home — то же, что в любой таблице. Здесь у них есть и
+      // второе назначение: End доводит до пустой строки в конце книги, а иначе
+      // до неё пришлось бы листать три с половиной тысячи строк колесом.
+      if ((key === "End" || key === "Home") && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        const r = key === "End" ? rowCount - 1 : 0;
+        scrollToRow(r);
+        setCursor({ r, c: cursor.c });
+        return;
+      }
       if (key === "Enter") {
         event.preventDefault();
         beginEdit(cursor.r, cursor.c);
@@ -213,7 +327,7 @@ export function GridView({ data, canWrite, onOpenRecord }: Props) {
         // Очистка ячейки — это правка пустой строкой, а не пропуск поля.
         // Пока формы отбрасывали пустое значение, стереть ошибочную сумму
         // было нечем: значение оставалось в книге при любом сохранении.
-        if (!canWrite) return;
+        if (!canWrite || cursor.r === draftAt) return;
         event.preventDefault();
         const row = rows[cursor.r];
         const field = fields[cursor.c];
@@ -228,7 +342,7 @@ export function GridView({ data, canWrite, onOpenRecord }: Props) {
         beginEdit(cursor.r, cursor.c, key);
       }
     },
-    [edit, cursor, move, beginEdit, height, canWrite, rows, fields, data],
+    [edit, cursor, move, beginEdit, height, canWrite, rows, fields, data, draftAt, rowCount, scrollToRow, setCursor],
   );
 
   const visible: number[] = [];
@@ -238,7 +352,7 @@ export function GridView({ data, canWrite, onOpenRecord }: Props) {
     <div
       className="bbc-grid"
       role="grid"
-      aria-rowcount={total}
+      aria-rowcount={rowCount}
       tabIndex={0}
       onKeyDown={onKeyDown}
       ref={scrollRef}
@@ -255,27 +369,37 @@ export function GridView({ data, canWrite, onOpenRecord }: Props) {
           ))}
         </div>
 
-        <div className="bbc-grid-body" style={{ height: total * ROW_H }}>
+        <div className="bbc-grid-body" style={{ height: rowCount * ROW_H }}>
           {visible.map((index) => {
-            const row = rows[index];
+            const draft = index === draftAt;
+            const row = draft ? undefined : rows[index];
             return (
               <div
-                key={row?.id ?? `slot-${index}`}
+                key={draft ? "draft" : row?.id ?? `slot-${index}`}
                 className="bbc-grid-row"
                 role="row"
                 aria-rowindex={index + 1}
                 style={{ transform: `translateY(${index * ROW_H}px)`, gridTemplateColumns: template }}
-                data-pending={row ? undefined : ""}
-                data-saving={row && saving === row.id ? "" : undefined}
+                // Незагруженная строка выглядит незагруженной, черновая —
+                // пустой. Это разные вещи: первая значит «данные едут», вторая
+                // «здесь можно печатать», и одинаковой заглушки им хватать не
+                // должно.
+                data-pending={!draft && !row ? "" : undefined}
+                data-draft={draft ? "" : undefined}
+                data-saving={
+                  (draft ? saving === DRAFT : row && saving === row.id) ? "" : undefined
+                }
               >
                 <button
                   type="button"
                   className="bbc-grid-num"
                   tabIndex={-1}
-                  title={row ? "Открыть карточкой" : undefined}
+                  title={
+                    draft ? "Новая строка: печатайте прямо здесь" : row ? "Открыть карточкой" : undefined
+                  }
                   onClick={() => row && onOpenRecord(row)}
                 >
-                  {index + 1}
+                  {draft ? "+" : index + 1}
                 </button>
 
                 {fields.map((field, c) => {
@@ -305,23 +429,33 @@ export function GridView({ data, canWrite, onOpenRecord }: Props) {
                           autoFocus
                           className="bbc-grid-input"
                           onChange={(next) => setEdit({ r: index, c, value: next })}
-                          onBlur={commit}
+                          // Без обёртки сюда уходило бы событие потери фокуса
+                          // как аргумент «куда шагнуть», и Tab переставал
+                          // двигать курсор: подтверждение по Enter или Tab
+                          // снимает поле ввода, поле теряет фокус, и второй
+                          // вызов затирал только что выбранную клетку.
+                          onBlur={() => commit()}
                           onKeyDown={(event) => {
                             if (event.key === "Escape") {
                               event.preventDefault();
                               setEdit(null);
+                              // Фокус обязан вернуться решётке и здесь, иначе
+                              // отменивший правку теряет клавиатуру.
+                              scrollRef.current?.focus();
                               return;
                             }
+                            // Шаг уходит в `commit`, а не выполняется отдельным
+                            // `move` следом: в пустой строке сохранение ждёт
+                            // ответа сервера, и курсор, сдвинутый до ответа,
+                            // возвращался бы на место после него.
                             if (event.key === "Enter") {
                               event.preventDefault();
-                              commit();
-                              move(1, 0);
+                              commit({ dr: 1, dc: 0 });
                               return;
                             }
                             if (event.key === "Tab") {
                               event.preventDefault();
-                              commit();
-                              move(0, event.shiftKey ? -1 : 1);
+                              commit({ dr: 0, dc: event.shiftKey ? -1 : 1 });
                             }
                           }}
                         />
