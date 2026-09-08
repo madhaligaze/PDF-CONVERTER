@@ -109,6 +109,16 @@ export function useBookTable(
   tableId: string,
   order: Order,
   query: string,
+  /**
+   * Сколько строк тянуть за раз.
+   *
+   * Карточкам хватает страницы: человек листает сверху вниз и до конца книги
+   * доходит редко. Таблице нужна вся книга сразу — Univer показывает лист
+   * целиком, и подгружать страницы под прокрутку в нём некуда: пустые строки
+   * посреди журнала читались бы как «здесь ничего нет». Замерено на пилотной
+   * книге: 3632 строки — 2,4 МБ и секунда, один раз на открытие.
+   */
+  pageSize: number = PAGE,
 ): BookTable {
   const [view, setView] = useState<TableView | null>(null);
   const [cache, setCache] = useState<Cache>(emptyCache);
@@ -125,7 +135,7 @@ export function useBookTable(
   // адресует тот кэш, для которого было создано. Ref для этого не годится —
   // читать его во время отрисовки нельзя, а после смены ключа старое
   // замыкание с ним полезло бы в чужой кэш.
-  const key = `${tableId}|${order}|${query}`;
+  const key = `${tableId}|${order}|${query}|${pageSize}`;
   const caches = useRef(new Map<string, Cache>());
   // `epoch` растёт на `reload()` и заставляет эффект перечитать вкладку.
   void epoch;
@@ -142,7 +152,7 @@ export function useBookTable(
     const cached = caches.current.get(key);
     if (cached) setCache(cached);
 
-    booksApi.table(tableId, PAGE, 0, order, query).then(
+    booksApi.table(tableId, pageSize, 0, order, query).then(
       (next) => {
         if (cancelled) return;
         setView(next);
@@ -170,30 +180,30 @@ export function useBookTable(
     return () => {
       cancelled = true;
     };
-  }, [tableId, order, query, key, epoch, fail]);
+  }, [tableId, order, query, key, epoch, pageSize, fail]);
 
   /** Страница под видимым куском. Уже привезённое и уже едущее не трогаем. */
   const ensure = useCallback(
     (from: number, to: number) => {
       const current = caches.current.get(key);
       if (!current || !tableId) return;
-      const first = Math.max(0, Math.floor(from / PAGE));
+      const first = Math.max(0, Math.floor(from / pageSize));
       const last = Math.min(
-        Math.floor(Math.max(0, to) / PAGE),
-        Math.max(0, Math.ceil(current.total / PAGE) - 1),
+        Math.floor(Math.max(0, to) / pageSize),
+        Math.max(0, Math.ceil(current.total / pageSize) - 1),
       );
       for (let page = first; page <= last; page += 1) {
         if (current.loaded.has(page) || current.loading.has(page)) continue;
         current.loading.add(page);
         const at = key;
-        booksApi.table(tableId, PAGE, page * PAGE, order, query).then(
+        booksApi.table(tableId, pageSize, page * pageSize, order, query).then(
           (next: Page) => {
             const store = caches.current.get(at);
             if (!store) return;
             store.loading.delete(page);
             store.loaded.add(page);
             next.rows.forEach((row, index) => {
-              store.rows[page * PAGE + index] = row;
+              store.rows[page * pageSize + index] = row;
             });
             if (caches.current.get(at) === store) setCache({ ...store });
           },
@@ -205,7 +215,7 @@ export function useBookTable(
         );
       }
     },
-    [tableId, order, query, key, fail],
+    [tableId, order, query, key, pageSize, fail],
   );
 
   /** Положить строку, пришедшую с сервера, во все кэши, где она встречается. */

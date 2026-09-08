@@ -271,7 +271,7 @@ function FieldCard({
   onBind: (field: BoardField, roleKey: string) => void;
 }) {
   return (
-    <div className={`bk-field card${field.role ? "" : " bk-field-free"}`}>
+    <div className={`bk-field${field.role ? "" : " bk-field-free"}`}>
       <div className="bk-field-head">
         <span className="bk-field-title" title={field.title}>
           {field.title || "без заголовка"}

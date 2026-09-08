@@ -1,4 +1,4 @@
-import type { WorkbookSnapshot } from "./univer-sheet";
+import type { WorkbookSnapshot } from "@/components/univer/sheet";
 
 /** Одна вкладка, как её отдаёт `GET /sources/{id}/tab`. */
 export type TabPayload = {

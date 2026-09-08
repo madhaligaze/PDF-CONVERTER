@@ -9,7 +9,7 @@ import { ImportDialog } from "./import-dialog";
 import { assembleWorkbook, type TabPayload } from "./assemble";
 import { ensureSheetFonts } from "./sheet-fonts";
 import { forgetSavedChoice, readSavedChoice, StartGate, type GateChoice } from "./start-gate";
-import { blankWorkbook, UniverSheet, type UniverSheetHandle, type WorkbookSnapshot } from "./univer-sheet";
+import { blankWorkbook, UniverSheet, type UniverSheetHandle, type WorkbookSnapshot } from "@/components/univer/sheet";
 
 type Origin = { spreadsheetId: string; title: string; tabs: string[] } | null;
 

@@ -2370,17 +2370,48 @@ html, body { overflow-x: clip; }
 .bk-refusals ul { display: flex; flex-direction: column; gap: 0.375rem; }
 .bk-refusals li { font-size: 0.8125rem; color: var(--accent-rose); }
 
+/* Список, а не сетка карточек.
+ *
+ * Карточками это выглядело как двадцать четыре одинаковых плитки, на которые
+ * человек смотрит и не понимает, что с ними делать: где вопрос, где ответ и
+ * зачем он здесь. Строка отвечает на это сама собой — слева колонка книги,
+ * справа список «чем она считается». Читается сверху вниз за один проход,
+ * и видно, где пусто. */
 .bk-field-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 0.625rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
 }
 .bk-fields { display: flex; flex-direction: column; gap: 0.75rem; }
 .bk-disclose { align-self: flex-start; }
 
-.bk-field { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.75rem; }
-.bk-field-free { border-style: dashed; }
-.bk-field-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.bk-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  align-items: center;
+  gap: 0.25rem 1rem;
+  padding: 0.4375rem 0.625rem;
+  border-radius: 0.5rem;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.bk-field:nth-child(odd) { background: var(--bg-raised); }
+/* Колонка, ни во что не превращающаяся, отличается приглушённым названием, а
+ * не пунктиром вокруг: в книге таких большинство (разлиновка, пометки), и
+ * обводить их все значило бы разрисовать весь экран. */
+.bk-field-free .bk-field-title { color: var(--text-secondary); font-weight: 400; }
+/* Место каждой части названо явно. Автоматическая раскладка сетки ставила бы
+ * их подряд, и выпадающий список уезжал под название — то есть ровно та
+ * колонка-простыня, от которой уходили. */
+.bk-field-head {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+}
 .bk-field-title {
   font-size: 0.8125rem;
   font-weight: 600;
@@ -2389,8 +2420,25 @@ html, body { overflow-x: clip; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.bk-field-stats { font-size: 0.6875rem; color: var(--text-muted); line-height: 1.5; }
-.bk-field-why { font-size: 0.6875rem; color: var(--text-muted); font-style: italic; }
+/* Статистика и пояснение уходят под название, во всю ширину строки: они
+ * подсказка, а не второй столбец. */
+.bk-field-stats {
+  grid-column: 1;
+  grid-row: 2;
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.bk-field-role { grid-column: 2; grid-row: 1 / span 2; min-width: 0; align-self: center; }
+.bk-field-role select { width: 100%; font-size: 0.8125rem; }
+
+@media (max-width: 640px) {
+  .bk-field { grid-template-columns: minmax(0, 1fr); }
+  .bk-field-role { grid-column: 1; grid-row: auto; }
+  .bk-field-stats { grid-row: auto; }
+  .bk-field-why { grid-row: auto; }
+}
+.bk-field-why { grid-column: 1; grid-row: 3; font-size: 0.6875rem; color: var(--text-muted); font-style: italic; }
 .bk-field-role select { width: 100%; font-size: 0.75rem; }
 
 /* ── Прочее ─────────────────────────────────────────────────────────────── */
@@ -2952,4 +3000,29 @@ html, body { overflow-x: clip; }
   background: var(--bg-surface);
   color: var(--text-primary) !important;
   font-weight: 600;
+}
+
+/* ── Книга в настоящей таблице (Univer) ─────────────────────────────────────
+ *
+ * Univer занимает всю выданную высоту и рисует себя сам. От нас — только
+ * коробка нужного роста: высоту считает `use-fill-height`, чтобы лист
+ * кончался там же, где окно, и второй прокрутки не появлялось.
+ */
+.bbc-sheet {
+  position: relative;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.75rem;
+  overflow: hidden;
+  background: var(--bg-surface);
+}
+/* Пока колонка заводится или убирается, лист не трогают: правка, посланная в
+ * середине перестройки, уехала бы в ещё не существующую колонку. */
+.bbc-sheet[data-busy]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: var(--bg-surface);
+  opacity: 0.5;
+  cursor: progress;
 }

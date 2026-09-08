@@ -21,7 +21,7 @@ import UniverPresetSheetsTableRuRU from "@univerjs/preset-sheets-table/locales/r
 import { createUniver, LocaleType, mergeLocales } from "@univerjs/presets";
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 
-import { registerRuNumfmtLocale } from "./numfmt-locale";
+import { registerRuNumfmtLocale } from "@/components/web-excel/numfmt-locale";
 
 import "@univerjs/preset-sheets-core/lib/index.css";
 import "@univerjs/preset-sheets-sort/lib/index.css";
@@ -42,9 +42,21 @@ export type UniverSheetHandle = {
   snapshot: () => WorkbookSnapshot | null;
 };
 
+/** Фасад Univer. Типы пакета сюда не тянем — они огромны и меняются от версии. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type UniverApi = any;
+
 type Props = {
   /** Книга. `null` — пустая таблица «с нуля». */
   data: WorkbookSnapshot | null;
+  /**
+   * Фасад готов, книга создана.
+   *
+   * Через него подписываются на правки и раздают права. Возвращённая функция
+   * вызывается при размонтировании — ею снимают подписки, иначе второй заход
+   * в раздел получит их вдвое.
+   */
+  onReady?: (api: UniverApi) => void | (() => void);
 };
 
 /**
@@ -72,10 +84,14 @@ export function blankWorkbook(name = "Новая таблица"): WorkbookSnaps
 }
 
 export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverSheet(
-  { data },
+  { data, onReady },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // Через ref, чтобы обработчик, пересозданный родителем, не пересоздавал
+  // книгу: эффект ниже монтируется один раз и живёт до размонтирования.
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const apiRef = useRef<any>(null);
 
@@ -132,9 +148,13 @@ export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverS
     // новая книга приходит не сменой пропа, а пересозданием компонента через
     // `key` у родителя, поэтому значение на монтировании — всегда нужное.
     univerAPI.createWorkbook(data ?? blankWorkbook());
+    // `onReady` берётся из пропа по той же причине, что и `data`: компонент
+    // монтируется один раз на книгу, новая приходит пересозданием через `key`.
+    const detach = onReadyRef.current?.(univerAPI);
 
     return () => {
       try {
+        detach?.();
         univerAPI.dispose();
       } catch {
         /* повторный dispose при быстром размонтировании — не ошибка */

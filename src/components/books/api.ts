@@ -172,6 +172,47 @@ export const booksApi = {
     ),
   board: (tableId: string) => request<Board>(`/tables/${tableId}/board`),
 
+  /**
+   * Колонки книги. Менять их может только администратор — сервер закрывает эти
+   * маршруты отдельно, потому что колонка общая: убравший «Проект» убрал бы его
+   * у всех, кто ведёт книгу, и заодно из расчётов дашборда.
+   *
+   * `after` — ключ колонки, следом за которой встать. Смысл пустого значения у
+   * двух операций разный и объявлен на сервере: при заведении это «в конец»
+   * (так дописывают столбец в любой таблице), при переносе — «в самое начало»,
+   * иначе первую позицию занять было бы нечем.
+   */
+  addField: (
+    tableId: string,
+    field: { title: string; type?: string; after?: string | null },
+  ) =>
+    request<Field>(`/tables/${tableId}/fields`, {
+      method: "POST",
+      body: JSON.stringify(field),
+    }),
+
+  updateField: (
+    tableId: string,
+    key: string,
+    patch: { title?: string; type?: string; after?: string | null; move?: boolean },
+  ) =>
+    request<Field>(`/tables/${tableId}/fields/${encodeURIComponent(key)}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+
+  /** Сколько строк держат значение в колонке — вопрос ПЕРЕД её удалением. */
+  fieldUsage: (tableId: string, key: string) =>
+    request<{ filled: number }>(
+      `/tables/${tableId}/fields/${encodeURIComponent(key)}/usage`,
+    ),
+
+  removeField: (tableId: string, key: string) =>
+    request<{ hidden: number }>(
+      `/tables/${tableId}/fields/${encodeURIComponent(key)}`,
+      { method: "DELETE" },
+    ),
+
   bind: (tableId: string, fieldKey: string, roleKey: string | null) =>
     request<Board>(`/tables/${tableId}/bindings`, {
       method: "PUT",

@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { booksApi, type Board, type Book, type Row } from "@/components/books/api";
@@ -7,7 +8,18 @@ import { BindingBoard } from "@/components/books/binding-board";
 import { ImportDialog } from "@/components/books/import-dialog";
 import { useBookTable, type Order } from "@/components/books/use-book-table";
 import { CardsView } from "@/components/bbc-dashboard/blocks/books/cards-view";
-import { GridView } from "@/components/bbc-dashboard/blocks/books/grid-view";
+/**
+ * Лист грузится только в браузере.
+ *
+ * Univer при загрузке модуля трогает `Path2D`, которого на сервере нет, и
+ * обычный импорт роняет всю страницу дашборда с «Path2D is not defined» —
+ * причём не таблицу, а весь раздел целиком. Так же поступает и «Таблицы»:
+ * см. `web-excel/web-excel-client.tsx`.
+ */
+const BooksSheet = dynamic(
+  () => import("@/components/bbc-dashboard/blocks/books/books-sheet").then((m) => m.BooksSheet),
+  { ssr: false, loading: () => <p className="bbc-reg-hint">Открываем таблицу…</p> },
+);
 import { RecordModal } from "@/components/bbc-dashboard/blocks/books/record-modal";
 
 /**
@@ -44,6 +56,9 @@ const ORDER: Record<Mode, Order> = { grid: "position", cards: "recent" };
 
 const MODE_KEY = "bbc.books.mode";
 
+/** Сколько строк тянуть для таблицы. Больше самой большой книги, что мы видели. */
+const WHOLE_BOOK = 10000;
+
 /**
  * Каким видом открыть раздел.
  *
@@ -69,9 +84,17 @@ function rememberedMode(): Mode {
 type Props = {
   /** Писать может только вошедший: у ссылки отдела нет автора для подписи. */
   canWrite: boolean;
+  /**
+   * Полные права на книгу: состав колонок и их смысл.
+   *
+   * Колонка общая для всех, кто ведёт книгу, поэтому её заводит и убирает
+   * только администратор. Сотруднику тот же лист выдан шаблоном — заполнять,
+   * дописывать строки, сортировать для себя. Сервер проверяет это заново.
+   */
+  isAdmin: boolean;
 };
 
-export function BooksBlock({ canWrite }: Props) {
+export function BooksBlock({ canWrite, isAdmin }: Props) {
   const [books, setBooks] = useState<Book[]>([]);
   // Выбранная вкладка — не состояние, а вывод: пусто означает «первая из
   // списка». Присваивать её в эффекте пришлось бы после загрузки книг, а это
@@ -130,7 +153,9 @@ export function BooksBlock({ canWrite }: Props) {
     return () => clearTimeout(timer);
   }, [typed]);
 
-  const data = useBookTable(tableId, ORDER[mode], query);
+  // Таблице нужна вся книга сразу, карточкам хватает страницы. Подробности —
+  // в самом хуке, там же замер на пилотной книге.
+  const data = useBookTable(tableId, ORDER[mode], query, mode === "grid" ? WHOLE_BOOK : undefined);
 
   /** Разметка читается только когда её открыли: на ежедневный ввод она не нужна. */
   const boardHere = board && board.table.id === tableId ? board : null;
@@ -285,14 +310,24 @@ export function BooksBlock({ canWrite }: Props) {
               Добавить запись
             </button>
           )}
-          <button
-            className="btn-ghost text-xs px-3 py-1.5"
-            aria-pressed={columnsOpen}
-            onClick={() => setColumnsOpen((open) => !open)}
-          >
-            Колонки
-          </button>
-          {canWrite && (
+          {/*
+            «Что означают колонки» — настройка, и показана она только тому, кто
+            её делает. Раньше здесь стояла кнопка «Колонки», открывавшая набор
+            карточек: человеку, пришедшему заполнить журнал, она не сообщала ни
+            что это, ни зачем ему туда. Разметка нужна раз при заведении книги,
+            а мешала каждый день — и это ровно тот информационный шум, из-за
+            которого раздел выглядел неготовым.
+          */}
+          {isAdmin && (
+            <button
+              className="btn-ghost text-xs px-3 py-1.5"
+              aria-pressed={columnsOpen}
+              onClick={() => setColumnsOpen((open) => !open)}
+            >
+              Что означают колонки
+            </button>
+          )}
+          {isAdmin && (
             <button
               className="btn-ghost text-xs px-3 py-1.5"
               onClick={() => setImporting(true)}
@@ -325,17 +360,19 @@ export function BooksBlock({ canWrite }: Props) {
           {query ? "По этому запросу в книге ничего нет" : "В этой вкладке пока нет строк"}
         </p>
       ) : mode === "grid" ? (
-        <GridView
-          // Ключ пересобирает таблицу при смене вкладки или запроса. Без него
-          // новая выборка досталась бы прежней прокрутке: книгу открывают в
-          // конце, и «конец» у каждой выборки свой.
+        <BooksSheet
+          // Ключ пересобирает лист при смене вкладки или запроса: Univer
+          // создаёт книгу один раз, на монтировании.
           key={`${tableId}|${query}`}
-          data={data}
+          tableId={tableId}
+          name={data.meta?.name ?? "Книга"}
+          fields={data.fields}
+          rows={data.rows}
+          total={data.total}
+          isAdmin={isAdmin}
           canWrite={canWrite}
-          // Во время поиска дописывать нечего: новая строка либо не подойдёт
-          // под запрос и исчезнет на глазах, либо подойдёт случайно.
-          canAppend={!query}
-          onOpenRecord={setEditing}
+          onStructureChanged={data.reload}
+          onError={setListError}
         />
       ) : (
         // Ключ пересобирает вид при смене вкладки или запроса: у карточек своё

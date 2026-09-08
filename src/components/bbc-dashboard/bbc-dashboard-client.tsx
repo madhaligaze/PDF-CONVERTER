@@ -581,6 +581,9 @@ export function BbcDashboardClient() {
                     // неё: у ссылки нет автора, и подписать запись нечем —
                     // то же правило, что в журнале касаний.
                     canWrite={!!me?.authenticated && !me?.link_label}
+                    // Состав колонок и их смысл — за администратором: колонка
+                    // одна на всех, кто ведёт книгу.
+                    isAdmin={isAdmin}
                   />
                 ) : null}
                 {activeBlock.key === "reports" ? <ReportsBlock rows={rows} mode={mode} /> : null}
