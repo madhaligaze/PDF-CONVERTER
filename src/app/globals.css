@@ -2564,6 +2564,276 @@ html, body { overflow-x: clip; }
 .bbc-reg-form .bbc-modal-body { flex: 1; min-height: 0; overflow-y: auto; }
 .bbc-reg-foot { flex-shrink: 0; }
 
+/* ── Два вида одной книги: таблица и карточки ───────────────────────────────
+ *
+ * Переключатель, счётчик, решётка и карточки. Всё, что ниже, обслуживает одну
+ * мысль: это один и тот же список строк, показанный двумя способами.
+ */
+
+.bbc-seg {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 0.625rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-subtle);
+}
+.bbc-seg-btn {
+  padding: 0.3125rem 0.875rem;
+  border-radius: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.bbc-seg-btn:hover { color: var(--text-primary); }
+/* Выбранная сторона — фоном и весом подписи. Не точкой и не цветом: цвет в
+ * этом продукте означает отказ, а выбранный вид — это не отказ. */
+.bbc-seg-btn[aria-pressed="true"] {
+  background: var(--bg-active);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.bbc-books-count {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.bbc-books-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  margin-left: auto;
+}
+.btn-ghost[aria-pressed="true"] {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+/* «Убрать» стоит слева, отдельно от «Отмена» и «Сохранить»: соседство с
+ * кнопкой сохранения делает промах по ней необратимым. */
+.bbc-reg-drop { margin-right: auto; color: var(--accent-rose); }
+
+/* ── Решётка ────────────────────────────────────────────────────────────────
+ *
+ * Прокручивается таблица, а не страница. Своя высота обязательна: без неё 3634
+ * строки растягивают страницу на семь тысяч пикселей, шапка с названиями
+ * колонок уезжает вверх, и на середине книги человек не знает, в какой он
+ * колонке. Ровно это и было видно до правки.
+ */
+.bbc-grid {
+  position: relative;
+  overflow: auto;
+  /* Высоту задаёт разметка, замеряя расстояние до низа окна (см.
+   * `use-fill-height.ts`). Здесь она стоит запасной на те мгновения, пока
+   * замер ещё не случился, — чтобы таблица не мелькнула во всю свою длину. */
+  height: clamp(15rem, 60vh, 46rem);
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.75rem;
+  background: var(--bg-surface);
+  outline: none;
+}
+.bbc-grid:focus-visible { border-color: var(--accent-line); }
+.bbc-grid-inner { position: relative; min-width: 100%; }
+
+.bbc-grid-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: grid;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border-base);
+}
+.bbc-grid-hcell {
+  padding: 0.4375rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-right: 1px solid var(--border-subtle);
+}
+/* Шапка номерной колонки закреплена по обеим осям, поэтому её слой выше
+ * и шапки, и номеров: иначе при прокрутке вбок под неё заезжают ячейки. */
+.bbc-grid-head .bbc-grid-num {
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  background: var(--bg-raised);
+}
+
+.bbc-grid-body { position: relative; }
+.bbc-grid-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: grid;
+  height: 30px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.bbc-grid-row:hover { background: var(--bg-hover); }
+
+/* Номер строки — он же вход в карточку. Липнет слева, чтобы на 24-й колонке
+ * было видно, в какой ты строке. */
+.bbc-grid-num {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 0.5rem;
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-base);
+}
+.bbc-grid-row:hover .bbc-grid-num { background: var(--bg-hover); color: var(--text-secondary); }
+
+.bbc-grid-cell {
+  display: flex;
+  align-items: center;
+  padding: 0 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-right: 1px solid var(--border-subtle);
+  cursor: cell;
+}
+.bbc-grid-cell[data-num] { justify-content: flex-end; font-variant-numeric: tabular-nums; }
+/* Выделенная ячейка — рамкой внутрь, чтобы не сдвигать соседей на пиксель. */
+.bbc-grid-cell[data-on] {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  color: var(--text-primary);
+  border-radius: 2px;
+}
+.bbc-grid-cell[data-edit] { padding: 0; overflow: visible; }
+.bbc-grid-input {
+  width: 100%;
+  height: 28px;
+  padding: 0 0.4375rem;
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 2px solid var(--accent);
+  border-radius: 2px;
+  outline: none;
+}
+
+/* Строка, которой ещё нет на руках, выглядит незагруженной, а не пустой:
+ * пустая читалась бы как «в книге здесь ничего нет». */
+.bbc-grid-row[data-pending] .bbc-grid-cell::after {
+  content: "";
+  width: 60%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-hover);
+}
+.bbc-grid-row[data-saving] .bbc-grid-num { color: var(--text-primary); }
+
+/* ── Карточки ───────────────────────────────────────────────────────────── */
+
+.bbc-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  gap: 0.625rem;
+  /* Как у таблицы: высоту ставит замер, здесь — запасная на первый кадр. */
+  height: clamp(15rem, 60vh, 46rem);
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+.bbc-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  min-height: 6.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.75rem;
+  background: var(--bg-surface);
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+.bbc-card:hover { border-color: var(--border-strong); }
+.bbc-card[data-pending] { opacity: 0.4; }
+/* Вся карточка кликабельна, но кнопка одна и лежит поверх: вложенные кнопки
+ * недопустимы, а обработчик на article не даёт ни фокуса, ни клавиатуры. */
+.bbc-card-open { position: absolute; inset: 0; border-radius: 0.75rem; }
+.bbc-card-open:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+
+.bbc-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.bbc-card-head h4 {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Знак, а не цвет: приход и расход различаются «+» и «−», и это читается
+ * одинаково в обеих темах и у тех, кто цвет различает плохо. */
+.bbc-card-sum {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.bbc-card-when { font-size: 0.6875rem; color: var(--text-muted); }
+
+.bbc-card-lines { display: flex; flex-direction: column; gap: 0.1875rem; margin-top: auto; }
+.bbc-card-lines > div {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: space-between;
+  font-size: 0.6875rem;
+  min-width: 0;
+}
+/* Обе половины строки обязаны уметь сжиматься и обрезаться. Пока `dt` был
+ * `nowrap` без `min-width: 0`, длинное название счёта не обрезалось, а
+ * налезало на подпись слева, и в карточке читалось «Счёт (касса/бВиртуальный
+ * Kaspi…» — две надписи в одном месте. */
+.bbc-card-lines dt {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bbc-card-lines dd {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+.bbc-cards-end { grid-column: 1 / -1; height: 1px; }
+
+/* Карточка, только что заведённая, отмечена рамкой на один взгляд — иначе в
+ * списке на три с половиной тысячи её не найти. */
+.bbc-card[data-fresh] { border-color: var(--accent-line); }
+
+/* На телефоне кнопки раздела переносятся на свою строку и прижимаются влево:
+ * `margin-left: auto` там отталкивал их к правому краю поодиночке. Высоту
+ * таблицы отдельным правилом для телефона больше не задаём — её считает
+ * замер, и доля окна тут всегда врала: над таблицей то две панели, то четыре. */
+@media (max-width: 640px) {
+  .bbc-books-acts { margin-left: 0; }
+}
+
 /* ── Переключатель источника цифр в шапке дашборда ──────────────────────────
  *
  * Активная сторона отличается фоном и весом подписи, а не точкой рядом.

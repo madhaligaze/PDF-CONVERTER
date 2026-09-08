@@ -2,48 +2,69 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { booksApi, type Board, type Book, type TableView } from "@/components/books/api";
+import { booksApi, type Board, type Book, type Row } from "@/components/books/api";
 import { BindingBoard } from "@/components/books/binding-board";
 import { ImportDialog } from "@/components/books/import-dialog";
+import { useBookTable, type Order } from "@/components/books/use-book-table";
+import { CardsView } from "@/components/bbc-dashboard/blocks/books/cards-view";
+import { GridView } from "@/components/bbc-dashboard/blocks/books/grid-view";
 import { RecordModal } from "@/components/bbc-dashboard/blocks/books/record-modal";
 
 /**
  * «Книги» — единственное место, где живут внутренние копии книг компании.
  *
- * Почему раздел один, хотя раньше их было два
- * ───────────────────────────────────────────
- * Сначала я развёл ввод и разметку по разным поверхностям: страница `/books`
- * с колонками и гридом, и раздел «Реестры» в сайдбаре с формой. Данные там
- * были одни и те же, а названий у одного объекта получилось три — «книга»,
- * «реестр», «вкладка», — и связи между экранами не было видно ниоткуда.
- * Человек, открывший это впервые, не мог понять, зачем ему два списка одних и
- * тех же строк.
+ * Два вида на одну книгу
+ * ──────────────────────
+ * Одну и ту же вкладку показываем таблицей и карточками, и переключатель между
+ * ними — не украшение. Финансист, тридцать лет работавший в Google Sheets,
+ * ищет знакомую решётку и не станет заполнять формы; человек, пришедший
+ * отметить три платежа, в решётке из двадцати четырёх колонок теряется. Ни
+ * один из этих двух не должен уходить обратно в Google — а уйдёт тот, кому мы
+ * не дали привычную поверхность.
  *
- * Теперь поверхность одна, а разделение — по вкладкам внутри неё: «Записи» для
- * ежедневного ввода, «Колонки» для разметки, которую делают редко. Право
- * доступа осталось прежним (`registries`): у выданных учёток оно уже записано,
- * и переименование ключа отняло бы у них раздел.
+ * База под видами одна, и это главное свойство раздела: `books.rows`, никаких
+ * вторых копий. Строки для обоих видов держит `useBookTable`, правка идёт через
+ * него же, поэтому исправленное в таблице видно в карточках сразу — не после
+ * обновления страницы и не «когда-нибудь синхронизируется».
+ *
+ * Разметка колонок стоит рядом с переключателем, но в него не входит. Вид —
+ * это как показывать одни и те же строки, а разметка — что эти колонки
+ * означают для расчётов; смешивать их в одном ряду значило бы предлагать
+ * человеку «третий способ посмотреть журнал», которым она не является.
  *
  * Отличие от журнала касаний, который стоит рядом в меню: касание живёт только
  * у нас, в книгах его нет вовсе. Здесь наоборот — запись ложится в книгу, из
  * которой дашборд считает цифры.
  */
 
-/**
- * Роли в порядке того, насколько они помогают узнать запись.
- *
- * Порядок колонок в книге для этого не годится: в журнале первыми стоят «ДДС
- * Мес» и «ОПиУ период» — служебные величины для сводок, по которым человек не
- * отличит одну операцию от другой. Узнают запись по дате, контрагенту и сумме.
- */
-const IDENTIFYING_ROLES = [
-  "entry_date", "signed_at", "period_start", "invoice_date", "avr_date",
-  "client", "counterparty", "contract_no", "invoice_no",
-  "inflow", "outflow", "contract_amount", "paid_amount", "saldo_end", "debt",
-  "account", "firm", "category", "subcategory", "status", "comment",
-];
+type Mode = "grid" | "cards";
 
-type View = "rows" | "columns";
+/** Порядок строк у вида — свойство вида, а не настройка. См. `useBookTable`. */
+const ORDER: Record<Mode, Order> = { grid: "position", cards: "recent" };
+
+const MODE_KEY = "bbc.books.mode";
+
+/**
+ * Каким видом открыть раздел.
+ *
+ * Выбор человека сильнее всего и живёт между заходами. Пока выбора нет, вид
+ * подсказывает экран: на телефоне таблица из двадцати четырёх колонок в 390
+ * пикселях — это не таблица, а щель, в которую видно две колонки. Показать
+ * такое первым — верный способ убедить человека, что в приложении работать
+ * нельзя, и вернуть его в Google Sheets.
+ *
+ * Раз выбрав, он получит своё на любом экране: запомненное не перебивается
+ * шириной.
+ */
+function rememberedMode(): Mode {
+  try {
+    const saved = localStorage.getItem(MODE_KEY);
+    if (saved === "cards" || saved === "grid") return saved;
+  } catch {
+    /* приватное окно — считаем, что выбора не было */
+  }
+  return typeof window !== "undefined" && window.innerWidth < 640 ? "cards" : "grid";
+}
 
 type Props = {
   /** Писать может только вошедший: у ссылки отдела нет автора для подписи. */
@@ -56,15 +77,19 @@ export function BooksBlock({ canWrite }: Props) {
   // списка». Присваивать её в эффекте пришлось бы после загрузки книг, а это
   // лишний проход отрисовки и повод для гонки, если книги приедут дважды.
   const [chosen, setChosen] = useState("");
-  const [view, setView] = useState<View>("rows");
-  const [table, setTable] = useState<TableView | null>(null);
+  // Лениво из `localStorage`: до входа в дашборд этот раздел на сервере не
+  // отрисовывается вовсе (пока не пришёл ответ «кто вы», на экране стоит
+  // заставка), поэтому расхождения разметки с серверной здесь быть не может.
+  const [mode, setMode] = useState<Mode>(rememberedMode);
+  const [columnsOpen, setColumnsOpen] = useState(false);
   const [board, setBoard] = useState<Board | null>(null);
-  const [editing, setEditing] = useState<TableView["rows"][number] | null>(null);
+  const [editing, setEditing] = useState<Row | null>(null);
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [search, setSearch] = useState("");
+  const [typed, setTyped] = useState("");
+  const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [listError, setListError] = useState("");
 
   const loadBooks = useCallback(
     () =>
@@ -72,7 +97,7 @@ export function BooksBlock({ canWrite }: Props) {
         .books()
         .then((data) => setBooks(data.books))
         .catch((err) =>
-          setError(err instanceof Error ? err.message : "Не удалось получить книги"),
+          setListError(err instanceof Error ? err.message : "Не удалось получить книги"),
         )
         .finally(() => setLoading(false)),
     [],
@@ -92,98 +117,86 @@ export function BooksBlock({ canWrite }: Props) {
           id: tab.id,
           name: tab.name,
           book: book.title,
-          imported_at: book.imported_at,
         })),
       ),
     [books],
   );
 
   const tableId = chosen || tabs[0]?.id || "";
-  const current = tabs.find((tab) => tab.id === tableId);
 
+  /** Поиск уходит на сервер не на каждую букву: книга большая, а рук у неё одни. */
   useEffect(() => {
-    if (!tableId) return;
-    // Флаг отмены закрывает настоящую гонку: при быстром переключении вкладок
-    // ответ по прежней мог прийти позже и затереть новую. Заодно исчезает
-    // претензия линтера — состояние меняется в колбэке, а не в теле эффекта.
-    let cancelled = false;
-    booksApi.table(tableId, 200, 0, "recent").then(
-      (next) => {
-        if (cancelled) return;
-        setTable(next);
-        setError("");
-      },
-      (err: unknown) => {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Не удалось открыть книгу");
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [tableId]);
+    const timer = setTimeout(() => setQuery(typed.trim()), 350);
+    return () => clearTimeout(timer);
+  }, [typed]);
 
-  /**
-   * Табло от прежней вкладки — не табло, а мусор. Свежесть выводится из самого
-   * ответа, а не сбрасывается в эффекте: сброс состояния прямо в теле эффекта
-   * запускает каскад отрисовок, и линтер справедливо на него ругается.
-   */
-  const boardHere = board && board.table.id === tableId ? board : null;
+  const data = useBookTable(tableId, ORDER[mode], query);
 
   /** Разметка читается только когда её открыли: на ежедневный ввод она не нужна. */
+  const boardHere = board && board.table.id === tableId ? board : null;
+
   useEffect(() => {
-    if (view !== "columns" || !tableId || boardHere) return;
+    if (!columnsOpen || !tableId || boardHere) return;
     let cancelled = false;
     booksApi.board(tableId).then(
       (next) => {
         if (!cancelled) setBoard(next);
       },
-      (err: unknown) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Не удалось прочитать разметку");
-        }
+      () => {
+        /* ошибку покажет общий обработчик ниже при следующем действии */
       },
     );
     return () => {
       cancelled = true;
     };
-  }, [view, tableId, boardHere]);
+  }, [columnsOpen, tableId, boardHere]);
 
-  /** Колонки для показа — те, по которым запись узнают, а не первые попавшиеся. */
-  const columns = useMemo(() => {
-    if (!table) return [];
-    const bindings = table.bindings ?? {};
-    const fields = (table.fields ?? []).filter(
-      (field) => !field.title.match(/^[.\-\s]*$/),
-    );
-    const bound = fields.filter((field) => bindings[field.key]);
-    if (!bound.length) return fields.slice(0, 6);
-    const rank = (key: string) => {
-      const index = IDENTIFYING_ROLES.indexOf(bindings[key]);
-      return index === -1 ? IDENTIFYING_ROLES.length : index;
-    };
-    return [...bound]
-      .sort((a, b) => rank(a.key) - rank(b.key) || a.position - b.position)
-      .slice(0, 6);
-  }, [table]);
+  const chooseMode = (next: Mode) => {
+    setMode(next);
+    setColumnsOpen(false);
+    try {
+      localStorage.setItem(MODE_KEY, next);
+    } catch {
+      /* приватное окно — режим просто не запомнится */
+    }
+  };
 
-  const rows = useMemo(() => {
-    if (!table) return [];
-    const needle = search.trim().toLowerCase();
-    if (!needle) return table.rows ?? [];
-    return (table.rows ?? []).filter((row) =>
-      Object.values(row.values ?? {}).some((value) =>
-        String(value ?? "").toLowerCase().includes(needle),
-      ),
-    );
-  }, [table, search]);
-
-  const boundCount = useMemo(
-    () => Object.keys(table?.bindings ?? {}).length,
-    [table],
-  );
+  const error = listError || data.error;
 
   if (loading) return <p className="bbc-reg-hint">Читаем книги…</p>;
+
+  if (tabs.length === 0) {
+    return (
+      <div className="bbc-reg">
+        {error && (
+          <p className="bbc-reg-error" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="bbc-reg-empty">
+          <h3>Пока ни одной книги</h3>
+          <p>
+            Приложение разберёт колонки привезённой книги и покажет, что нашло,
+            прежде чем что-либо применить. В исходную книгу оно не пишет.
+          </p>
+          {canWrite && (
+            <button className="btn-primary" onClick={() => setImporting(true)}>
+              Привезти книгу из Google
+            </button>
+          )}
+        </div>
+        <ImportDialog
+          open={importing}
+          onClose={() => setImporting(false)}
+          onImported={(id) => {
+            loadBooks();
+            setChosen(id);
+            setColumnsOpen(true);
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="bbc-reg">
@@ -193,161 +206,140 @@ export function BooksBlock({ canWrite }: Props) {
         </p>
       )}
 
-      {tabs.length === 0 ? (
-        <div className="bbc-reg-empty">
-          <h3>Пока ни одной книги</h3>
-          <p>
-            Привезите книгу из Google — приложение само разберёт колонки,
-            определит их типы и предложит, какая из них какую величину означает.
-            Ничего не применяется без подтверждения, и в исходную книгу ничего не
-            записывается.
-          </p>
+      <div className="bbc-reg-bar">
+        <label className="bbc-reg-pick">
+          <span className="sr-only">Книга и вкладка</span>
+          <select
+            className="input-field"
+            value={tableId}
+            onChange={(event) => {
+              setChosen(event.target.value);
+              setTyped("");
+              setColumnsOpen(false);
+              data.forgetLastAdded();
+            }}
+          >
+            {tabs.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.book} — вкладка «{item.name}»
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <input
+          className="input-field bbc-reg-search"
+          type="search"
+          placeholder="Поиск по книге"
+          value={typed}
+          onChange={(event) => setTyped(event.target.value)}
+        />
+
+        {/* Счётчик — не подпись, а ответ поиска. Он же единственное место, где
+            видно размер книги: раньше «нашлось 12» считалось по двумстам
+            загруженным строкам из 3634 и было неотличимо от правды. */}
+        <output className="bbc-books-count">
+          {!data.ready
+            ? ""
+            : query
+              ? `${data.total.toLocaleString("ru-RU")} из ${data.totalAll.toLocaleString("ru-RU")}`
+              : data.total.toLocaleString("ru-RU")}
+        </output>
+      </div>
+
+      <div className="bbc-reg-bar">
+        <div className="bbc-seg" role="group" aria-label="Как показывать книгу">
+          <button
+            type="button"
+            className="bbc-seg-btn"
+            aria-pressed={mode === "grid" && !columnsOpen}
+            onClick={() => chooseMode("grid")}
+          >
+            Таблица
+          </button>
+          <button
+            type="button"
+            className="bbc-seg-btn"
+            aria-pressed={mode === "cards" && !columnsOpen}
+            onClick={() => chooseMode("cards")}
+          >
+            Карточки
+          </button>
+        </div>
+
+        <div className="bbc-books-acts">
           {canWrite && (
-            <button className="btn-primary" onClick={() => setImporting(true)}>
-              Привезти книгу из Google
+            <button
+              className="btn-primary text-xs px-3 py-1.5"
+              onClick={() => setAdding(true)}
+            >
+              Добавить запись
+            </button>
+          )}
+          <button
+            className="btn-ghost text-xs px-3 py-1.5"
+            aria-pressed={columnsOpen}
+            onClick={() => setColumnsOpen((open) => !open)}
+          >
+            Колонки
+          </button>
+          {canWrite && (
+            <button
+              className="btn-ghost text-xs px-3 py-1.5"
+              onClick={() => setImporting(true)}
+            >
+              Привезти книгу
             </button>
           )}
         </div>
+      </div>
+
+      {columnsOpen ? (
+        boardHere ? (
+          <BindingBoard
+            board={boardHere}
+            onChange={(next) => {
+              setBoard(next);
+              // Привязки меняют смысл колонок для обоих видов — карточка
+              // собирается по ролям. Перечитываем вкладку, а не надеемся,
+              // что человек сам догадается обновить страницу.
+              data.reload();
+            }}
+          />
+        ) : (
+          <p className="bbc-reg-hint">Читаем разметку…</p>
+        )
+      ) : !data.ready ? (
+        <p className="bbc-reg-hint">Открываем вкладку…</p>
+      ) : data.total === 0 ? (
+        <p className="bbc-reg-hint">
+          {query ? "По этому запросу в книге ничего нет" : "В этой вкладке пока нет строк"}
+        </p>
+      ) : mode === "grid" ? (
+        <GridView data={data} canWrite={canWrite} onOpenRecord={setEditing} />
       ) : (
-        <>
-          <div className="bbc-reg-bar">
-            <label className="bbc-reg-pick">
-              <span className="sr-only">Книга и вкладка</span>
-              <select
-                className="input-field"
-                value={tableId}
-                onChange={(event) => {
-                  setChosen(event.target.value);
-                  setSearch("");
-                }}
-              >
-                {tabs.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.book} — вкладка «{item.name}»
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            {canWrite && (
-              <button
-                className="btn-ghost text-xs px-3 py-1.5"
-                onClick={() => setImporting(true)}
-              >
-                Привезти книгу из Google
-              </button>
-            )}
-          </div>
-
-          {current?.imported_at && (
-            <p className="bbc-reg-hint">
-              {/* Точку в конце не ставим: русская локаль уже заканчивает дату
-                  на «г.», и получалось «5 сентября 2026 г..». */}
-              Привезена{" "}
-              {new Date(current.imported_at).toLocaleDateString("ru-RU", {
-                day: "numeric",
-                month: "long",
-                year: "numeric",
-              })}
-            </p>
-          )}
-
-          <nav className="bbc-reg-tabs" aria-label="Что показывать">
-            <button
-              className={view === "rows" ? "bbc-reg-tab bbc-reg-tab-on" : "bbc-reg-tab"}
-              onClick={() => setView("rows")}
-            >
-              Записи{table ? ` · ${table.total}` : ""}
-            </button>
-            <button
-              className={view === "columns" ? "bbc-reg-tab bbc-reg-tab-on" : "bbc-reg-tab"}
-              onClick={() => setView("columns")}
-            >
-              Колонки
-              {table ? ` · ${boundCount} из ${(table.fields ?? []).length}` : ""}
-            </button>
-          </nav>
-
-          {view === "rows" && table && (
-            <>
-              <div className="bbc-reg-bar">
-                <input
-                  className="input-field bbc-reg-search"
-                  placeholder="Поиск по записям"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                />
-                {canWrite && (
-                  <button
-                    className="btn-primary text-xs px-3 py-1.5"
-                    onClick={() => setAdding(true)}
-                  >
-                    Добавить запись
-                  </button>
-                )}
-              </div>
-
-              <p className="bbc-reg-hint">
-                {search
-                  ? `Найдено ${rows.length} из ${table.rows.length} загруженных`
-                  : `Показаны ${table.rows.length} последних записей из ${table.total}`}
-                {canWrite ? " · нажмите на строку, чтобы поправить" : ""}
-              </p>
-
-              <div className="bbc-reg-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      {columns.map((field) => (
-                        <th key={field.key}>{field.title}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((row) => (
-                      <tr
-                        key={row.id}
-                        className={canWrite ? "bbc-reg-row-clickable" : undefined}
-                        onClick={canWrite ? () => setEditing(row) : undefined}
-                      >
-                        {columns.map((field) => (
-                          <td key={field.key}>{String(row.values?.[field.key] ?? "")}</td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-
-          {view === "columns" &&
-            (boardHere ? (
-              <BindingBoard board={boardHere} onChange={setBoard} />
-            ) : (
-              <p className="bbc-reg-hint">Читаем разметку…</p>
-            ))}
-        </>
+        // Ключ пересобирает вид при смене вкладки или запроса: у карточек своё
+        // состояние — докуда долистали, — и переносить его на другую книгу
+        // означало бы показать её сразу с середины.
+        <CardsView
+          key={`${tableId}|${query}`}
+          data={data}
+          canWrite={canWrite}
+          onOpenRecord={setEditing}
+        />
       )}
 
-      {table && (adding || editing) && (
+      {data.ready && (adding || editing) && (
         <RecordModal
-          table={table}
+          // Одна открытая запись — одна форма. Без ключа форма, открытая на
+          // другой строке, донашивала бы состояние предыдущей.
+          key={editing?.id ?? "new"}
+          data={data}
           row={editing}
+          canWrite={canWrite}
           onClose={() => {
             setAdding(false);
             setEditing(null);
-          }}
-          // Перечитываем прямо здесь, а не через эффект: это обработчик
-          // события, и правило про setState в эффектах на него не
-          // распространяется. Попытка обновлять сменой ключа не срабатывала —
-          // повторного запроса после сохранения не уходило вовсе.
-          onSaved={async () => {
-            try {
-              setTable(await booksApi.table(tableId, 200, 0, "recent"));
-            } catch {
-              /* список остаётся прежним; запись всё равно сохранена */
-            }
           }}
         />
       )}
@@ -358,7 +350,7 @@ export function BooksBlock({ canWrite }: Props) {
         onImported={(id) => {
           loadBooks();
           setChosen(id);
-          setView("columns");
+          setColumnsOpen(true);
         }}
       />
     </div>

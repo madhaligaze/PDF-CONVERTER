@@ -70,20 +70,32 @@ export type Board = {
   unbound: string[];
 };
 
+export type Field = {
+  key: string;
+  title: string;
+  type: string;
+  position: number;
+  /** Значения колонки-списка, собранные при импорте. Пусто — колонка не список. */
+  options: string[];
+};
+
+export type Row = {
+  id: string;
+  values: Record<string, unknown>;
+  origin: string;
+  state: string;
+  version: number;
+  updated_at?: string | null;
+};
+
 export type TableView = {
   table: { id: string; name: string; book_id: string; header_row: number };
-  fields: { key: string; title: string; type: string; position: number }[];
+  fields: Field[];
   bindings: Record<string, string>;
   /** Ключ роли → её русское название. Ключи в интерфейс не попадают. */
   role_titles: Record<string, string>;
   total: number;
-  rows: {
-    id: string;
-    values: Record<string, unknown>;
-    origin: string;
-    state: string;
-    version: number;
-  }[];
+  rows: Row[];
 };
 
 export type Preview = {
@@ -137,13 +149,26 @@ export const booksApi = {
 
   books: () => request<{ books: Book[] }>(""),
   /**
-   * `order: "recent"` — свежие сверху. Для ввода это единственный верный
-   * порядок: новая строка встаёт в конец книги, и в журнале на 3632 строки
-   * человек своей записи просто не увидел бы.
+   * Страница строк вкладки.
+   *
+   * `order: "recent"` — свежие сверху; так открываются карточки, где человек
+   * смотрит на то, что вводили последним. Грид держит порядок самой книги
+   * (`position`): в нём строка обязана оставаться там, где стояла, иначе
+   * правка ячейки телепортирует строку наверх прямо под руками.
+   *
+   * `q` ищет по всей вкладке на сервере. Фильтровать загруженное на фронте
+   * нельзя: в журнале на 3634 строки это давало правдоподобный неполный ответ.
    */
-  table: (tableId: string, limit = 100, offset = 0, order: "position" | "recent" = "position") =>
+  table: (
+    tableId: string,
+    limit = 100,
+    offset = 0,
+    order: "position" | "recent" = "position",
+    q = "",
+  ) =>
     request<TableView>(
-      `/tables/${tableId}?limit=${limit}&offset=${offset}&order=${order}`,
+      `/tables/${tableId}?limit=${limit}&offset=${offset}&order=${order}` +
+        (q ? `&q=${encodeURIComponent(q)}` : ""),
     ),
   board: (tableId: string) => request<Board>(`/tables/${tableId}/board`),
 
@@ -154,14 +179,17 @@ export const booksApi = {
     }),
 
   createRow: (tableId: string, values: Record<string, unknown>) =>
-    request<{ id: string; version: number }>(`/tables/${tableId}/rows`, {
+    request<Row>(`/tables/${tableId}/rows`, {
       method: "POST",
       body: JSON.stringify({ values }),
     }),
   /**
-   * `version` — оптимистичная блокировка. Грид «Книг» и форма «Реестров»
-   * правят одни и те же строки; без неё тот, кто нажал «сохранить» вторым,
-   * молча затирал бы чужую правку.
+   * `version` — оптимистичная блокировка. Таблица и карточки правят одни и те
+   * же строки, и правят их несколько человек сразу; без неё тот, кто нажал
+   * «сохранить» вторым, молча затирал бы чужую правку.
+   *
+   * В ответ приходит строка целиком — оба вида держат один список в памяти и
+   * кладут в него ровно то, что записалось, не перечитывая страницу.
    */
   updateRow: (
     tableId: string,
@@ -169,10 +197,16 @@ export const booksApi = {
     values: Record<string, unknown>,
     version: number,
   ) =>
-    request<{ id: string; version: number }>(`/tables/${tableId}/rows/${rowId}`, {
+    request<Row>(`/tables/${tableId}/rows/${rowId}`, {
       method: "PATCH",
       body: JSON.stringify({ values, version }),
     }),
+
+  deleteRow: (tableId: string, rowId: string, version: number) =>
+    request<{ ok: boolean }>(
+      `/tables/${tableId}/rows/${rowId}?version=${version}`,
+      { method: "DELETE" },
+    ),
 
   preview: (spreadsheetId: string, tab: string) =>
     request<Preview>("/import/preview", {

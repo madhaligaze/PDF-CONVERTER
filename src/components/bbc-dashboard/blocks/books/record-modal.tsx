@@ -3,14 +3,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import { booksApi, TYPE_LABEL, type TableView } from "@/components/books/api";
+import { TYPE_LABEL, type Field, type Row } from "@/components/books/api";
+import { editValue, FieldEditor } from "@/components/books/field-value";
+import type { BookTable } from "@/components/books/use-book-table";
 import { useScrollLock } from "@/components/use-scroll-lock";
 
 /**
  * Форма записи — собирается по схеме книги, а не пишется под каждую.
  *
  * Тип поля выбирает контрол: деньги и числа — числовое поле, дата — календарь,
- * список — выпадающий, флажок — галочка, остальное — строка. Поэтому раздел
+ * список — поле с подсказками из книги, флажок — выбор. Поэтому раздел
  * работает с любой книгой, включая ту, которую заведёт другая компания: чтобы
  * появилась новая форма, кода писать не надо.
  *
@@ -19,26 +21,54 @@ import { useScrollLock } from "@/components/use-scroll-lock";
  * спрятаны под «Показать остальные» — их в журнале два десятка, и вываливать
  * их сразу значит спрятать главное среди служебного.
  *
- * Скелет модалки повторяет `blocks/touches/touch-modal.tsx`: портал, ловушка
- * фокуса, замок прокрутки, инлайн-ошибка. Так же, как там, — потому что это уже
- * работает и человек уже знает, как оно себя ведёт.
+ * Отправляются только тронутые поля
+ * ─────────────────────────────────
+ * Раньше форма собирала все непустые поля и отправляла их скопом. Отсюда шли
+ * две беды сразу. Стереть ошибочную сумму было нечем: пустое значение
+ * отбрасывалось, и старое оставалось в книге при любом сохранении. А двое,
+ * правившие разные колонки одной строки, затирали друг друга — второй
+ * отправлял всю строку целиком, включая колонку, которую не трогал.
+ *
+ * Теперь в запрос идёт разница с тем, что было открыто. Пустая строка в ней —
+ * законное значение и означает «стереть», а не «пропустить».
  */
 
 const FOCUSABLE =
   'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
 
 type Props = {
-  table: TableView;
+  data: BookTable;
   /** Правим существующую строку; пусто — заводим новую. */
-  row: TableView["rows"][number] | null;
+  row: Row | null;
+  canWrite: boolean;
   onClose: () => void;
-  onSaved: () => void;
 };
 
-export function RecordModal({ table, row, onClose, onSaved }: Props) {
-  const [values, setValues] = useState<Record<string, string>>({});
+/** Что лежит в полях формы для этой строки. Пусто — заводим новую. */
+function seed(fields: Field[], row: Row | null): Record<string, string> {
+  const values: Record<string, string> = {};
+  for (const field of fields) values[field.key] = editValue(field, row?.values?.[field.key]);
+  return values;
+}
+
+export function RecordModal({ data, row, canWrite, onClose }: Props) {
+  /**
+   * Поля заполняются один раз, при открытии, и больше ниоткуда.
+   *
+   * Раньше форма пересобирала значения эффектом, следящим за схемой вкладки. А
+   * схема приезжает с каждым чтением страницы — и любое фоновое чтение,
+   * случившееся, пока человек печатал, возвращало поля к тому, что лежит в
+   * базе. Набранное исчезало без единой ошибки на экране.
+   *
+   * Теперь снимок «как было» и текущие значения — два ленивых начальных
+   * состояния, а форму пересобирает `key` в родителе: одна открытая карточка —
+   * одна форма. Ни эффекта, ни повода затереть чужой ввод.
+   */
+  const [opened] = useState<Record<string, string>>(() => seed(data.fields, row));
+  const [values, setValues] = useState<Record<string, string>>(() => seed(data.fields, row));
   const [showRest, setShowRest] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [confirmDrop, setConfirmDrop] = useState(false);
   const [error, setError] = useState("");
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreRef = useRef<HTMLElement | null>(null);
@@ -46,25 +76,12 @@ export function RecordModal({ table, row, onClose, onSaved }: Props) {
   useScrollLock(true);
 
   const { bound, rest } = useMemo(() => {
-    const fields = (table.fields ?? []).filter(
-      (field) => !field.title.match(/^[.\-\s]*$/),
-    );
-    const bindings = table.bindings ?? {};
+    const bindings = data.bindings;
     return {
-      bound: fields.filter((field) => bindings[field.key]),
-      rest: fields.filter((field) => !bindings[field.key]),
+      bound: data.fields.filter((field) => bindings[field.key]),
+      rest: data.fields.filter((field) => !bindings[field.key]),
     };
-  }, [table.fields, table.bindings]);
-
-  useEffect(() => {
-    const seed: Record<string, string> = {};
-    for (const field of [...bound, ...rest]) {
-      const value = row?.values?.[field.key];
-      seed[field.key] = value === null || value === undefined ? "" : String(value);
-    }
-    setValues(seed);
-    setError("");
-  }, [row, bound, rest]);
+  }, [data.fields, data.bindings]);
 
   useEffect(() => {
     restoreRef.current = document.activeElement as HTMLElement | null;
@@ -101,73 +118,72 @@ export function RecordModal({ table, row, onClose, onSaved }: Props) {
     event.preventDefault();
     setBusy(true);
     setError("");
-    // Пустые поля не отправляем: пустая строка и «не заполнено» — разные вещи,
-    // и записывать первое вместо второго значит выдумывать данные.
-    const payload = Object.fromEntries(
-      Object.entries(values).filter(([, value]) => value !== ""),
+
+    const changed = Object.fromEntries(
+      Object.entries(values).filter(([key, value]) => value !== opened[key]),
     );
+
     try {
       if (row) {
-        await booksApi.updateRow(table.table.id, row.id, payload, row.version);
+        if (Object.keys(changed).length === 0) {
+          onClose();
+          return;
+        }
+        const saved = await data.patch(row, changed);
+        if (!saved) {
+          setError(data.error || "Не удалось сохранить запись");
+          return;
+        }
       } else {
-        await booksApi.createRow(table.table.id, payload);
+        const filled = Object.fromEntries(
+          Object.entries(values).filter(([, value]) => value !== ""),
+        );
+        const saved = await data.create(filled);
+        if (!saved) {
+          setError(data.error || "Не удалось добавить запись");
+          return;
+        }
       }
-      onSaved();
       onClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось сохранить запись");
     } finally {
       setBusy(false);
     }
   }
 
-  const titles = table.role_titles ?? {};
-  const bindings = table.bindings ?? {};
+  async function drop() {
+    if (!row) return;
+    setBusy(true);
+    const ok = await data.remove(row);
+    setBusy(false);
+    if (ok) onClose();
+    else setError(data.error || "Не удалось убрать запись");
+  }
 
-  function control(field: TableView["fields"][number]) {
+  const titles = data.roleTitles;
+  const bindings = data.bindings;
+
+  function control(field: Field) {
     const role = bindings[field.key];
     const label = field.title || field.key;
     const hint = role ? titles[role] ?? role : TYPE_LABEL[field.type] ?? field.type;
-    const value = values[field.key] ?? "";
-    const set = (next: string) =>
-      setValues((current) => ({ ...current, [field.key]: next }));
+    const inputId = `rec-${field.key}`;
 
     return (
-      <label key={field.key} className="bbc-reg-field">
-        <span className="bbc-reg-label">
+      <div key={field.key} className="bbc-reg-field">
+        <label className="bbc-reg-label" htmlFor={inputId}>
           {label}
           <span className="bbc-reg-role">{hint}</span>
-        </span>
-        {field.type === "bool" ? (
-          <select className="input-field" value={value} onChange={(e) => set(e.target.value)}>
-            <option value="">—</option>
-            <option value="ДА">да</option>
-            <option value="НЕТ">нет</option>
-          </select>
-        ) : field.type === "date" ? (
-          <input
-            className="input-field"
-            type="date"
-            value={value}
-            onChange={(e) => set(e.target.value)}
-          />
-        ) : field.type === "money" || field.type === "number" ? (
-          <input
-            className="input-field"
-            inputMode="decimal"
-            placeholder="0"
-            value={value}
-            onChange={(e) => set(e.target.value)}
-          />
-        ) : (
-          <input
-            className="input-field"
-            maxLength={500}
-            value={value}
-            onChange={(e) => set(e.target.value)}
-          />
-        )}
-      </label>
+        </label>
+        <FieldEditor
+          id={inputId}
+          field={field}
+          className="input-field"
+          value={values[field.key] ?? ""}
+          onChange={(next) =>
+            setValues((current) => ({ ...current, [field.key]: next }))
+          }
+        />
+      </div>
     );
   }
 
@@ -193,7 +209,7 @@ export function RecordModal({ table, row, onClose, onSaved }: Props) {
             <h2 className="font-semibold truncate" style={{ color: "var(--text-primary)" }}>
               {row ? "Правка записи" : "Новая запись"}
             </h2>
-            <p className="bbc-reg-sub">{table.table.name}</p>
+            <p className="bbc-reg-sub">{data.meta?.name}</p>
           </div>
           <button type="button" className="btn-ghost text-xs px-2.5 py-1.5" onClick={onClose}>
             Закрыть
@@ -227,12 +243,25 @@ export function RecordModal({ table, row, onClose, onSaved }: Props) {
           </div>
 
           <div className="bbc-reg-foot">
+            {row && canWrite && (
+              <button
+                type="button"
+                className="btn-ghost bbc-reg-drop"
+                onClick={() => (confirmDrop ? drop() : setConfirmDrop(true))}
+                onBlur={() => setConfirmDrop(false)}
+                disabled={busy}
+              >
+                {confirmDrop ? "Точно убрать?" : "Убрать"}
+              </button>
+            )}
             <button type="button" className="btn-ghost" onClick={onClose} disabled={busy}>
               Отмена
             </button>
-            <button type="submit" className="btn-primary" disabled={busy}>
-              {busy ? "Сохраняем…" : row ? "Сохранить" : "Добавить"}
-            </button>
+            {canWrite && (
+              <button type="submit" className="btn-primary" disabled={busy}>
+                {busy ? "Сохраняем…" : row ? "Сохранить" : "Добавить"}
+              </button>
+            )}
           </div>
         </form>
       </div>
