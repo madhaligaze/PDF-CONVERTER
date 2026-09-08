@@ -69,27 +69,41 @@ export function useFillHeight(min = 240, gap = 0) {
     };
 
     measure();
-    // И ещё раз следующим кадром.
-    //
-    // В тот кадр, когда элемент монтируется, раскладка над ним не обязана быть
-    // окончательной: раздел меняет заглушку на таблицу, панели переносятся,
-    // шрифты досчитываются. Замер в этот момент даёт положение, которого через
-    // мгновение уже нет. Так и вышло с листом Univer: расчёт возвращал 320
-    // пикселей вместо 683, таблица занимала треть экрана, а под ней стояла
-    // пустота — и по одному замеру понять это было нельзя, потому что число
-    // выглядело как настоящее.
-    const again = requestAnimationFrame(measure);
 
-    // Наблюдаем и за `body`, и за родителем: меняется то, что стоит НАД
-    // элементом и ПОД ним — панели, полоса об ошибке чтения листа. Родитель
-    // нужен отдельно, потому что высота `body` в этой оболочке приколочена
-    // к окну (`min-h-screen`) и не меняется никогда.
+    /**
+     * Всё, что стоит НАД элементом, — оно и двигает его вниз.
+     *
+     * Это точный ответ на вопрос «когда пересчитывать»: положение элемента
+     * меняется ровно тогда, когда меняется размер кого-то из соседей выше или
+     * их родителей. Наблюдать за собственным родителем бесполезно — его высоту
+     * задаёт сам элемент, и получается кольцо; наблюдать за `body` тоже, его
+     * высота в этой оболочке приколочена к окну (`min-h-screen`).
+     *
+     * Пока наблюдения не было, лист Univer застревал на минимуме: в момент
+     * монтирования его верх стоял на 547 пикселях, потом раздел устаканивался и
+     * верх уезжал на 227 — а пересчитать было нечему. На экране это выглядело
+     * как таблица в треть высоты и пустота под ней.
+     */
     const observer = new ResizeObserver(measure);
     observer.observe(document.body);
-    if (node.parentElement) observer.observe(node.parentElement);
+    for (let step: HTMLElement | null = node; step; step = step.parentElement) {
+      const parent = step.parentElement;
+      if (!parent) break;
+      for (let prev = step.previousElementSibling; prev; prev = prev.previousElementSibling) {
+        observer.observe(prev);
+      }
+      if (parent.getBoundingClientRect().bottom >= window.innerHeight - 1) break;
+    }
+
+    // Несколько отложенных замеров сверху — страховка на то, что доезжает
+    // позже наблюдателей: шрифты, канва Univer, картинки. Три такта за секунду
+    // стоят ничего, а без них редкая поздняя перестановка осталась бы
+    // незамеченной до первого изменения размера окна.
+    const timers = [16, 150, 600].map((delay) => window.setTimeout(measure, delay));
+
     window.addEventListener("resize", measure);
     return () => {
-      cancelAnimationFrame(again);
+      timers.forEach((timer) => window.clearTimeout(timer));
       observer.disconnect();
       window.removeEventListener("resize", measure);
     };

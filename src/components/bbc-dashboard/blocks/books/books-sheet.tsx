@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 
-import { booksApi, type Field, type Row } from "@/components/books/api";
+import { booksApi, type Row } from "@/components/books/api";
 import {
   buildWorkbook,
   editAt,
@@ -10,6 +10,7 @@ import {
   HEADER_ROW,
   valueOf,
 } from "@/components/books/sheet-model";
+import type { BookTable } from "@/components/books/use-book-table";
 import { useFillHeight } from "@/components/books/use-fill-height";
 import { UniverSheet, type UniverApi } from "@/components/univer/sheet";
 
@@ -46,19 +47,25 @@ import { UniverSheet, type UniverApi } from "@/components/univer/sheet";
  */
 
 type Props = {
-  tableId: string;
+  /**
+   * Тот же склад строк, что у карточек.
+   *
+   * Лист пишет через него, а не в сеть напрямую: правка сразу оказывается в
+   * общем списке, и карточки видят её без перечитывания книги. Раньше лист
+   * звал API сам и просил перечитать вкладку целиком — 2,4 МБ на каждую
+   * заведённую строку, и лист успевал исчезнуть с экрана посреди набора.
+   */
+  data: BookTable;
   name: string;
-  fields: Field[];
-  rows: (Row | undefined)[];
-  total: number;
   /** Полные права на таблицу, включая состав колонок. */
   isAdmin: boolean;
   /** Право писать вообще. Ложь у держателя ссылки отдела. */
   canWrite: boolean;
-  /** Книга изменилась так, что её надо перечитать (колонки). */
-  onStructureChanged: () => void;
   onError: (message: string) => void;
 };
+
+/** Что случилось с книгой последним — строка под таблицей. */
+type Beat = { text: string; at: number } | null;
 
 /**
  * Сколько строк книги помещается на экран.
@@ -77,18 +84,22 @@ const visibleRows = (height: number) => Math.max(4, Math.floor((height - CHROME_
 const INSERT_COL = "sheet.command.insert-col";
 const REMOVE_COL = "sheet.command.remove-col";
 
-export function BooksSheet({
-  tableId,
-  name,
-  fields,
-  rows,
-  total,
-  isAdmin,
-  canWrite,
-  onStructureChanged,
-  onError,
-}: Props) {
+export function BooksSheet({ data, name, isAdmin, canWrite, onError }: Props) {
+  const { fields, rows, total } = data;
   const [busy, setBusy] = useState(false);
+  /**
+   * Что записалось последним.
+   *
+   * Без этой строки таблица молчит. Человек печатает в пустой строке и не
+   * знает, завелась запись или он просто набрал текст в клетке; вопрос «а как
+   * это сохранится?» задают ровно потому, что ответа на экране нет.
+   *
+   * Ни точки, ни зелёного: по правилам этого продукта цвет означает отказ, а
+   * «всё хорошо», горящее постоянно, перестают замечать. Здесь только слово о
+   * том, что произошло, и время.
+   */
+  const [beat, setBeat] = useState<Beat>(null);
+  const say = useCallback((text: string) => setBeat({ text, at: Date.now() }), []);
   // Лист кончается там же, где окно: иначе у страницы и у таблицы получаются
   // две прокрутки, и человек тянет одну, а едет другая.
   const { ref: box, height } = useFillHeight(320);
@@ -99,13 +110,23 @@ export function BooksSheet({
   // Всё, что нужно обработчикам Univer, живёт в ref: подписки ставятся один
   // раз на книгу, а колонки и строки приезжают заново. Без этого обработчик
   // помнил бы первый набор полей и писал бы правки не в те ключи.
-  const state = useRef({ tableId, fields, rows, total, isAdmin, canWrite });
-  state.current = { tableId, fields, rows, total, isAdmin, canWrite };
+  const state = useRef({ data, fields, rows, total, isAdmin, canWrite });
+  state.current = { data, fields, rows, total, isAdmin, canWrite };
 
   const notify = useRef(onError);
   notify.current = onError;
-  const restructured = useRef(onStructureChanged);
-  restructured.current = onStructureChanged;
+  const report = useRef(say);
+  report.current = say;
+
+  /**
+   * Строка, которую сейчас заводят в конце книги.
+   *
+   * Человек печатает слева направо, и вторая ячейка уходит раньше, чем сервер
+   * ответил на первую. Без этой памяти обе видели бы «строки ещё нет» и завели
+   * бы ДВЕ записи, по половине набранного в каждой. В книге на три с половиной
+   * тысячи строк такую пару не заметит никто.
+   */
+  const appending = useRef<Promise<Row | null> | null>(null);
 
   const workbook = useMemo(
     () => buildWorkbook(name, fields, rows, total),
@@ -114,7 +135,7 @@ export function BooksSheet({
 
   /** Записать правку одной ячейки в книгу. */
   const save = useCallback(async (sheetRow: number, sheetColumn: number, cell: unknown) => {
-    const { tableId: id, fields: cols, rows: lines, total: count } = state.current;
+    const { fields: cols, rows: lines, total: count, data: store } = state.current;
     const edit = editAt(cols, count, sheetRow, sheetColumn, cell);
     if (!edit) return;
 
@@ -124,27 +145,53 @@ export function BooksSheet({
         // не заводит: человек проехал по листу и стёр случайно набранное — это
         // не повод класть в книгу пустую запись.
         if (!edit.value) return;
-        await booksApi.createRow(id, { [edit.field.key]: edit.value });
-        restructured.current();
+
+        const started = appending.current;
+        if (started) {
+          // Строку уже заводят соседней ячейкой — дожидаемся её и дописываем
+          // в ту же запись, а не заводим вторую.
+          const row = await started;
+          if (row) {
+            await store.patch(row, { [edit.field.key]: edit.value });
+            report.current("записано");
+          }
+          return;
+        }
+
+        const promise = store.create({ [edit.field.key]: edit.value });
+        appending.current = promise;
+        const created = await promise;
+        appending.current = null;
+        // Номер тот же, что подписан слева на листе, а не индекс в книге. Они
+        // расходятся на единицу: первую строку листа занимают заголовки. Пока
+        // сообщение считало по-своему, человек печатал в строке 3634 и читал
+        // «строка 3633 заведена» — и это ровно то место, где начинают
+        // сомневаться, туда ли записалось.
+        report.current(created ? `строка ${count + 2} заведена` : "строку завести не удалось");
         return;
       }
+
       const row = lines[edit.index];
       if (!row) return;
-      await booksApi.updateRow(id, row.id, { [edit.field.key]: edit.value }, row.version);
+      const saved = await store.patch(row, { [edit.field.key]: edit.value });
+      report.current(saved ? "записано" : "правку сохранить не удалось");
     } catch (err) {
+      appending.current = null;
       notify.current(err instanceof Error ? err.message : "Не удалось сохранить правку");
     }
   }, []);
 
   /** Переименование колонки — правка её заголовка в шапке листа. */
   const rename = useCallback(async (column: number, cell: unknown) => {
-    const { tableId: id, fields: cols, isAdmin: admin } = state.current;
+    const { data: store, fields: cols, isAdmin: admin } = state.current;
+    const id = store.meta?.id ?? "";
     const field = cols[column];
     const title = valueOf(cell).trim();
     if (!admin || !field || !title || title === field.title) return;
     try {
       await booksApi.updateField(id, field.key, { title });
-      restructured.current();
+      report.current(`колонка «${title}» переименована`);
+      store.reload();
     } catch (err) {
       notify.current(err instanceof Error ? err.message : "Не удалось переименовать колонку");
     }
@@ -152,14 +199,16 @@ export function BooksSheet({
 
   /** Вставленный столбец заводится в книге и получает имя из шапки. */
   const insertColumn = useCallback(async (params: Record<string, unknown> | undefined) => {
-    const { tableId: id, fields: cols } = state.current;
+    const { data: store, fields: cols } = state.current;
+    const id = store.meta?.id ?? "";
     const at = columnOf(params);
     if (at === null) return;
     const after = at > 0 ? cols[at - 1]?.key ?? null : null;
     setBusy(true);
     try {
       await booksApi.addField(id, { title: "Новая колонка", type: "text", after });
-      restructured.current();
+      report.current("колонка добавлена — назовите её в шапке");
+      store.reload();
     } catch (err) {
       notify.current(err instanceof Error ? err.message : "Не удалось добавить колонку");
     } finally {
@@ -168,14 +217,20 @@ export function BooksSheet({
   }, []);
 
   const removeColumn = useCallback(async (params: Record<string, unknown> | undefined) => {
-    const { tableId: id, fields: cols } = state.current;
+    const { data: store, fields: cols } = state.current;
+    const id = store.meta?.id ?? "";
     const at = columnOf(params);
     const field = at === null ? null : cols[at];
     if (!field) return;
     setBusy(true);
     try {
-      await booksApi.removeField(id, field.key);
-      restructured.current();
+      const { hidden } = await booksApi.removeField(id, field.key);
+      report.current(
+        hidden
+          ? `колонка «${field.title}» убрана, скрыто значений: ${hidden}`
+          : `колонка «${field.title}» убрана`,
+      );
+      store.reload();
     } catch (err) {
       notify.current(err instanceof Error ? err.message : "Не удалось убрать колонку");
     } finally {
@@ -257,8 +312,45 @@ export function BooksSheet({
   );
 
   return (
-    <div className="bbc-sheet" ref={box} style={{ height }} data-busy={busy ? "" : undefined}>
-      <UniverSheet key={`${tableId}|${fields.length}`} data={workbook} onReady={onReady} />
+    <div className="bbc-sheet-wrap">
+      <div className="bbc-sheet" ref={box} style={{ height }} data-busy={busy ? "" : undefined}>
+        <UniverSheet
+          key={`${data.meta?.id ?? "нет"}|${fields.length}`}
+          data={workbook}
+          onReady={onReady}
+        />
+      </div>
+
+      {/*
+        Строка под таблицей — ответ на вопрос «а как это сохранится?».
+
+        Кнопки «Сохранить» здесь нет и не будет: в таблице её нет нигде, и
+        человек, привыкший к Excel, её не ищет. Но и молчания быть не должно —
+        именно из-за него возникает сомнение, записалось ли. Поэтому таблица
+        говорит, что сделала последним: «строка 3767 заведена», «записано».
+
+        Подсказка про пустую строку висит, пока в книге ничего не меняли, и
+        исчезает после первой же правки: объяснять человеку то, что он уже
+        сделал, — это и есть дежурная надпись.
+      */}
+      <p className="bbc-sheet-beat" role="status">
+        {beat ? (
+          <>
+            <span className="bbc-sheet-beat-what">{beat.text}</span>
+            <span className="bbc-sheet-beat-when">
+              {new Date(beat.at).toLocaleTimeString("ru-RU", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </span>
+          </>
+        ) : canWrite ? (
+          <span className="bbc-sheet-beat-hint">
+            Записи заводят в пустой строке внизу — начните печатать, строка
+            появится в книге сама.
+          </span>
+        ) : null}
+      </p>
     </div>
   );
 }

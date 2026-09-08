@@ -364,14 +364,10 @@ export function BooksBlock({ canWrite, isAdmin }: Props) {
           // Ключ пересобирает лист при смене вкладки или запроса: Univer
           // создаёт книгу один раз, на монтировании.
           key={`${tableId}|${query}`}
-          tableId={tableId}
+          data={data}
           name={data.meta?.name ?? "Книга"}
-          fields={data.fields}
-          rows={data.rows}
-          total={data.total}
           isAdmin={isAdmin}
           canWrite={canWrite}
-          onStructureChanged={data.reload}
           onError={setListError}
         />
       ) : (
