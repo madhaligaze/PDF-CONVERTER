@@ -3108,3 +3108,341 @@ html, body { overflow-x: clip; }
   .bbc-books-picks > * { flex: 0 0 10rem; }
   .bbc-books-picks > button { flex: 0 0 auto; }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   Раздел «Финансы» (удаляемый модуль)
+   ═══════════════════════════════════════════════════════════════
+
+   Устройство взято у продуктов управленческого учёта, потому что у них оно
+   выстрадано: слева счета с остатками (первое, что спрашивают у учёта), сверху
+   три действия (доход, расход, перевод — почти вся работа), лентой вкладки
+   разделов, ниже плотная таблица.
+
+   Цвета — наши: ахроматика плюс сапфир. Зелёно-оранжевых градиентов, которыми
+   размечают приход и расход у соседей по рынку, здесь нет: у нас один акцент, и
+   второго не будет. Направление денег читается знаком и весом цифры, а
+   приглушённые --inflow/--outflow остаются подсказкой второго порядка.
+
+   ВНИМАНИЕ про каскад: классы ниже задают display, а утилиты Tailwind лежат в
+   слое и неслоёному правилу проигрывают. Прятать эти элементы только через
+   .only-mobile / .only-desktop — hidden и sm:flex на них не сработают.       */
+
+.fin-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  align-items: start;
+}
+@media (min-width: 1024px) {
+  .fin-shell { grid-template-columns: 17.5rem minmax(0, 1fr); }
+}
+
+/* ─── Боковая панель со счетами ─── */
+.fin-aside {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem 1rem 1.25rem;
+  border-right: 1px solid var(--border-subtle);
+}
+.fin-total { display: flex; flex-direction: column; gap: 0.125rem; }
+.fin-total-value {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 1.5rem;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.fin-acc-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 0.8125rem;
+}
+.fin-acc-row:last-child { border-bottom: none; }
+.fin-acc-name {
+  color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ─── Лента вкладок ─── */
+.fin-tabs {
+  display: flex;
+  gap: 0.25rem;
+  overflow-x: auto;
+  padding: 0.5rem 0.25rem;
+  scrollbar-width: none;
+}
+.fin-tabs::-webkit-scrollbar { display: none; }
+.fin-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex: 0 0 auto;
+  padding: 0.4rem 0.8rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  min-height: 2rem;
+  transition: color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
+}
+.fin-tab:hover { color: var(--text-secondary); background: var(--bg-hover); }
+.fin-tab[data-on="true"] {
+  color: var(--text-primary);
+  background: var(--bg-active);
+  border-color: var(--border-base);
+}
+
+/* ─── Три действия ─── */
+.fin-actions { display: flex; gap: 0.375rem; }
+.fin-act {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border-base);
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  white-space: nowrap;
+  min-height: 2.25rem;
+}
+.fin-act:hover { background: var(--bg-hover); }
+.fin-act[data-kind="income"] { background: var(--inflow-bg); border-color: var(--inflow-border); }
+.fin-act[data-kind="expense"] { background: var(--outflow-bg); border-color: var(--outflow-border); }
+
+/* ─── Таблица журнала ─── */
+.fin-table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+.fin-table th {
+  text-align: left;
+  font-weight: 500;
+  font-size: 0.6875rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 0.5rem 0.625rem;
+  border-bottom: 1px solid var(--border-base);
+  white-space: nowrap;
+  background: var(--bg-surface);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.fin-table td {
+  padding: 0.5rem 0.625rem;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  vertical-align: top;
+}
+.fin-table tbody tr:hover td { background: var(--bg-hover); }
+.fin-table td.fin-strong { color: var(--text-primary); }
+.fin-num {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.fin-in { color: #6ee7b7; }
+.fin-out { color: #fda4af; }
+:root[data-theme="light"] .fin-in { color: #047857; }
+:root[data-theme="light"] .fin-out { color: #be123c; }
+
+/* Строка ожидания: план отличается не цветом, а насыщенностью. Цвет здесь
+   означал бы «всё плохо», а запланированный платёж — это норма. */
+.fin-table tr[data-plan="true"] td { color: var(--text-muted); }
+.fin-table tr[data-plan="true"] .fin-num { opacity: 0.75; }
+
+.fin-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.6875rem;
+  border: 1px dashed var(--border-strong);
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+}
+.fin-chip:hover { color: var(--text-secondary); border-color: var(--accent-line); }
+
+/* ─── Отчёты ─── */
+.fin-report { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+.fin-report th, .fin-report td { padding: 0.4rem 0.6rem; white-space: nowrap; }
+.fin-report thead th {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  font-weight: 500;
+  border-bottom: 1px solid var(--border-base);
+  text-align: right;
+}
+.fin-report thead th:first-child { text-align: left; }
+.fin-report tbody td { border-bottom: 1px solid var(--border-subtle); color: var(--text-secondary); }
+.fin-report tbody td:first-child { color: var(--text-primary); white-space: normal; }
+.fin-report tbody tr[data-total="true"] td {
+  border-top: 1px solid var(--border-base);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.fin-report-scroll { overflow-x: auto; }
+
+/* ─── Календарь ─── */
+.fin-cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.25rem; }
+.fin-cal-day {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-height: 4.5rem;
+  padding: 0.375rem;
+  border-radius: var(--radius-inner);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-raised);
+  font-size: 0.6875rem;
+}
+.fin-cal-day[data-out="true"] { opacity: 0.45; }
+/* Кассовый разрыв — единственное место в разделе, где цвет служит сигналом.
+   Это отказ: денег на платёж не хватит. */
+.fin-cal-day[data-gap="true"] {
+  border-color: var(--outflow-border);
+  background: var(--outflow-bg);
+}
+.fin-cal-num { color: var(--text-muted); font-family: var(--font-plex-mono), ui-monospace, monospace; }
+.fin-cal-bal {
+  margin-top: auto;
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+.fin-cal-day[data-gap="true"] .fin-cal-bal { color: #fda4af; }
+:root[data-theme="light"] .fin-cal-day[data-gap="true"] .fin-cal-bal { color: #be123c; }
+
+/* ─── Импорт ─── */
+.fin-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 2rem 1rem;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-card);
+  background: var(--bg-raised);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
+}
+.fin-drop[data-over="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.fin-row-issue {
+  display: grid;
+  grid-template-columns: 3.5rem minmax(0, 1fr);
+  gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 0.75rem;
+  align-items: start;
+}
+.fin-row-issue:last-child { border-bottom: none; }
+.fin-issue-line {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  color: var(--text-muted);
+}
+.fin-issue-text { color: #fda4af; }
+:root[data-theme="light"] .fin-issue-text { color: #be123c; }
+.fin-issue-skip { color: var(--text-muted); }
+
+/* ─── Сводные плитки ─── */
+.fin-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; }
+@media (min-width: 768px) { .fin-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.fin-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem 0.875rem;
+  border-radius: var(--radius-inner);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-raised);
+}
+.fin-kpi-value {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 1.0625rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+/* Лист Univer занимает всю оставшуюся высоту; замер — use-fill-height. */
+.fin-sheet { border-radius: var(--radius-inner); overflow: hidden; border: 1px solid var(--border-base); }
+
+/* Календарь на телефоне — список по дням, а не сетка из семи колонок.
+ *
+ * Сетка на 390 пикселях не сжимается: в клетке стоят три числа моноширинным
+ * шрифтом («+2 400 000»), и их минимальная ширина больше сорока пикселей,
+ * которые остаются на колонку. Страница становилась 395 пикселей при окне 390 —
+ * человек тянул страницу вбок вместо того, чтобы листать календарь.
+ *
+ * Обрезать числа многоточием здесь нельзя: обрезанная сумма — это не
+ * «компактно», это цифра, которой нельзя верить. Поэтому меняется раскладка:
+ * один день — одна строка, дата слева, движение и остаток справа. Ровно так
+ * календарь платежей и читают на телефоне.
+ *
+ * Прятать шапку недели и клетки-заполнители только через .only-desktop и
+ * .fin-cal-pad: у обоих свой display, и утилиты Tailwind им проиграют. */
+@media (max-width: 639.98px) {
+  .fin-cal { grid-template-columns: minmax(0, 1fr); gap: 0.25rem; }
+  .fin-cal-pad { display: none; }
+  .fin-cal-day {
+    flex-direction: row;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    min-height: 2.5rem;
+    padding: 0.5rem 0.625rem;
+  }
+  .fin-cal-bal { margin-top: 0; margin-left: auto; }
+}
+
+/* ─── Раздел «Финансы» на телефоне ───────────────────────────────
+   Два исправления по итогам живого прогона 18 сентября 2026.
+
+   1. Шапка переносит три действия на свою строку во всю ширину.
+      До этого «Перевод» пряталась через .only-desktop, потому что в одну
+      строку с «Доходом» и «Расходом» она не влезала. Это было неправильно:
+      перевод между кассой и счётом — обычная операция кассира, и на телефоне
+      она нужна ровно так же. Перенос строки даёт все три кнопки и заодно
+      увеличивает площадь нажатия.
+
+   2. Отборы журнала — одна прокручиваемая вбок строка, а не четыре ряда.
+      Стопкой они занимали больше двухсот пикселей, и до первой цифры
+      приходилось листать. Тот же приём и по той же причине уже применён к
+      отборам книг (.bbc-books-picks).                                       */
+@media (max-width: 639.98px) {
+  .fin-head { flex-wrap: wrap; }
+  .fin-actions { flex: 1 0 100%; }
+  .fin-act { flex: 1; justify-content: center; }
+
+  .fin-filters {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 0.25rem;
+    scrollbar-width: none;
+  }
+  .fin-filters::-webkit-scrollbar { display: none; }
+  .fin-filters > * { flex: 0 0 10.5rem; }
+  .fin-filters select,
+  .fin-filters input { width: 100%; }
+}

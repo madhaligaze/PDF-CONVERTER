@@ -5,7 +5,7 @@ import Link from "next/link";
 import type { ComponentType } from "react";
 
 import { AutocallModal } from "@/components/services/autocall-modal";
-import { ArrowLeftIcon, PhoneIcon, PuzzleIcon } from "@/components/icons";
+import { ArrowLeftIcon, PhoneIcon, PuzzleIcon, TableIcon } from "@/components/icons";
 // BBC Dashboard (removable module — см. src/components/bbc-dashboard/README.md)
 import { BbcDashboardIcon } from "@/components/bbc-dashboard/icon";
 
@@ -32,6 +32,17 @@ const TILES: ServiceTile[] = [
     description: "Интерактивный дашборд по сводной таблице в Google Sheets",
     Icon: BbcDashboardIcon,
     href: "/bbc-dashboard",
+  },
+  // Финансы — обкатка управленческого учёта перед интеграцией с Finmap.
+  // Плитка здесь по делу, в отличие от «Книг»: раздел работает с теми же
+  // внешними источниками (выписки банков, выгрузки), а не с нашей копией
+  // чужой книги, и открывается он как отдельный продукт.
+  {
+    key: "finance",
+    title: "Финансы",
+    description: "Учёт денег: журнал, отчёты, календарь платежей, загрузка выписок",
+    Icon: TableIcon,
+    href: "/finance",
   },
   // Плитки «Книги» здесь нет намеренно. Страница объявляет себя как «внешние
   // сервисы, из которых мы тянем данные», а внутренние книги — не сервис и не

@@ -1,0 +1,270 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { UniverSheet, type UniverApi, type WorkbookSnapshot } from "@/components/univer/sheet";
+import { useFillHeight } from "@/components/books/use-fill-height";
+import { type GridPayload, financeApi } from "@/components/finance/api";
+
+/**
+ * Журнал как лист Univer — второй вид на те же операции.
+ *
+ * Почему именно Univer, а не своя решётка
+ * ───────────────────────────────────────
+ * Это уже решалось в разделе «Книги» в сентябре 2026 и стоило переписанного
+ * компонента. Своя решётка была: виртуализированная, с правкой по ячейке,
+ * пустой строкой внизу, и она проходила все проверки. А человек из Excel
+ * приходит с привычками — выделить диапазон и увидеть сумму, потянуть за угол,
+ * вставить столбец из буфера, Ctrl+Z, — и ни одной из них она не отвечала.
+ * Догонять по одной значит писать Univer заново и хуже.
+ *
+ * Разметка листа
+ * ──────────────
+ * Строка 0 — заголовки. Дальше операции в порядке журнала (новые сверху). Под
+ * последней — запас пустых строк: новую операцию заводят, спустившись вниз и
+ * напечатав, а не кнопкой.
+ *
+ * Колонка — поле операции по порядку из ответа сервера. Позиция колонки не
+ * адрес: адрес — это `key`, и правка уходит по нему. То же правило, что для
+ * колонок книг, и по той же причине.
+ */
+
+/** Сколько пустых строк держать под последней операцией. */
+const SPARE_ROWS = 100;
+const HEADER_ROW = 0;
+
+/**
+ * Префикс `[$-419]` — русская локаль ПРЯМО В ОБРАЗЦЕ формата.
+ *
+ * Движок форматов Univer берёт локаль не из книги, а из самого образца. Без
+ * префикса тот же `#,##0.00` даёт «95,323.00» вместо «95 323,00»: цифры на
+ * месте, разделители чужие — худший вид расхождения, потому что число
+ * выглядит правильным.
+ */
+const RU = "[$-419]";
+
+/** Эпоха дат Excel. Полдень не добавляем: он округляет дату вверх. */
+const EPOCH = Date.UTC(1899, 11, 30);
+
+function serialOf(text: string): number | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text.trim());
+  if (!match) return null;
+  const [, year, month, day] = match;
+  const at = Date.UTC(Number(year), Number(month) - 1, Number(day));
+  return Number.isFinite(at) ? Math.round((at - EPOCH) / 86400000) : null;
+}
+
+function dateOf(serial: number): string {
+  const at = new Date(EPOCH + Math.round(serial) * 86400000);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${at.getUTCFullYear()}-${pad(at.getUTCMonth() + 1)}-${pad(at.getUTCDate())}`;
+}
+
+function buildWorkbook(payload: GridPayload): WorkbookSnapshot {
+  const cellData: Record<number, Record<number, Record<string, unknown>>> = {};
+
+  const head: Record<number, Record<string, unknown>> = {};
+  payload.columns.forEach((column, index) => {
+    head[index] = { v: column.title, s: "head" };
+  });
+  cellData[HEADER_ROW] = head;
+
+  payload.rows.forEach((row, index) => {
+    const line: Record<number, Record<string, unknown>> = {};
+    payload.columns.forEach((column, columnIndex) => {
+      const raw = row.cells[column.key] ?? "";
+      if (!raw) return;
+      if (column.kind === "money") {
+        const asNumber = Number(String(raw).replace(/\s/g, "").replace(",", "."));
+        line[columnIndex] = Number.isFinite(asNumber)
+          ? { v: asNumber, s: "money" }
+          : { v: String(raw) };
+        return;
+      }
+      if (column.kind === "date") {
+        const serial = serialOf(String(raw));
+        line[columnIndex] = serial === null ? { v: String(raw) } : { v: serial, t: 2, s: "date" };
+        return;
+      }
+      line[columnIndex] = column.editable ? { v: String(raw) } : { v: String(raw), s: "readonly" };
+    });
+    if (Object.keys(line).length) cellData[index + 1] = line;
+  });
+
+  const columnData: Record<number, { w: number }> = {};
+  payload.columns.forEach((column, index) => {
+    columnData[index] = { w: column.width };
+  });
+
+  return {
+    id: `finance-journal`,
+    name: "Журнал",
+    locale: "ruRU",
+    sheetOrder: ["journal"],
+    styles: {
+      head: {
+        bl: 1,
+        bg: { rgb: "#f1f3f5" },
+        vt: 2,
+        bd: { b: { s: 1, cl: { rgb: "#c9ced6" } } },
+      },
+      money: { ht: 3, n: { pattern: `${RU}#,##0.00` } },
+      date: { n: { pattern: `${RU}DD.MM.YYYY` } },
+      // Нередактируемые колонки серым: правка в них не сохранится, и человек
+      // обязан понять это до того, как напечатает.
+      readonly: { cl: { rgb: "#8b8f98" } },
+    },
+    sheets: {
+      journal: {
+        id: "journal",
+        name: "Журнал",
+        rowCount: payload.rows.length + SPARE_ROWS + 1,
+        columnCount: Math.max(payload.columns.length, 1),
+        cellData,
+        columnData,
+        freeze: { xSplit: 0, ySplit: 1, startRow: 1, startColumn: 0 },
+      },
+    },
+  };
+}
+
+type Beat = { text: string; at: number };
+
+export function TableView({ onChanged }: { onChanged: () => void }) {
+  const [payload, setPayload] = useState<GridPayload | null>(null);
+  const [error, setError] = useState("");
+  const [beat, setBeat] = useState<Beat | null>(null);
+  const { ref: box, height } = useFillHeight(360, 44);
+  /**
+   * Свежие данные держим и в ref: обработчик правки живёт внутри Univer и
+   * пересоздаваться не должен — иначе подписка навесится повторно и одна
+   * правка уедет на сервер дважды.
+   */
+  const state = useRef<GridPayload | null>(null);
+  state.current = payload;
+
+  const load = useCallback(async () => {
+    try {
+      const next = await financeApi.grid({});
+      setPayload(next);
+      setError("");
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "Лист не собрался");
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const say = useCallback((text: string) => setBeat({ text, at: Date.now() }), []);
+
+  const save = useCallback(
+    async (sheetRow: number, sheetColumn: number, cell: unknown) => {
+      const data = state.current;
+      if (!data) return;
+      const column = data.columns[sheetColumn];
+      if (!column) return;
+
+      const raw = ((): unknown => {
+        if (cell === null || cell === undefined) return "";
+        const value = typeof cell === "object" ? (cell as { v?: unknown }).v ?? "" : cell;
+        // Дата вернулась номером дня — переводим обратно, иначе на сервер
+        // уехало бы «46174», и следующее чтение показало бы сорок шесть тысяч.
+        if (column.kind === "date" && typeof value === "number") return dateOf(value);
+        return value;
+      })();
+
+      const index = sheetRow - 1;
+      const row = data.rows[index];
+
+      try {
+        if (row) {
+          if (!column.editable) {
+            say(`«${column.title}» правится в карточке операции`);
+            await load();
+            return;
+          }
+          await financeApi.patchCell({
+            operation_id: row.id,
+            column: column.key,
+            value: raw,
+            version: row.version,
+          });
+          say(`строка ${sheetRow}: записано`);
+        } else {
+          // Печать в пустой строке — заводим операцию из того, что в ней уже
+          // есть. Пока данных не хватает, сервер откажет с объяснением, и оно
+          // покажется строкой состояния: это нормальный ход заполнения, а не
+          // ошибка.
+          const cells: Record<string, unknown> = {};
+          data.columns.forEach((item, itemIndex) => {
+            if (itemIndex === sheetColumn) cells[item.key] = raw;
+          });
+          if (!Object.values(cells).some((value) => String(value ?? "").trim())) return;
+          await financeApi.addGridRow(cells);
+          say("операция заведена");
+        }
+        onChanged();
+        await load();
+      } catch (exc) {
+        const text = exc instanceof Error ? exc.message : "Правка не сохранилась";
+        say(text);
+        // Лист откатываем перечитыванием: оставить на экране значение, которое
+        // сервер не принял, — значит показать цифру, которой нет в учёте.
+        await load();
+      }
+    },
+    [load, onChanged, say],
+  );
+
+  const onReady = useCallback(
+    (api: UniverApi) => {
+      const disposers: Array<() => void> = [];
+      const values = api.addEvent?.(
+        api.Event.SheetValueChanged,
+        (event: { effectedRanges?: Array<{ getRow: () => number; getColumn: () => number }> }) => {
+          const sheet = api.getActiveWorkbook()?.getActiveSheet();
+          if (!sheet) return;
+          for (const range of event.effectedRanges ?? []) {
+            const row = range.getRow();
+            const column = range.getColumn();
+            if (row === HEADER_ROW) continue; // заголовки листа не правятся
+            const cell = sheet.getRange(row, column, 1, 1).getCellData?.();
+            void save(row, column, cell);
+          }
+        },
+      );
+      if (values?.dispose) disposers.push(() => values.dispose());
+      return () => disposers.forEach((stop) => stop());
+    },
+    [save],
+  );
+
+  const workbook = useMemo(() => (payload ? buildWorkbook(payload) : null), [payload]);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+        Тот же журнал листом: правка ячейки — это правка операции, а напечатанная
+        внизу строка становится новой. Вид операции и состояние правятся в карточке —
+        от них зависит, какие поля обязательны.
+      </p>
+      {error ? (
+        <p className="text-xs" style={{ color: "var(--accent-rose)" }}>
+          {error}
+        </p>
+      ) : null}
+      <div className="fin-sheet" ref={box} style={{ height }}>
+        {workbook ? (
+          <UniverSheet key={`journal|${payload?.rows.length ?? 0}`} data={workbook} onReady={onReady} />
+        ) : null}
+      </div>
+      {/* Строка состояния: таблица обязана говорить, что записала. Молчание
+          после правки — это и есть сомнение «сохранилось ли». */}
+      <p className="text-xs" role="status" style={{ color: "var(--text-secondary)", minHeight: "1.2em" }}>
+        {beat ? beat.text : "Правки сохраняются сразу — кнопки «Сохранить» здесь нет."}
+      </p>
+    </div>
+  );
+}
