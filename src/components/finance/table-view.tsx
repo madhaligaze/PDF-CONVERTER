@@ -159,9 +159,12 @@ async function applyDropdowns(api: UniverApi, payload: GridPayload): Promise<voi
         .setOptions({ allowBlank: true, showErrorMessage: false })
         .build();
       await sheet.getRange(1, index, rows, 1).setDataValidation(rule);
-    } catch {
-      // Список — удобство, а не условие работы листа: не собрался — значит
-      // человек печатает руками, как и раньше.
+    } catch (exc) {
+      // Список — удобство, а не условие работы листа. Но молчать нельзя:
+      // именно так они однажды тихо исчезли на журнале в две тысячи строк, и
+      // проверка увидела это раньше человека только потому, что смотрела в
+      // консоль.
+      console.warn(`список для колонки «${column.title}» не встал:`, exc);
     }
   }
 }
