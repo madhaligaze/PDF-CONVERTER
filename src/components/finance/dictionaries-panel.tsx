@@ -134,6 +134,7 @@ export function DictionariesPanel({ dictionaries, onChanged }: Props) {
         title="Статьи доходов"
         kind="categories"
         extra={{ side: "income" }}
+        withNature="income"
         items={dictionaries.categories.filter((item) => item.side === "income")}
         onChanged={onChanged}
       />
@@ -141,6 +142,7 @@ export function DictionariesPanel({ dictionaries, onChanged }: Props) {
         title="Статьи расходов"
         kind="categories"
         extra={{ side: "expense" }}
+        withNature="expense"
         items={dictionaries.categories.filter((item) => item.side === "expense")}
         onChanged={onChanged}
       />
@@ -157,19 +159,45 @@ export function DictionariesPanel({ dictionaries, onChanged }: Props) {
   );
 }
 
+/**
+ * Природа статьи — чем она является в отчётности.
+ *
+ * От неё зависят показатели: без неё «Закуп товара» и «Аренда» — просто два
+ * расхода, и ни валовую прибыль, ни EBITDA посчитать нечем. «Капитал» —
+ * кредиты, их погашение, дивиденды: не доход и не расход.
+ */
+const NATURES: Record<"income" | "expense", { value: string; title: string }[]> = {
+  income: [
+    { value: "revenue", title: "выручка" },
+    { value: "other", title: "прочий доход" },
+    { value: "capital", title: "капитал: кредит, взнос" },
+  ],
+  expense: [
+    { value: "cogs", title: "себестоимость" },
+    { value: "operating", title: "операционный" },
+    { value: "financial", title: "проценты" },
+    { value: "depreciation", title: "амортизация" },
+    { value: "tax", title: "налог" },
+    { value: "capital", title: "капитал: погашение, дивиденды" },
+    { value: "other", title: "прочий" },
+  ],
+};
+
 function EntryList({
   title,
   kind,
   items,
   extra,
   withRole,
+  withNature,
   onChanged,
 }: {
   title: string;
   kind: "categories" | "counterparties" | "projects" | "tags";
-  items: { id: string; name: string; role?: string; system_key?: string }[];
+  items: { id: string; name: string; role?: string; system_key?: string; nature?: string }[];
   extra?: Record<string, string>;
   withRole?: boolean;
+  withNature?: "income" | "expense";
   onChanged: () => void;
 }) {
   const [name, setName] = useState("");
@@ -190,6 +218,69 @@ function EntryList({
       setBusy(false);
     }
   };
+
+  const setNature = async (id: string, nature: string) => {
+    setBusy(true);
+    setError("");
+    try {
+      await financeApi.setCategoryNature(id, nature);
+      onChanged();
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "Не сохранилось");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (withNature) {
+    return (
+      <div className="fin-card p-4 flex flex-col gap-2">
+        <p className="fin-label">{title}</p>
+        <div className="flex flex-col">
+          {items.map((item) => (
+            <div key={item.id} className="fin-acc-row">
+              <span className="fin-acc-name">{item.name}</span>
+              <select
+                className="input-field"
+                style={{ width: "auto" }}
+                value={item.nature ?? (withNature === "income" ? "revenue" : "operating")}
+                disabled={busy}
+                onChange={(event) => void setNature(item.id, event.target.value)}
+              >
+                {NATURES[withNature].map((entry) => (
+                  <option key={entry.value} value={entry.value}>
+                    {entry.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ))}
+          {!items.length ? (
+            <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+              Пока пусто
+            </span>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
+          <input
+            className="input-field"
+            style={{ width: "14rem" }}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Название"
+          />
+          <button type="button" className="btn-ghost" disabled={busy || !name.trim()} onClick={() => void add()}>
+            Добавить
+          </button>
+        </div>
+        {error ? (
+          <p className="text-xs" style={{ color: "var(--accent-rose)" }}>
+            {error}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div className="fin-card p-4 flex flex-col gap-2">

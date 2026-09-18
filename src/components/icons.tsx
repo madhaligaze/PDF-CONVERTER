@@ -148,6 +148,62 @@ export function PeopleIcon(props: IconProps) {
   );
 }
 
+export function ReceiptIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M6 3h12v18l-3-2-3 2-3-2-3 2Z" /><path d="M9 8h6M9 12h6M9 16h3" />
+    </Svg>
+  );
+}
+
+export function RepeatIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M17 2l3 3-3 3" /><path d="M4 11V9a4 4 0 0 1 4-4h12" /><path d="M7 22l-3-3 3-3" /><path d="M20 13v2a4 4 0 0 1-4 4H4" />
+    </Svg>
+  );
+}
+
+export function ScaleIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M12 4v16M7 20h10" /><path d="M5 8h14" /><path d="m5 8-2.5 6a3 3 0 0 0 5 0Z" /><path d="m19 8-2.5 6a3 3 0 0 0 5 0Z" />
+    </Svg>
+  );
+}
+
+export function GaugeIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 16a8 8 0 1 1 16 0" /><path d="m12 16 4-5" /><circle cx="12" cy="16" r="1.2" />
+    </Svg>
+  );
+}
+
+export function FileTextIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z" /><path d="M14 3v5h5M9 13h6M9 17h6" />
+    </Svg>
+  );
+}
+
+export function PlugIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M9 2v5M15 2v5" /><path d="M6 7h12v4a6 6 0 0 1-12 0Z" /><path d="M12 17v5" />
+    </Svg>
+  );
+}
+
+export function HistoryIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M3 12a9 9 0 1 0 3-6.7" /><path d="M3 4v5h5" /><path d="M12 7v5l3 2" />
+    </Svg>
+  );
+}
+
 export function ClockIcon(props: IconProps) {
   return (
     <Svg {...props}>

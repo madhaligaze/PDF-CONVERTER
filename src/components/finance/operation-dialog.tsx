@@ -8,6 +8,7 @@ import {
   type Operation,
   type OperationKind,
   financeApi,
+  formatMoney,
   todayIso,
 } from "@/components/finance/api";
 
@@ -62,6 +63,14 @@ export function OperationDialog({ kind, plan, dictionaries, operation, onClose, 
     operation?.status ?? (plan ? "plan" : "fact"),
   );
   const [more, setMore] = useState(Boolean(operation?.accrued_at || operation?.projects?.length));
+  /**
+   * Части платежа по статьям. Пусто — платёж целиком в одной статье.
+   *
+   * Остаток, не разнесённый по частям, остаётся на основной статье операции:
+   * отчёт складывает и части, и остаток, поэтому платёж не теряется и не
+   * удваивается.
+   */
+  const [parts, setParts] = useState<Array<{ category_id: string; amount: string }>>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const firstField = useRef<HTMLSelectElement | null>(null);
@@ -102,6 +111,14 @@ export function OperationDialog({ kind, plan, dictionaries, operation, onClose, 
         projects: projectId
           ? [{ project_id: projectId, amount: amount.replace(/\s/g, "").replace(",", ".") }]
           : [],
+        categories: isTransfer
+          ? []
+          : parts
+              .filter((part) => part.category_id && Number(part.amount.replace(/\s/g, "").replace(",", ".")) > 0)
+              .map((part) => ({
+                category_id: part.category_id,
+                amount: part.amount.replace(/\s/g, "").replace(",", "."),
+              })),
       };
       if (operation) await financeApi.patchOperation(operation.id, { ...body, version: operation.version });
       else await financeApi.createOperation(body);
@@ -247,7 +264,7 @@ export function OperationDialog({ kind, plan, dictionaries, operation, onClose, 
 
           {!more ? (
             <button type="button" className="fin-chip self-start" onClick={() => setMore(true)}>
-              Ещё: дата сделки, проект, комментарий
+              Ещё: дата сделки, проект, разбивка, комментарий
             </button>
           ) : (
             <>
@@ -278,6 +295,71 @@ export function OperationDialog({ kind, plan, dictionaries, operation, onClose, 
                   ))}
                 </select>
               </label>
+
+              {!isTransfer ? (
+                <div className="flex flex-col gap-1.5">
+                  <span className="fin-label">Разбить по статьям</span>
+                  {parts.map((part, index) => (
+                    <div key={index} className="flex gap-1.5">
+                      <select
+                        className="input-field"
+                        value={part.category_id}
+                        onChange={(event) =>
+                          setParts((was) =>
+                            was.map((item, i) => (i === index ? { ...item, category_id: event.target.value } : item)),
+                          )
+                        }
+                      >
+                        <option value="">статья</option>
+                        {categories.map((category) => (
+                          <option key={category.id} value={category.id}>
+                            {category.name}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        className="input-field fin-num"
+                        style={{ width: "8rem" }}
+                        placeholder="сумма"
+                        value={part.amount}
+                        onChange={(event) =>
+                          setParts((was) =>
+                            was.map((item, i) => (i === index ? { ...item, amount: event.target.value } : item)),
+                          )
+                        }
+                      />
+                      <button
+                        type="button"
+                        className="fin-chip"
+                        onClick={() => setParts((was) => was.filter((_, i) => i !== index))}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="fin-chip self-start"
+                      onClick={() => setParts((was) => [...was, { category_id: "", amount: "" }])}
+                    >
+                      + часть
+                    </button>
+                    {parts.length ? (
+                      <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                        остаток на основной статье:{" "}
+                        {formatMoney(
+                          Number(amount.replace(/\s/g, "").replace(",", ".") || 0) -
+                            parts.reduce(
+                              (sum, part) => sum + Number(part.amount.replace(/\s/g, "").replace(",", ".") || 0),
+                              0,
+                            ),
+                        )}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
 
               <label className="flex flex-col gap-1">
                 <span className="fin-label">Комментарий</span>

@@ -3298,6 +3298,89 @@ html, body { overflow-x: clip; }
    не наводил на неё курсор — то есть раскрытие не работало ни разу. */
 /* Полоса как отдельный блок больше не нужна: её работу делает сама колонка. */
 .fin-aside-rail { display: none; }
+/* ─── Группы разделов в колонке ─── */
+.fin-nav-group { display: flex; flex-direction: column; gap: 0.1rem; }
+.fin-nav-group + .fin-nav-group { margin-top: 0.6rem; }
+.fin-nav-head {
+  padding: 0 0.5rem 0.2rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--fin-text-soft);
+  white-space: nowrap;
+  overflow: hidden;
+}
+@media (min-width: 1024px) {
+  /* В свёрнутой колонке заголовок группы превращается в тонкую черту: слово
+     в ширину пальца не помещается, а граница между группами нужна и там. */
+  .fin-aside:not(:hover):not([data-open="true"]):not(:has(:focus-visible)) .fin-nav-head {
+    height: 1px;
+    padding: 0;
+    margin: 0.25rem 0.6rem 0.35rem;
+    background: var(--fin-line);
+    color: transparent;
+  }
+}
+
+/* ─── Выбранный фильтр-чип ─── */
+.fin-chip[data-on] { color: var(--fin-plate); background: var(--fin-chrome); border-color: var(--fin-chrome); }
+:root[data-theme="dark"] .fin-chip[data-on] { color: var(--fin-chrome); background: var(--text-primary); border-color: var(--text-primary); }
+
+/* ─── Банки ─── */
+.fin-banks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11.5rem, 1fr));
+  gap: 0.6rem;
+}
+.fin-bank {
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 0.65rem;
+  row-gap: 0.1rem;
+  align-items: center;
+  padding: 0.65rem 0.75rem;
+  border-radius: 14px;
+  border: 1px solid var(--fin-line);
+  background: var(--fin-plate);
+  color: var(--fin-text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+.fin-bank:hover { border-color: var(--fin-text-soft); }
+.fin-bank[data-on="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.fin-bank-logo {
+  grid-row: 1 / span 2;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  border: 1px solid var(--fin-line);
+}
+.fin-bank-logo img { width: 100%; height: 100%; object-fit: contain; }
+.fin-bank-mono { font-weight: 700; color: #131313; }
+.fin-bank-name { font-size: 0.875rem; font-weight: 600; line-height: 1.2; }
+.fin-bank-ways { font-size: 0.6875rem; color: var(--fin-text-soft); line-height: 1.25; }
+
+/* ─── Токен и пример запроса ─── */
+.fin-code {
+  display: block;
+  padding: 0.5rem 0.65rem;
+  border-radius: 10px;
+  border: 1px solid var(--fin-line);
+  background: var(--fin-rail-bg);
+  color: var(--fin-text);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 /* ─── Навигация в колонке ─── */
 .fin-nav { display: flex; flex-direction: column; gap: 0.15rem; }
 .fin-nav-item {

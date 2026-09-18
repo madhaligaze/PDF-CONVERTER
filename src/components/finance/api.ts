@@ -28,7 +28,12 @@ export type AccountBalance = Account & {
 };
 
 export type DictEntry = { id: string; name: string };
-export type Category = DictEntry & { side: "income" | "expense"; system_key: string };
+export type Category = DictEntry & {
+  side: "income" | "expense";
+  system_key: string;
+  /** Природа статьи для показателей: себестоимость, операционный, капитал… */
+  nature?: string;
+};
 export type Counterparty = DictEntry & { role: string };
 export type Project = DictEntry & { closed: boolean };
 
@@ -360,7 +365,181 @@ const qs = (params: Record<string, string | number | undefined | null>) => {
   return text ? `?${text}` : "";
 };
 
+/** Счёт-фактура: обязательство до денег. */
+export type Invoice = {
+  id: string;
+  kind: "out" | "in";
+  number: string;
+  status: string;
+  issued_at: string;
+  due_at: string;
+  counterparty: string;
+  project: string;
+  amount_net: string;
+  vat_rate: string;
+  vat_amount: string;
+  amount_gross: string;
+  comment: string;
+  paid: boolean;
+  overdue_days: number;
+  operation_id: string | null;
+};
+
+export type InvoiceSide = { total: string; open: string; overdue: string };
+
+export type Recurrence = {
+  id: string;
+  title: string;
+  active: boolean;
+  kind: string;
+  period: string;
+  period_title: string;
+  day: number;
+  amount: string;
+  next_at: string;
+  until: string | null;
+  category: string;
+  counterparty: string;
+  project: string;
+  comment: string;
+  waiting: number;
+};
+
+export type HistoryEntry = {
+  id: string;
+  at: string | null;
+  actor: string;
+  kind: string;
+  entity: string;
+  entity_id: string | null;
+  title: string;
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+  undone_at: string | null;
+  can_undo: boolean;
+};
+
+/** Подключение банка или другого источника операций. */
+export type Integration = {
+  id: string;
+  slug: string;
+  title: string;
+  kind: "api" | "statement" | "sheets";
+  state: string;
+  logo: string;
+  account: string;
+  account_id: string | null;
+  settings: Record<string, unknown>;
+  received: number;
+  last_seen_at: string | null;
+  has_token: boolean;
+  token?: string;
+};
+
+export type BankOption = {
+  slug: string;
+  title: string;
+  logo: string;
+  ways: string[];
+  parser: string;
+};
+
+export type BalanceData = {
+  as_of: string;
+  assets: { total: string; rows: Array<{ name: string; amount: string; details?: Array<{ name: string; amount: string }> }> };
+  liabilities: { total: string; rows: Array<{ name: string; amount: string }> };
+  equity: string;
+  not_counted: string[];
+};
+
+export type IndicatorsData = {
+  period: { from: string; to: string };
+  revenue: string;
+  cogs: string;
+  gross_profit: string;
+  operating_costs: string;
+  ebitda: string;
+  depreciation: string;
+  operating_profit: string;
+  financial_costs: string;
+  tax: string;
+  net_profit: string;
+  gross_margin: string | null;
+  ebitda_margin: string | null;
+  net_margin: string | null;
+  not_counted: string[];
+};
+
+export type StatementData = {
+  account: { id: string; name: string; kind: string };
+  opening_balance: string;
+  closing_balance: string;
+  income: string;
+  expense: string;
+  rows: Array<{
+    id: string;
+    paid_at: string;
+    kind: string;
+    direction: "in" | "out";
+    amount: string;
+    balance: string;
+    category: string;
+    counterparty: string;
+    comment: string;
+  }>;
+};
+
 export const financeApi = {
+  // ── Счета-фактуры ──
+  invoices: (kind?: "out" | "in") =>
+    request<{ items: Invoice[]; summary: { receivable: InvoiceSide; payable: InvoiceSide } }>(
+      `/invoices${kind ? `?kind=${kind}` : ""}`,
+    ),
+  createInvoice: (body: unknown) =>
+    request<{ id: string; number: string }>("/invoices", { method: "POST", body: JSON.stringify(body) }),
+  voidInvoice: (id: string) => request<{ ok: boolean }>(`/invoices/${id}/void`, { method: "POST" }),
+
+  // ── Повторяющиеся операции ──
+  recurrences: () => request<{ items: Recurrence[]; horizon_days: number }>("/recurrences"),
+  createRecurrence: (body: unknown) =>
+    request<{ id: string; created: number }>("/recurrences", { method: "POST", body: JSON.stringify(body) }),
+  materializeRecurrences: () =>
+    request<{ created: number }>("/recurrences/materialize", { method: "POST" }),
+  toggleRecurrence: (id: string, active: boolean) =>
+    request<{ id: string; active: boolean }>(`/recurrences/${id}?active=${active}`, { method: "PATCH" }),
+  deleteRecurrence: (id: string) =>
+    request<{ removed: number }>(`/recurrences/${id}`, { method: "DELETE" }),
+
+  setCategoryNature: (id: string, nature: string) =>
+    request<{ id: string; nature: string }>(`/dictionaries/categories/${id}/nature`, {
+      method: "PATCH",
+      body: JSON.stringify({ nature }),
+    }),
+
+  // ── История ──
+  history: () => request<{ items: HistoryEntry[] }>("/history"),
+  undo: (id: string) => request<{ ok: boolean }>(`/history/${id}/undo`, { method: "POST" }),
+
+  // ── Интеграции ──
+  integrations: () => request<{ items: Integration[]; catalog: BankOption[] }>("/integrations"),
+  createIntegration: (body: unknown) =>
+    request<Integration & { token?: string; inbox_url?: string }>("/integrations", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  rotateIntegrationToken: (id: string) =>
+    request<{ token: string }>(`/integrations/${id}/token`, { method: "POST" }),
+  setIntegrationState: (id: string, state: "active" | "off") =>
+    request<Integration>(`/integrations/${id}?state=${state}`, { method: "PATCH" }),
+  deleteIntegration: (id: string) => request<{ ok: boolean }>(`/integrations/${id}`, { method: "DELETE" }),
+
+  // ── Баланс, показатели, выписка ──
+  balance: (asOf?: string) => request<BalanceData>(`/reports/balance${asOf ? `?as_of=${asOf}` : ""}`),
+  indicators: (params: { date_from?: string; date_to?: string } = {}) =>
+    request<IndicatorsData>(`/reports/indicators${qs(params)}`),
+  accountStatement: (params: { account_id: string; date_from?: string; date_to?: string }) =>
+    request<StatementData>(`/reports/statement${qs(params)}`),
+
   // ── Учётки ───────────────────────────────────────────────────────────────
   me: () => request<Me>("/auth/me"),
   login: (body: { email: string; password: string }) =>

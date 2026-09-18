@@ -12,8 +12,15 @@ import {
   ChevronRightIcon,
   ClockIcon,
   CloseIcon,
+  FileTextIcon,
   FolderIcon,
+  GaugeIcon,
   GridIcon,
+  HistoryIcon,
+  PlugIcon,
+  ReceiptIcon,
+  RepeatIcon,
+  ScaleIcon,
   ListIcon,
   PeopleIcon,
   RefreshIcon,
@@ -38,6 +45,15 @@ import { OperationDialog } from "@/components/finance/operation-dialog";
 import { Journal } from "@/components/finance/journal";
 import { ImportPanel } from "@/components/finance/import-panel";
 import { SheetsPanel } from "@/components/finance/sheets-panel";
+import { InvoicesPanel } from "@/components/finance/invoices-panel";
+import { RecurrencesPanel } from "@/components/finance/recurrences-panel";
+import { IntegrationsPanel } from "@/components/finance/integrations-panel";
+import {
+  BalanceReport,
+  HistoryPanel,
+  IndicatorsReport,
+  StatementReport,
+} from "@/components/finance/ledger-reports";
 import { CashFlowReport, DebtsReport, ProfitReport, ProjectsReport } from "@/components/finance/reports";
 import { CalendarView } from "@/components/finance/calendar-view";
 import { PlanActualReport } from "@/components/finance/plan-actual";
@@ -66,7 +82,14 @@ type Section =
   | "sheets"
   | "dictionaries"
   | "rules"
-  | "team";
+  | "team"
+  | "invoices"
+  | "recurrences"
+  | "integrations"
+  | "balance"
+  | "indicators"
+  | "statement"
+  | "history";
 
 /**
  * Разделы живут в левой колонке, а не лентой сверху.
@@ -79,21 +102,52 @@ type Section =
  * Значок здесь не украшение: в свёрнутой колонке он единственное, по чему
  * раздел узнаётся.
  */
-const SECTIONS: { key: Section; title: string; icon: (props: { size?: number }) => ReactElement }[] = [
-  { key: "journal", title: "Журнал", icon: ListIcon },
-  { key: "table", title: "Таблица", icon: TableIcon },
-  { key: "calendar", title: "Календарь", icon: CalendarIcon },
-  { key: "cash", title: "Деньги", icon: WalletIcon },
-  { key: "profit", title: "Прибыль", icon: TrendIcon },
-  { key: "debts", title: "Долги", icon: ClockIcon },
-  { key: "projects", title: "Проекты", icon: FolderIcon },
-  { key: "plan", title: "План / Факт", icon: TargetIcon },
-  { key: "import", title: "Загрузка", icon: UploadIcon },
-  { key: "sheets", title: "Google Таблицы", icon: GridIcon },
-  { key: "rules", title: "Правила", icon: BoltIcon },
-  { key: "dictionaries", title: "Справочники", icon: BookIcon },
-  { key: "team", title: "Команда", icon: PeopleIcon },
+type SectionItem = { key: Section; title: string; icon: (props: { size?: number }) => ReactElement };
+
+/**
+ * Разделы сгруппированы так же, как у Finmap: работа с операциями, отчёты,
+ * настройки. Двадцать пунктов подряд — это уже поиск, а не навигация; три
+ * группы по шесть-восемь читаются одним взглядом.
+ */
+const GROUPS: { title: string; items: SectionItem[] }[] = [
+  {
+    title: "Учёт",
+    items: [
+      { key: "journal", title: "Журнал", icon: ListIcon },
+      { key: "table", title: "Таблица", icon: TableIcon },
+      { key: "calendar", title: "Календарь", icon: CalendarIcon },
+      { key: "invoices", title: "Счета", icon: ReceiptIcon },
+      { key: "recurrences", title: "Повторения", icon: RepeatIcon },
+      { key: "import", title: "Загрузка", icon: UploadIcon },
+      { key: "sheets", title: "Google Таблицы", icon: GridIcon },
+    ],
+  },
+  {
+    title: "Отчёты",
+    items: [
+      { key: "cash", title: "Деньги", icon: WalletIcon },
+      { key: "profit", title: "Прибыль", icon: TrendIcon },
+      { key: "debts", title: "Долги", icon: ClockIcon },
+      { key: "balance", title: "Баланс", icon: ScaleIcon },
+      { key: "indicators", title: "Показатели", icon: GaugeIcon },
+      { key: "statement", title: "Выписка по счёту", icon: FileTextIcon },
+      { key: "projects", title: "Проекты", icon: FolderIcon },
+      { key: "plan", title: "План / Факт", icon: TargetIcon },
+    ],
+  },
+  {
+    title: "Настройки",
+    items: [
+      { key: "integrations", title: "Интеграции", icon: PlugIcon },
+      { key: "rules", title: "Правила", icon: BoltIcon },
+      { key: "dictionaries", title: "Справочники", icon: BookIcon },
+      { key: "team", title: "Команда", icon: PeopleIcon },
+      { key: "history", title: "История", icon: HistoryIcon },
+    ],
+  },
 ];
+
+const SECTIONS: SectionItem[] = GROUPS.flatMap((group) => group.items);
 
 export function FinanceClient() {
   // Раздел сам решает, кто вошёл: своя учётка, свой вход, своя компания.
@@ -207,6 +261,20 @@ export function FinanceClient() {
         return <DictionariesPanel dictionaries={dictionaries} onChanged={reload} />;
       case "team":
         return me ? <TeamPanel me={me} onChanged={reload} /> : null;
+      case "invoices":
+        return <InvoicesPanel dictionaries={dictionaries} onChanged={reload} />;
+      case "recurrences":
+        return <RecurrencesPanel dictionaries={dictionaries} onChanged={reload} />;
+      case "integrations":
+        return <IntegrationsPanel accounts={dictionaries.accounts} onGo={setSection} onChanged={reload} />;
+      case "balance":
+        return <BalanceReport revision={revision} />;
+      case "indicators":
+        return <IndicatorsReport revision={revision} />;
+      case "statement":
+        return <StatementReport accounts={dictionaries.accounts} revision={revision} />;
+      case "history":
+        return <HistoryPanel revision={revision} onChanged={reload} />;
       default:
         return null;
     }
@@ -332,20 +400,25 @@ export function FinanceClient() {
               Подпись не прячется display'ем: свёрнутая колонка её обрезает
               шириной, поэтому переход плавный, а не мигающий. */}
           <nav className="fin-nav" aria-label="Разделы финансов">
-            {SECTIONS.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                className="fin-nav-item"
-                data-on={section === item.key}
-                title={item.title}
-                onClick={() => setSection(item.key)}
-              >
-                <span className="fin-nav-ico">
-                  <item.icon size={17} />
-                </span>
-                <span className="fin-nav-text">{item.title}</span>
-              </button>
+            {GROUPS.map((group) => (
+              <div key={group.title} className="fin-nav-group">
+                <span className="fin-nav-head">{group.title}</span>
+                {group.items.map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    className="fin-nav-item"
+                    data-on={section === item.key}
+                    title={item.title}
+                    onClick={() => setSection(item.key)}
+                  >
+                    <span className="fin-nav-ico">
+                      <item.icon size={17} />
+                    </span>
+                    <span className="fin-nav-text">{item.title}</span>
+                  </button>
+                ))}
+              </div>
             ))}
           </nav>
 
