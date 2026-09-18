@@ -2,14 +2,33 @@
 
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 
-import { ArrowLeftIcon, CloseIcon, RefreshIcon, TableIcon } from "@/components/icons";
+import {
+  ArrowLeftIcon,
+  BookIcon,
+  BoltIcon,
+  CalendarIcon,
+  ChevronRightIcon,
+  ClockIcon,
+  CloseIcon,
+  FolderIcon,
+  GridIcon,
+  ListIcon,
+  PeopleIcon,
+  RefreshIcon,
+  TableIcon,
+  TargetIcon,
+  TrendIcon,
+  UploadIcon,
+  WalletIcon,
+} from "@/components/icons";
 import {
   type Dictionaries,
   type Me,
   type Overview,
   financeApi,
+  compactMoney,
   formatMoney,
 } from "@/components/finance/api";
 import { AuthGate, AuthLoading, PasswordChangeGate, useMe } from "@/components/finance/auth-gate";
@@ -49,26 +68,63 @@ type Section =
   | "rules"
   | "team";
 
-const SECTIONS: { key: Section; title: string }[] = [
-  { key: "journal", title: "Журнал" },
-  { key: "table", title: "Таблица" },
-  { key: "calendar", title: "Календарь" },
-  { key: "cash", title: "Деньги" },
-  { key: "profit", title: "Прибыль" },
-  { key: "debts", title: "Долги" },
-  { key: "projects", title: "Проекты" },
-  { key: "plan", title: "План / Факт" },
-  { key: "import", title: "Загрузка" },
-  { key: "sheets", title: "Google Таблицы" },
-  { key: "rules", title: "Правила" },
-  { key: "dictionaries", title: "Справочники" },
-  { key: "team", title: "Команда" },
+/**
+ * Разделы живут в левой колонке, а не лентой сверху.
+ *
+ * Лента из тринадцати названий не помещалась даже на 1440: последняя вкладка
+ * обрезалась, и о её существовании узнавали случайно. В колонке место есть
+ * всегда, а свёрнутая она занимает ширину пальца — ровно то устройство, что у
+ * Finmap, и по той же причине.
+ *
+ * Значок здесь не украшение: в свёрнутой колонке он единственное, по чему
+ * раздел узнаётся.
+ */
+const SECTIONS: { key: Section; title: string; icon: (props: { size?: number }) => ReactElement }[] = [
+  { key: "journal", title: "Журнал", icon: ListIcon },
+  { key: "table", title: "Таблица", icon: TableIcon },
+  { key: "calendar", title: "Календарь", icon: CalendarIcon },
+  { key: "cash", title: "Деньги", icon: WalletIcon },
+  { key: "profit", title: "Прибыль", icon: TrendIcon },
+  { key: "debts", title: "Долги", icon: ClockIcon },
+  { key: "projects", title: "Проекты", icon: FolderIcon },
+  { key: "plan", title: "План / Факт", icon: TargetIcon },
+  { key: "import", title: "Загрузка", icon: UploadIcon },
+  { key: "sheets", title: "Google Таблицы", icon: GridIcon },
+  { key: "rules", title: "Правила", icon: BoltIcon },
+  { key: "dictionaries", title: "Справочники", icon: BookIcon },
+  { key: "team", title: "Команда", icon: PeopleIcon },
 ];
 
 export function FinanceClient() {
   // Раздел сам решает, кто вошёл: своя учётка, свой вход, своя компания.
   const { me, setMe, loading } = useMe();
   const [section, setSection] = useState<Section>("journal");
+  /**
+   * Колонка разделов: открыта или свёрнута в полосу значков.
+   *
+   * По умолчанию открыта. Свёрнутая по умолчанию читалась как пустое поле у
+   * края экрана — человек не понимал, что панель есть, и не наводил на неё
+   * курсор. Выбор запоминается: кто свернул, тому и остаётся свёрнутой.
+   */
+  const [railOpen, setRailOpen] = useState(true);
+  useEffect(() => {
+    try {
+      setRailOpen(localStorage.getItem("fin_rail") !== "collapsed");
+    } catch {
+      /* приватное окно — панель просто останется открытой */
+    }
+  }, []);
+  const toggleRail = useCallback(() => {
+    setRailOpen((was) => {
+      const next = !was;
+      try {
+        localStorage.setItem("fin_rail", next ? "open" : "collapsed");
+      } catch {
+        /* не запомнилось — не беда */
+      }
+      return next;
+    });
+  }, []);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [dictionaries, setDictionaries] = useState<Dictionaries | null>(null);
   const [error, setError] = useState<string>("");
@@ -254,14 +310,35 @@ export function FinanceClient() {
       ) : null}
 
       <div className="fin-plate">
-        <aside className="fin-aside">
-          {/* Свёрнутая полоса: видна только сумма — то единственное, ради чего
-              на панель смотрят, не раскрывая её. */}
-          <div className="fin-aside-rail">
-            <span className="fin-num" style={{ writingMode: "vertical-rl", fontSize: "0.75rem" }}>
-              {overview ? formatMoney(overview.total) : "—"}
-            </span>
+        <aside className="fin-aside" data-open={railOpen ? "true" : undefined}>
+          {/* Навигация. В свёрнутой колонке видны значки, в раскрытой — названия.
+              Подпись не прячется display'ем: свёрнутая колонка её обрезает
+              шириной, поэтому переход плавный, а не мигающий. */}
+          <nav className="fin-nav" aria-label="Разделы финансов">
+            {SECTIONS.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                className="fin-nav-item"
+                data-on={section === item.key}
+                title={item.title}
+                onClick={() => setSection(item.key)}
+              >
+                <span className="fin-nav-ico">
+                  <item.icon size={17} />
+                </span>
+                <span className="fin-nav-text">{item.title}</span>
+              </button>
+            ))}
+          </nav>
+
+          {/* Главная цифра в свёрнутом виде: ради неё на панель и смотрят, не
+              раскрывая её. В раскрытой колонке её место занимает полный блок. */}
+          <div className="fin-rail-foot" aria-hidden="true">
+            <span className="fin-rail-sum">{compactMoney(overview?.total)}</span>
+            <span className="fin-rail-cur">{symbol}</span>
           </div>
+
 
           <div className="fin-aside-full flex flex-col gap-3">
           <div className="fin-total">
@@ -320,9 +397,23 @@ export function FinanceClient() {
             ) : null}
           </div>
           </div>
+
+          <button
+            type="button"
+            className="fin-rail-toggle"
+            onClick={toggleRail}
+            aria-label={railOpen ? "Свернуть панель" : "Развернуть панель"}
+            title={railOpen ? "Свернуть" : "Развернуть"}
+          >
+            <span className="fin-rail-toggle-ico">
+              <ChevronRightIcon size={14} />
+            </span>
+            <span className="fin-nav-text">Свернуть</span>
+          </button>
         </aside>
 
         <main className="fin-body min-w-0">
+          {/* На телефоне колонка не работает — там разделы остаются лентой. */}
           <nav className="fin-tabs" aria-label="Разделы финансов">
             {SECTIONS.map((item) => (
               <button

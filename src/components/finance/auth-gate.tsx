@@ -63,7 +63,7 @@ export function AuthGate({ onReady }: { onReady: (me: Me) => void }) {
                 className="input-field"
                 value={company}
                 onChange={(event) => setCompany(event.target.value)}
-                placeholder="ТОО «Ромашка»"
+                placeholder="ТОО «Компания»"
                 autoComplete="organization"
                 required
               />
@@ -131,7 +131,7 @@ export function AuthGate({ onReady }: { onReady: (me: Me) => void }) {
             setError("");
           }}
         >
-          {mode === "login" ? "Нет учётной записи — зарегистрировать компанию" : "У меня уже есть учётная запись"}
+          {mode === "login" ? "Регистрация компании" : "У меня уже есть учётная запись"}
         </button>
       </div>
     </div>

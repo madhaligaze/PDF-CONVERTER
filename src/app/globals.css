@@ -3167,11 +3167,15 @@ html, body { overflow-x: clip; }
   --fin-text-soft:     #5b6266;
   --fin-line:          rgba(9, 9, 11, 0.08);
 
-  --fin-rail-w:        60px;
+  --fin-rail-w:        72px;
+  --fin-rail-bg:       rgba(17, 20, 24, 0.055);
+  --fin-rail-mark-bg:  #ffffff;
   --fin-rail-open:     288px;
 }
 
 :root[data-theme="dark"] {
+  --fin-rail-bg:       rgba(255, 255, 255, 0.055);
+  --fin-rail-mark-bg:  rgba(255, 255, 255, 0.06);
   --fin-plate:         var(--bg-surface);
   --fin-plate-border:  var(--border-base);
   --fin-text:          var(--text-primary);
@@ -3226,6 +3230,7 @@ html, body { overflow-x: clip; }
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  min-height: 100%;
   padding: 1.25rem 1.25rem 1.5rem;
   border-right: 1px solid var(--fin-line);
   color: var(--fin-text);
@@ -3239,26 +3244,146 @@ html, body { overflow-x: clip; }
      ловили. */
   .fin-aside {
     width: var(--fin-rail-w);
-    padding: 1.25rem 0.5rem;
+    padding: 1.1rem 0.5rem 1.25rem;
     overflow: hidden;
-    transition: width var(--dur-base) var(--ease-out), padding var(--dur-base) var(--ease-out);
+    /* Своя подложка — чтобы колонка читалась колонкой, а не краем плиты. */
+    background: var(--fin-rail-bg);
+    transition:
+      width var(--dur-base) var(--ease-out),
+      padding var(--dur-base) var(--ease-out),
+      background var(--dur-base) var(--ease-out);
   }
   .fin-aside:hover,
   .fin-aside:has(:focus-visible),
   .fin-aside[data-open="true"] {
     width: var(--fin-rail-open);
     padding: 1.25rem 1.25rem 1.5rem;
+    background: transparent;
   }
   /* В свёрнутом виде видна только сумма на счетах — то единственное, ради чего
      на панель смотрят, не раскрывая её. */
   .fin-aside:not(:hover):not([data-open="true"]):not(:has(:focus-visible)) .fin-aside-full {
     opacity: 0;
     pointer-events: none;
+    height: 0;
+    overflow: hidden;
   }
   .fin-aside-full { transition: opacity var(--dur-fast) var(--ease-out); }
-  .fin-aside-rail { display: flex; }
+  /* Свёрнутая колонка: значки по центру, подписи обрезаны шириной. */
+  .fin-aside:not(:hover):not([data-open="true"]):not(:has(:focus-visible)) .fin-nav-item {
+    justify-content: center;
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .fin-aside:not(:hover):not([data-open="true"]):not(:has(:focus-visible)) .fin-nav-text {
+    width: 0;
+    opacity: 0;
+  }
+  .fin-aside:not(:hover):not([data-open="true"]):not(:has(:focus-visible)) .fin-rail-foot {
+    display: flex;
+  }
+  .fin-aside:not(:hover):not([data-open="true"]):not(:has(:focus-visible)) .fin-rail-toggle {
+    justify-content: center;
+    padding-left: 0;
+    padding-right: 0;
+  }
+  /* Колонка отделена от содержимого не только рамкой: своя подложка нужна,
+     чтобы её видели как панель, а не как поле страницы. */
+  .fin-aside[data-open="true"] { background: var(--fin-rail-bg); }
+  .fin-nav-text { transition: opacity var(--dur-fast) var(--ease-out); }
 }
-.fin-aside-rail { display: none; flex-direction: column; align-items: center; gap: 0.5rem; }
+/* ─── Свёрнутая полоса ───
+   Её задача — быть видимой. Полоса без фона, с одной вертикальной строчкой в
+   12px, читалась как край экрана: человек не знал, что панель существует, и
+   не наводил на неё курсор — то есть раскрытие не работало ни разу. */
+/* Полоса как отдельный блок больше не нужна: её работу делает сама колонка. */
+.fin-aside-rail { display: none; }
+/* ─── Навигация в колонке ─── */
+.fin-nav { display: flex; flex-direction: column; gap: 0.15rem; }
+.fin-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.45rem 0.5rem;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--fin-text-soft);
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.fin-nav-item:hover { color: var(--fin-text); background: var(--fin-rail-mark-bg); }
+/* Текущий раздел — чёрная плашка, как у Finmap: единственная заливка в
+   колонке, поэтому она и читается как «вы здесь». */
+.fin-nav-item[data-on="true"] {
+  background: var(--fin-chrome);
+  color: var(--fin-plate);
+}
+/* На тёмной плите тёмная заливка не читается: текущий раздел был почти не
+   виден, а наведённый выглядел ярче него. Инверсия — та же, что у ленты
+   вкладок, и по той же причине. */
+:root[data-theme="dark"] .fin-nav-item[data-on="true"] {
+  background: var(--text-primary);
+  color: var(--fin-chrome);
+}
+:root[data-theme="dark"] .fin-nav-item[data-on="true"]:hover {
+  background: var(--text-primary);
+  color: var(--fin-chrome);
+}
+.fin-nav-ico { display: inline-flex; flex: 0 0 auto; width: 18px; justify-content: center; color: var(--fin-text); opacity: 0.8; }
+.fin-nav-item[data-on="true"] .fin-nav-ico { color: inherit; opacity: 1; }
+.fin-rail-toggle {
+  /* Видима по умолчанию, прячется на узких экранах ниже. Наоборот не работает:
+     включение из медиа-блока, стоящего ВЫШЕ этого объявления, проигрывает ему
+     по порядку — кнопки просто не было. Второй раз за вечер тот же каскад. */
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--fin-line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--fin-text-soft);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.fin-rail-toggle:hover { color: var(--fin-text); }
+.fin-rail-toggle-ico { display: inline-flex; width: 18px; justify-content: center; transition: transform var(--dur-base) var(--ease-out); }
+.fin-aside[data-open="true"] .fin-rail-toggle-ico { transform: rotate(180deg); }
+@media (max-width: 1023.98px) {
+  /* На телефоне и планшете панель занимает всю ширину — сворачивать нечего. */
+  .fin-rail-toggle { display: none; }
+}
+.fin-nav-text { overflow: hidden; }
+.fin-rail-foot {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  margin-top: auto;
+  padding-top: 0.75rem;
+}
+.fin-rail-sum {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--fin-text);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  text-align: center;
+}
+.fin-rail-cur { font-size: 0.6875rem; color: var(--fin-text-soft); }
+.fin-rail-gap { flex: 1; }
+.fin-rail-more { color: var(--fin-text-soft); transition: transform var(--dur-base) var(--ease-out); }
 .fin-aside:hover .fin-aside-rail,
 .fin-aside[data-open="true"] .fin-aside-rail { display: none; }
 
@@ -3302,6 +3427,14 @@ html, body { overflow-x: clip; }
   scrollbar-width: none;
 }
 .fin-tabs::-webkit-scrollbar { display: none; }
+
+@media (min-width: 1024px) {
+  /* Разделы живут в колонке слева, лента остаётся телефону. Правило стоит
+     ПОСЛЕ объявления `.fin-tabs`: то же правило выше по файлу проигрывало по
+     порядку, и на десктопе показывались обе навигации сразу — ровно тот
+     дефект, что уже стоил трёх правок в дашборде. */
+  .fin-tabs { display: none; }
+}
 .fin-tab {
   display: inline-flex;
   align-items: center;
@@ -3490,6 +3623,10 @@ html, body { overflow-x: clip; }
   font-size: 0.75rem;
   align-items: start;
 }
+/* Поправленная строка остаётся на месте, но перестаёт кричать: она уже готова,
+   и её дело — подтвердить правку, а не требовать внимания. */
+.fin-row-issue[data-done="true"] { opacity: 0.72; }
+
 .fin-row-issue:last-child { border-bottom: none; }
 .fin-issue-line { font-family: var(--font-plex-mono), ui-monospace, monospace; color: var(--fin-text-soft); }
 .fin-issue-text { color: var(--fin-expense); }
@@ -3527,6 +3664,51 @@ html, body { overflow-x: clip; }
 
 /* Лист Univer занимает всю оставшуюся высоту; замер — use-fill-height. */
 .fin-sheet { border-radius: 14px; overflow: hidden; border: 1px solid var(--fin-line); }
+
+/* ─── Лист во весь экран ─── */
+.fin-sheet-wrap { position: relative; }
+.fin-sheet-wrap[data-full="true"] {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  padding: 0;
+  background: var(--page-bg);
+}
+.fin-sheet-wrap[data-full="true"] .fin-sheet { border-radius: 0; border: 0; height: 100%; }
+.fin-full-btn {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.75rem;
+  /* Выше ленты Univer: она рисует свою панель поверх, и кнопка, стоявшая ниже
+     по слою, ловила клики только по краю. */
+  z-index: 30;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--accent-line);
+  background: var(--fin-plate);
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+  /* Подмигивание: о кнопке надо узнать, а искать её незачем. */
+  animation: fin-wink 4s var(--ease-out) infinite;
+}
+.fin-full-btn:hover { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.fin-full-btn:active { background: var(--accent-press); border-color: var(--accent-press); }
+/* Раскрытый лист: кнопка обычная. Подмигивать ей больше не о чем — своё дело
+   она уже сделала, а мигающее у человека перед глазами весь рабочий день
+   раздражает сильнее, чем помогает. */
+.fin-full-btn[data-full="true"] { animation: none; color: var(--fin-text-soft); border-color: var(--fin-line); }
+.fin-full-btn[data-full="true"]:hover { color: var(--accent-fg); }
+@keyframes fin-wink {
+  0%, 74%, 100% { box-shadow: 0 0 0 0 var(--accent-soft); }
+  82% { box-shadow: 0 0 0 5px var(--accent-soft); }
+  90% { box-shadow: 0 0 0 0 var(--accent-soft); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fin-full-btn { animation: none; }
+}
 
 /* ─── Телефон ─── */
 @media (max-width: 639.98px) {

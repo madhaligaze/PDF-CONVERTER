@@ -52,6 +52,16 @@ export function PreviewView({
   const [error, setError] = useState("");
   const [result, setResult] = useState("");
   const [showAll, setShowAll] = useState(false);
+  /**
+   * Строки, поправленные прямо здесь.
+   *
+   * Они уже готовы, но остаются на экране до следующего чтения источника.
+   * Иначе правка выглядит как пропажа: человек выбрал счёт, строка исчезла, и
+   * приняли её или потеряли — непонятно.
+   */
+  const [fixed, setFixed] = useState<Set<number>>(new Set());
+  /** Счёт для разом всех отложенных строк, которым его не хватает. */
+  const [bulkAccount, setBulkAccount] = useState("");
 
   const answer = async (patch: { date_order?: string; default_account?: string }) => {
     setBusy(true);
@@ -86,23 +96,83 @@ export function PreviewView({
     }
   };
 
+  /**
+   * Завести счета, которых не хватило источнику, и перечитать его.
+   *
+   * Перечитывание обязательно: отложенные строки ждали именно счёта, и без
+   * второго разбора человек увидел бы прежние «счёт не найден» на уже
+   * заведённых счетах.
+   */
+  const addMissingAccounts = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      for (const name of preview.accounts_missing) {
+        await financeApi.createAccount({ name, kind: "bank" });
+      }
+      setPreview(await reload({}));
+      onApplied();
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "Счета не завелись");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * Поставить счёт всем отложенным строкам, которым его не хватает.
+   *
+   * У выписки счёт один на весь файл, и спрашивать его в каждой строке — это
+   * сотня одинаковых выборов там, где нужен один.
+   */
+  const setAccountForAll = async (name: string) => {
+    if (!name) return;
+    setBusy(true);
+    setError("");
+    try {
+      const lines = needAccount.map((row) => row.line);
+      for (const row of needAccount) {
+        const field = row.values.kind === "income" ? "account_to" : "account_from";
+        await financeApi.fixImportRow(preview.batch_id, row.line, { [field]: name });
+      }
+      const fresh = await financeApi.importBatch(preview.batch_id);
+      setPreview({ ...preview, rows: fresh.rows as ImportRow[] });
+      setFixed((was) => {
+        const next = new Set(was);
+        for (const line of lines) next.add(line);
+        return next;
+      });
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "Счёт не проставился");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const fixRow = async (line: number, patch: Record<string, unknown>) => {
     try {
-      const fixed = await financeApi.fixImportRow(preview.batch_id, line, patch);
+      const done = await financeApi.fixImportRow(preview.batch_id, line, patch);
       setPreview({
         ...preview,
         rows: preview.rows.map((row) =>
           row.line === line
-            ? { ...row, state: fixed.state as ImportRow["state"], problems: fixed.problems, values: fixed.values }
+            ? { ...row, state: done.state as ImportRow["state"], problems: done.problems, values: done.values }
             : row,
         ),
       });
+      if (done.state === "imported") setFixed((was) => new Set(was).add(line));
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : "Правка не сохранилась");
     }
   };
 
-  const failed = preview.rows.filter((row) => row.state === "failed");
+  const failed = preview.rows.filter((row) => row.state === "failed" || fixed.has(row.line));
+  /** Отложенные, которым не хватает именно счёта, — их правят одним действием. */
+  const needAccount = preview.rows.filter(
+    (row) =>
+      row.state === "failed" &&
+      row.problems.some((problem) => problem.field === "account_from" || problem.field === "account_to"),
+  );
   const ready = preview.rows.filter((row) => row.state === "imported");
   const skipped = preview.rows.filter((row) => row.state === "skipped" || row.state === "duplicate");
 
@@ -159,46 +229,69 @@ export function PreviewView({
         </div>
       </div>
 
-      <div className="fin-card p-3 text-xs flex flex-col gap-1.5" style={{ color: "var(--text-secondary)" }}>
-        <p className="fin-label">Как прочитано</p>
-        <p>
-          {preview.file_name} · шапка — строка {preview.header_line} · даты{" "}
-          {preview.date_order === "dmy" ? "день · месяц · год" : "месяц · день · год"}
-          {preview.date_evidence ? `: ${preview.date_evidence}` : ""}
-        </p>
-        <p>
-          Колонки:{" "}
-          {Object.entries(preview.mapping.columns)
-            .map(([key, value]) => `«${value.header}» → ${key}`)
-            .join(", ")}
-        </p>
-        {preview.unused_columns.length ? (
-          <p style={{ color: "var(--text-muted)" }}>Не использованы: {preview.unused_columns.join(", ")}</p>
-        ) : null}
-        {preview.rules_applied && Object.keys(preview.rules_applied).length ? (
-          <p>
-            Правила разметили:{" "}
-            {Object.entries(preview.rules_applied)
-              .map(([name, count]) => `«${name}» — ${count}`)
-              .join(", ")}
-          </p>
-        ) : null}
-        {preview.accounts_missing.length ? (
+      {preview.accounts_missing.length ? (
+        <div className="fin-card p-3 flex flex-col gap-2">
           <p className="fin-issue-text">Счетов нет в справочнике: {preview.accounts_missing.join(", ")}</p>
-        ) : null}
-      </div>
+          {/* Счёт из файла сам не заводится — место, где лежат деньги, не должно
+              появляться из опечатки. Но и вбивать двадцать два счёта книги
+              руками незачем: список перед глазами, решение за человеком. */}
+          <button
+            type="button"
+            className="btn-ghost text-xs self-start"
+            disabled={busy}
+            onClick={() => void addMissingAccounts()}
+          >
+            {busy
+              ? "Заводим…"
+              : `Завести ${preview.accounts_missing.length} ${plural(
+                  preview.accounts_missing.length,
+                  "счёт",
+                  "счёта",
+                  "счетов",
+                )}`}
+          </button>
+        </div>
+      ) : null}
 
       {failed.length ? (
         <div className="fin-card">
           <div
-            className="flex items-center justify-between px-3 py-2 border-b"
+            className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-b"
             style={{ borderColor: "var(--border-subtle)" }}
           >
             <p className="fin-label">Отложенные строки — что в них не сошлось</p>
+            {needAccount.length > 1 ? (
+              <label className="flex items-center gap-2 text-xs" style={{ color: "var(--text-secondary)" }}>
+                Счёт для всех {needAccount.length}
+                <select
+                  className="input-field"
+                  style={{ width: "auto" }}
+                  value={bulkAccount}
+                  disabled={busy}
+                  onChange={(event) => {
+                    setBulkAccount(event.target.value);
+                    void setAccountForAll(event.target.value);
+                  }}
+                >
+                  <option value="">выберите счёт</option>
+                  {accounts.map((account) => (
+                    <option key={account.id} value={account.name}>
+                      {account.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
           </div>
           <div>
             {failed.slice(0, showAll ? failed.length : 25).map((row) => (
-              <FailedRow key={row.line} row={row} accounts={accounts} onFix={fixRow} />
+              <FailedRow
+                key={row.line}
+                row={row}
+                accounts={accounts}
+                onFix={fixRow}
+                done={row.state === "imported"}
+              />
             ))}
           </div>
           {failed.length > 25 && !showAll ? (
@@ -312,19 +405,28 @@ function FailedRow({
   row,
   accounts,
   onFix,
+  done,
 }: {
   row: ImportRow;
   accounts: Account[];
   onFix: (line: number, patch: Record<string, unknown>) => void;
+  /** Строку уже поправили: она остаётся на месте, но говорит, что готова. */
+  done?: boolean;
 }) {
   const values = row.values as Record<string, string | null>;
   const fields = new Set(row.problems.map((problem) => problem.field));
 
   return (
-    <div className="fin-row-issue">
+    <div className="fin-row-issue" data-done={done ? "true" : undefined}>
       <span className="fin-issue-line">стр. {row.line}</span>
       <div className="flex flex-col gap-1.5 min-w-0">
-        <span className="fin-issue-text">{row.problems.map((problem) => problem.text).join("; ")}</span>
+        <span className={done ? "text-xs" : "fin-issue-text"} style={done ? { color: "var(--fin-income)" } : undefined}>
+          {done
+            ? `готово: ${[values.paid_at, values.amount, values.account_to || values.account_from]
+                .filter(Boolean)
+                .join(" · ")}`
+            : row.problems.map((problem) => problem.text).join("; ")}
+        </span>
         <span className="text-xs break-words" style={{ color: "var(--text-muted)" }}>
           {Object.entries(row.raw)
             .map(([key, value]) => `${key} = ${String(value)}`)

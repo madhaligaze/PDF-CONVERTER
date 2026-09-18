@@ -514,6 +514,26 @@ export function formatMoney(value: Money | number, options: { sign?: boolean } =
   return `${prefix}${text}`;
 }
 
+/**
+ * Сумма для узкой полосы: «3,05 млн» вместо «3 050 000».
+ *
+ * Полоса шириной в палец, и полное число в ней либо обрезается, либо
+ * набирается таким кеглем, что не читается. Точность здесь не нужна: это
+ * взгляд «сколько всего», а точная цифра — в раскрытой панели.
+ */
+export function compactMoney(value: Money | number | null | undefined): string {
+  if (value === null || value === undefined) return "—";
+  const number = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(number)) return "—";
+  const sign = number < 0 ? "−" : "";
+  const abs = Math.abs(number);
+  const round = (n: number) => n.toFixed(n < 10 ? 2 : n < 100 ? 1 : 0).replace(".", ",").replace(/,0+$/, "");
+  if (abs >= 1_000_000_000) return `${sign}${round(abs / 1_000_000_000)} млрд`;
+  if (abs >= 1_000_000) return `${sign}${round(abs / 1_000_000)} млн`;
+  if (abs >= 10_000) return `${sign}${round(abs / 1_000)} тыс`;
+  return `${sign}${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(abs)}`;
+}
+
 /** «2026-09» → «сентябрь 2026»; для шапок таблиц — «сен 26». */
 export function formatMonth(month: string, short = false): string {
   const [year, index] = month.split("-").map(Number);

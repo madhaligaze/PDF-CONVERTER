@@ -283,6 +283,32 @@ export function TableView({ onChanged }: { onChanged: () => void }) {
 
   const workbook = useMemo(() => (payload ? buildWorkbook(payload) : null), [payload]);
 
+  /** Лист во весь экран. */
+  const [full, setFull] = useState(false);
+
+  useEffect(() => {
+    if (!full) return;
+    // Пока лист во весь экран, страница под ним не едет: прокрутка колесом
+    // должна двигать таблицу, а не то, что осталось снизу.
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setFull(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = previous;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [full]);
+
+  useEffect(() => {
+    // Univer меряет холст сам, но только по событию: без толчка после смены
+    // размера лист остаётся прежней ширины внутри нового окна.
+    const id = window.setTimeout(() => window.dispatchEvent(new Event("resize")), 60);
+    return () => window.clearTimeout(id);
+  }, [full]);
+
   return (
     <div className="flex flex-col gap-2">
       {error ? (
@@ -290,10 +316,23 @@ export function TableView({ onChanged }: { onChanged: () => void }) {
           {error}
         </p>
       ) : null}
-      <div className="fin-sheet" ref={box} style={{ height }}>
-        {workbook ? (
-          <UniverSheet key={`journal|${payload?.rows.length ?? 0}`} data={workbook} onReady={onReady} />
-        ) : null}
+      <div className="fin-sheet-wrap" data-full={full ? "true" : undefined}>
+        <div className="fin-sheet" ref={box} style={{ height: full ? "100%" : height }}>
+          {workbook ? (
+            <UniverSheet key={`journal|${payload?.rows.length ?? 0}`} data={workbook} onReady={onReady} />
+          ) : null}
+        </div>
+        {/* Кнопка лежит поверх ленты Univer, а не внутри неё: вставлять свои
+            узлы в чужую разметку значит ломаться на каждом их обновлении. */}
+        <button
+          type="button"
+          className="fin-full-btn"
+          data-full={full ? "true" : undefined}
+          onClick={() => setFull((was) => !was)}
+        >
+          {full ? "Свернуть" : "На весь экран"}
+        </button>
+
       </div>
       {/* Строка состояния: таблица обязана говорить, что записала. Молчание
           после правки — это и есть сомнение «сохранилось ли». В покое пусто:
