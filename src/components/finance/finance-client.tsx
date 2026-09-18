@@ -100,25 +100,27 @@ export function FinanceClient() {
   const { me, setMe, loading } = useMe();
   const [section, setSection] = useState<Section>("journal");
   /**
-   * Колонка разделов: открыта или свёрнута в полосу значков.
+   * Колонка разделов: свёрнута в полосу значков и раскрывается наведением.
    *
-   * По умолчанию открыта. Свёрнутая по умолчанию читалась как пустое поле у
-   * края экрана — человек не понимал, что панель есть, и не наводил на неё
-   * курсор. Выбор запоминается: кто свернул, тому и остаётся свёрнутой.
+   * Закрепить её открытой можно кнопкой — тогда она не сворачивается, когда
+   * курсор уходит. Свёрнутое состояние по умолчанию работает только потому,
+   * что полоса теперь видима: подложка, значки разделов и текущий раздел
+   * плашкой. В прежнем виде — 60px пустоты с вертикальной цифрой — её
+   * принимали за край экрана и не наводили на неё курсор вообще.
    */
-  const [railOpen, setRailOpen] = useState(true);
+  const [railOpen, setRailOpen] = useState(false);
   useEffect(() => {
     try {
-      setRailOpen(localStorage.getItem("fin_rail") !== "collapsed");
+      setRailOpen(localStorage.getItem("fin_rail") === "pinned");
     } catch {
-      /* приватное окно — панель просто останется открытой */
+      /* приватное окно — панель просто останется свёрнутой */
     }
   }, []);
   const toggleRail = useCallback(() => {
     setRailOpen((was) => {
       const next = !was;
       try {
-        localStorage.setItem("fin_rail", next ? "open" : "collapsed");
+        localStorage.setItem("fin_rail", next ? "pinned" : "hover");
       } catch {
         /* не запомнилось — не беда */
       }
@@ -402,13 +404,13 @@ export function FinanceClient() {
             type="button"
             className="fin-rail-toggle"
             onClick={toggleRail}
-            aria-label={railOpen ? "Свернуть панель" : "Развернуть панель"}
-            title={railOpen ? "Свернуть" : "Развернуть"}
+            aria-label={railOpen ? "Открепить панель" : "Закрепить панель открытой"}
+            title={railOpen ? "Открепить — будет раскрываться наведением" : "Закрепить открытой"}
           >
             <span className="fin-rail-toggle-ico">
               <ChevronRightIcon size={14} />
             </span>
-            <span className="fin-nav-text">Свернуть</span>
+            <span className="fin-nav-text">{railOpen ? "Открепить" : "Закрепить"}</span>
           </button>
         </aside>
 
