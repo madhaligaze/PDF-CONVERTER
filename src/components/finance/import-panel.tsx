@@ -6,6 +6,7 @@ import {
   type Account,
   type ImportBatch,
   type ImportPreview,
+  type ImportRow,
   financeApi,
 } from "@/components/finance/api";
 import { PreviewView } from "@/components/finance/preview-view";
@@ -51,6 +52,44 @@ export function ImportPanel({ accounts, onChanged }: Props) {
    * ответ передаётся так же — повторной загрузкой с ответом, а не хранением
    * состояния на полпути.
    */
+  /**
+   * Открыть незавершённую загрузку и дать её дозавести.
+   *
+   * Перезагружать файл ради этого не надо: разбор уже сохранён партией, вместе
+   * с решениями и замечаниями по строкам.
+   */
+  const resume = async (batch: ImportBatch) => {
+    setBusy(true);
+    setError("");
+    try {
+      const saved = await financeApi.importBatch(batch.id);
+      const counts = saved.counts as Record<string, number>;
+      setPreview({
+        batch_id: saved.id,
+        file_name: saved.file_name,
+        header_line: 0,
+        counts: {
+          total: counts.total ?? 0,
+          ready: counts.imported ?? 0,
+          failed: counts.failed ?? 0,
+          skipped: counts.skipped ?? 0,
+        },
+        question: null,
+        date_order: String((saved.decisions as Record<string, unknown>)?.date_order ?? "dmy"),
+        date_evidence: "",
+        mapping: (saved.mapping as ImportPreview["mapping"]) ?? { columns: {}, width: 0 },
+        unused_columns: [],
+        accounts_missing: [],
+        rows: saved.rows as ImportRow[],
+      });
+      setFile(null);
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "Загрузка не открылась");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const send = async (next: File, answer?: { date_order?: string; default_account?: string }) => {
     setBusy(true);
     setError("");
@@ -125,10 +164,24 @@ export function ImportPanel({ accounts, onChanged }: Props) {
                     <span className="fin-acc-name" title={batch.file_name}>
                       {batch.file_name}
                     </span>
-                    <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-                      завели {batch.rows_imported} из {batch.rows_total}
-                      {batch.rows_failed ? `, отложено ${batch.rows_failed}` : ""}
-                    </span>
+                    {/* Незавершённая загрузка — не «история», а брошенное дело:
+                        строки разобраны, в учёте их нет. Её видно и её можно
+                        доделать, не загружая файл заново. */}
+                    {batch.status === "preview" ? (
+                      <button
+                        type="button"
+                        className="btn-ghost text-xs"
+                        style={{ color: "var(--accent-amber)" }}
+                        onClick={() => void resume(batch)}
+                      >
+                        разобрано {batch.rows_total}, не заведено — продолжить
+                      </button>
+                    ) : (
+                      <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                        завели {batch.rows_imported} из {batch.rows_total}
+                        {batch.rows_failed ? `, отложено ${batch.rows_failed}` : ""}
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>
@@ -140,7 +193,16 @@ export function ImportPanel({ accounts, onChanged }: Props) {
           preview={preview}
           setPreview={setPreview}
           accounts={accounts}
-          reload={(answer) => financeApi.importPreview(file as File, answer)}
+          reload={(answer) =>
+            file
+              ? financeApi.importPreview(file, answer)
+              : // Партия, открытая из истории: файла на руках нет, и перечитывать
+                // нечего — отдаём то, что уже разобрано и сохранено.
+                financeApi.importBatch(preview.batch_id).then((saved) => ({
+                  ...preview,
+                  rows: saved.rows as ImportRow[],
+                }))
+          }
           onApplied={() => {
             onChanged();
             void loadBatches();

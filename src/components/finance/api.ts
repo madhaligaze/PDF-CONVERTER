@@ -478,7 +478,15 @@ export const financeApi = {
     request<ImportPreview>("/sheets/preview", { method: "POST", body: JSON.stringify(body) }),
   importBatches: () => request<{ items: ImportBatch[] }>("/import/batches"),
   importBatch: (id: string) =>
-    request<{ id: string; file_name: string; status: string; counts: Record<string, number>; rows: ImportRow[]; decisions: Record<string, unknown> }>(
+    request<{
+      id: string;
+      file_name: string;
+      status: string;
+      counts: Record<string, number>;
+      rows: ImportRow[];
+      decisions: Record<string, unknown>;
+      mapping: ImportPreview["mapping"];
+    }>(
       `/import/batches/${id}`,
     ),
   applyBatch: (id: string, body: { lines?: number[]; create_dictionaries?: boolean } = {}) =>

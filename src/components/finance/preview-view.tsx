@@ -210,6 +210,31 @@ export function PreviewView({
         </div>
       ) : null}
 
+      {/* Главное действие — до списка строк и прилипшее к верху.
+          Раньше оно стояло только под таблицей: человек видел «готово завести
+          2050», считал дело сделанным и уходил, а в учёте не появлялось ничего.
+          Именно так и вышло на проде 18 сентября. */}
+      <div className="fin-apply-bar">
+        <button type="button" className="btn-primary" disabled={busy || !ready.length} onClick={() => apply()}>
+          {busy
+            ? "Заводим…"
+            : `Завести ${ready.length} ${plural(ready.length, "операцию", "операции", "операций")}`}
+        </button>
+        {result ? (
+          <span className="text-sm" style={{ color: "var(--fin-income)" }}>
+            {result}
+          </span>
+        ) : (
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+            в учёт ещё не записано
+          </span>
+        )}
+        <span style={{ flex: 1 }} />
+        <button type="button" className="btn-ghost text-xs" onClick={onReset}>
+          {resetLabel}
+        </button>
+      </div>
+
       <div className="fin-kpis">
         <div className="fin-kpi">
           <span className="fin-kpi-label">Строк в источнике</span>
@@ -371,25 +396,11 @@ export function PreviewView({
         </div>
       ) : null}
 
-      {result ? (
-        <p className="text-sm" style={{ color: "var(--text-primary)" }}>
-          {result}
-        </p>
-      ) : null}
       {error ? (
         <p className="text-xs" style={{ color: "var(--accent-rose)" }}>
           {error}
         </p>
       ) : null}
-
-      <div className="flex flex-wrap items-center gap-2">
-        <button type="button" className="btn-primary" disabled={busy || !ready.length} onClick={() => apply()}>
-          {busy ? "Заводим…" : `Завести ${ready.length} ${plural(ready.length, "операцию", "операции", "операций")}`}
-        </button>
-        <button type="button" className="btn-ghost" onClick={onReset}>
-          {resetLabel}
-        </button>
-      </div>
     </>
   );
 }

@@ -261,7 +261,16 @@ export function ProfitReport({ revision }: { revision: number }) {
   );
 }
 
-export function DebtsReport({ revision, onChanged }: { revision: number; onChanged: () => void }) {
+export function DebtsReport({
+  revision,
+  onChanged,
+  onNewExpectation,
+}: {
+  revision: number;
+  onChanged: () => void;
+  /** Открыть карточку операции с уже отмеченным ожиданием. */
+  onNewExpectation?: (kind: "income" | "expense") => void;
+}) {
   const { data, error } = useReport<Debts>(() => financeApi.debts(), revision);
   const [busy, setBusy] = useState("");
 
@@ -281,8 +290,8 @@ export function DebtsReport({ revision, onChanged }: { revision: number; onChang
   if (!data) return <Empty text="Считаем…" />;
 
   const sides = [
-    { key: "receivable", title: "Нам должны", data: data.receivable },
-    { key: "payable", title: "Мы должны", data: data.payable },
+    { key: "receivable", title: "Нам должны", data: data.receivable, kind: "income" },
+    { key: "payable", title: "Мы должны", data: data.payable, kind: "expense" },
   ] as const;
 
   return (
@@ -343,7 +352,22 @@ export function DebtsReport({ revision, onChanged }: { revision: number; onChang
               </table>
             </div>
           ) : (
-            <Empty text="Ожиданий нет." />
+            // Пустая сторона не молчит, а даёт записать первое ожидание: долг
+            // здесь и есть операция, деньги по которой не двигались, и узнать
+            // это иначе человеку негде.
+            <div className="p-3">
+              {onNewExpectation ? (
+                <button
+                  type="button"
+                  className="btn-ghost text-xs"
+                  onClick={() => onNewExpectation(side.kind)}
+                >
+                  {side.kind === "income" ? "Записать, что нам должны" : "Записать, что мы должны"}
+                </button>
+              ) : (
+                <Empty text="Ожиданий нет" />
+              )}
+            </div>
           )}
         </div>
       ))}

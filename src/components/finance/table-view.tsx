@@ -285,6 +285,14 @@ export function TableView({ onChanged }: { onChanged: () => void }) {
 
   /** Лист во весь экран. */
   const [full, setFull] = useState(false);
+  /**
+   * Где стоит кнопка раскрытия: вплотную слева от вкладки «Начало».
+   *
+   * Считается по разметке Univer, потому что лента у них центрирована: ширина
+   * группы вкладок зависит от языка и версии, и зашитое смещение попало бы то
+   * на «Начало», то в пустоту.
+   */
+  const [fullLeft, setFullLeft] = useState<number | null>(null);
 
   useEffect(() => {
     if (!full) return;
@@ -309,6 +317,32 @@ export function TableView({ onChanged }: { onChanged: () => void }) {
     return () => window.clearTimeout(id);
   }, [full]);
 
+  useEffect(() => {
+    const place = () => {
+      const root = box.current;
+      if (!root) return;
+      const tab = Array.from(root.querySelectorAll<HTMLElement>("div, span, a, button")).find(
+        (node) => node.childElementCount === 0 && node.textContent?.trim() === "Начало",
+      );
+      if (!tab) {
+        setFullLeft(null);
+        return;
+      }
+      const left = tab.getBoundingClientRect().left - root.getBoundingClientRect().left;
+      // 132px — ширина кнопки с отступом. Меньше зазора не оставляем: кнопка,
+      // прижатая к вкладке, читается как ещё одна вкладка ленты.
+      setFullLeft(Math.max(8, Math.round(left - 132)));
+    };
+    const id = window.setTimeout(place, 400);
+    const slower = window.setTimeout(place, 1600);
+    window.addEventListener("resize", place);
+    return () => {
+      window.clearTimeout(id);
+      window.clearTimeout(slower);
+      window.removeEventListener("resize", place);
+    };
+  }, [full, payload]);
+
   return (
     <div className="flex flex-col gap-2">
       {error ? (
@@ -323,11 +357,13 @@ export function TableView({ onChanged }: { onChanged: () => void }) {
           ) : null}
         </div>
         {/* Кнопка лежит поверх ленты Univer, а не внутри неё: вставлять свои
-            узлы в чужую разметку значит ломаться на каждом их обновлении. */}
+            узлы в чужую разметку значит ломаться на каждом их обновлении.
+            Положение считается по вкладке «Начало» — см. эффект выше. */}
         <button
           type="button"
           className="fin-full-btn"
           data-full={full ? "true" : undefined}
+          style={fullLeft === null ? undefined : { left: `${fullLeft}px` }}
           onClick={() => setFull((was) => !was)}
         >
           {full ? "Свернуть" : "На весь экран"}

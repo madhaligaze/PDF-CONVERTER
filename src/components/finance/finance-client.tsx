@@ -131,6 +131,8 @@ export function FinanceClient() {
   const [dictionaries, setDictionaries] = useState<Dictionaries | null>(null);
   const [error, setError] = useState<string>("");
   const [dialogKind, setDialogKind] = useState<"income" | "expense" | "transfer" | null>(null);
+  /** Карточка открывается с уже отмеченным ожиданием — из раздела «Долги». */
+  const [dialogPlan, setDialogPlan] = useState(false);
   /**
    * Счётчик перезагрузок. Меняется, когда данные изменились где угодно в
    * разделе, и по нему обновляются и сводка слева, и открытый экран.
@@ -183,7 +185,14 @@ export function FinanceClient() {
       case "profit":
         return <ProfitReport revision={revision} />;
       case "debts":
-        return <DebtsReport revision={revision} onChanged={reload} />;
+        return <DebtsReport
+            revision={revision}
+            onChanged={reload}
+            onNewExpectation={(kind) => {
+              setDialogPlan(true);
+              setDialogKind(kind);
+            }}
+          />;
       case "projects":
         return <ProjectsReport revision={revision} />;
       case "plan":
@@ -263,10 +272,16 @@ export function FinanceClient() {
         </div>
 
         <div className="fin-actions">
-          <button type="button" className="fin-act" data-kind="income" onClick={() => setDialogKind("income")}>
+          <button type="button" className="fin-act" data-kind="income" onClick={() => {
+              setDialogPlan(false);
+              setDialogKind("income");
+            }}>
             + Доход
           </button>
-          <button type="button" className="fin-act" data-kind="expense" onClick={() => setDialogKind("expense")}>
+          <button type="button" className="fin-act" data-kind="expense" onClick={() => {
+              setDialogPlan(false);
+              setDialogKind("expense");
+            }}>
             − Расход
           </button>
           {/* «Перевод» на телефоне не прячется: перевод из кассы на счёт —
@@ -436,6 +451,7 @@ export function FinanceClient() {
       {dialogKind && dictionaries ? (
         <OperationDialog
           kind={dialogKind}
+          plan={dialogPlan}
           dictionaries={dictionaries}
           onClose={() => setDialogKind(null)}
           onSaved={() => {

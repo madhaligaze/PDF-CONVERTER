@@ -3633,6 +3633,21 @@ html, body { overflow-x: clip; }
 .fin-issue-skip { color: var(--fin-text-soft); }
 
 /* ─── Сводные плитки ─── */
+/* Полоса записи: главное действие разбора видно без прокрутки. */
+.fin-apply-bar {
+  position: sticky;
+  top: 0.25rem;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 0.75rem;
+  border-radius: 12px;
+  border: 1px solid var(--fin-line);
+  background: var(--fin-plate);
+}
+
 .fin-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; }
 @media (min-width: 768px) { .fin-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 .fin-kpi {
@@ -3677,8 +3692,11 @@ html, body { overflow-x: clip; }
 .fin-sheet-wrap[data-full="true"] .fin-sheet { border-radius: 0; border: 0; height: 100%; }
 .fin-full-btn {
   position: absolute;
-  top: 0.55rem;
-  right: 0.75rem;
+  top: 0.5rem;
+  /* Слева от вкладки «Начало» — место указано человеком. Точное смещение
+     проставляется в коде по измеренной вкладке; здесь запас на случай, если
+     вкладку не нашли. */
+  left: 0.75rem;
   /* Выше ленты Univer: она рисует свою панель поверх, и кнопка, стоявшая ниже
      по слою, ловила клики только по краю. */
   z-index: 30;

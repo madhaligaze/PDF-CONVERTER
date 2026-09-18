@@ -13,6 +13,8 @@ import {
 
 type Props = {
   kind: OperationKind;
+  /** Открыть сразу как ожидание: из раздела «Долги». */
+  plan?: boolean;
   dictionaries: Dictionaries;
   /** Правка существующей операции; пусто — создание новой. */
   operation?: Operation | null;
@@ -39,7 +41,7 @@ const TITLES: Record<OperationKind, string> = {
  * деньги считаются по дате платежа, прибыль — по дате сделки. Поэтому под ней
  * стоит подпись, объясняющая последствие, а не название.
  */
-export function OperationDialog({ kind, dictionaries, operation, onClose, onSaved }: Props) {
+export function OperationDialog({ kind, plan, dictionaries, operation, onClose, onSaved }: Props) {
   const isTransfer = kind === "transfer";
   const side = kind === "income" ? "income" : "expense";
   const categories = useMemo(
@@ -56,7 +58,9 @@ export function OperationDialog({ kind, dictionaries, operation, onClose, onSave
   const [accruedAt, setAccruedAt] = useState(operation?.accrued_at ?? "");
   const [projectId, setProjectId] = useState(operation?.projects?.[0]?.id ?? "");
   const [comment, setComment] = useState(operation?.comment ?? "");
-  const [status, setStatus] = useState<"fact" | "plan">(operation?.status ?? "fact");
+  const [status, setStatus] = useState<"fact" | "plan">(
+    operation?.status ?? (plan ? "plan" : "fact"),
+  );
   const [more, setMore] = useState(Boolean(operation?.accrued_at || operation?.projects?.length));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -220,7 +224,10 @@ export function OperationDialog({ kind, dictionaries, operation, onClose, onSave
           )}
 
           <label className="flex flex-col gap-1">
-            <span className="fin-label">Дата платежа</span>
+            {/* Для ожидания та же дата означает срок: по ней считается
+                просрочка в разделе «Долги». Подпись «Дата платежа» у операции,
+                которую ещё не оплатили, вводила в заблуждение. */}
+            <span className="fin-label">{status === "plan" ? "Срок оплаты" : "Дата платежа"}</span>
             <input
               className="input-field"
               type="date"
