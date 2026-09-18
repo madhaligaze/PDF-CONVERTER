@@ -2,7 +2,15 @@
 
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactElement } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactElement,
+} from "react";
 
 import {
   ArrowLeftIcon,
@@ -202,6 +210,24 @@ export function FinanceClient() {
    * принимали за край экрана и не наводили на неё курсор вообще.
    */
   const railOpen = useSyncExternalStore(subscribeRail, readRail, () => false);
+
+  /**
+   * Новый раздел открывается с начала.
+   *
+   * Иначе прокрутка оставалась там, где был прошлый раздел: пункт «Правила»
+   * внизу колонки нажимали, прокрутив страницу, и новый раздел рисовался выше
+   * экрана — человек видел пустоту и листал наверх сам. Первое открытие
+   * пропускается: страница и так в начале, а прыжок при загрузке мешал бы
+   * якорю в адресе, если он когда-нибудь появится.
+   */
+  const firstSection = useRef(true);
+  useEffect(() => {
+    if (firstSection.current) {
+      firstSection.current = false;
+      return;
+    }
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }, [section]);
   const toggleRail = useCallback(() => writeRail(!readRail()), []);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [dictionaries, setDictionaries] = useState<Dictionaries | null>(null);
@@ -418,6 +444,11 @@ export function FinanceClient() {
 
       <div className="fin-plate">
         <aside className="fin-aside" data-open={railOpen ? "true" : undefined}>
+          {/* Внутренний слой прилипает к экрану, а сама колонка тянется на
+              всю высоту плиты — вместе с подложкой и разделительной линией.
+              Прилипни колонка целиком, подложка обрывалась бы посреди длинного
+              журнала. */}
+          <div className="fin-aside-inner">
           {/* Навигация. В свёрнутой колонке видны значки, в раскрытой — названия.
               Подпись не прячется display'ем: свёрнутая колонка её обрезает
               шириной, поэтому переход плавный, а не мигающий. */}
@@ -522,6 +553,7 @@ export function FinanceClient() {
             </span>
             <span className="fin-nav-text">{railOpen ? "Открепить" : "Закрепить"}</span>
           </button>
+          </div>
         </aside>
 
         <main className="fin-body min-w-0">

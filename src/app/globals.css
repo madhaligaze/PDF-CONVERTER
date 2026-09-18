@@ -3242,13 +3242,38 @@ html, body { overflow-x: clip; }
   background: var(--fin-plate);
   border-radius: var(--fin-plate-radius);
   border: 1px solid var(--fin-plate-border);
+  /* `clip`, а не `hidden`: скругление обрезается так же, но плита не
+     становится контейнером прокрутки. С `hidden` прилипание колонки разделов
+     считалось бы относительно плиты, которая сама не прокручивается, — то
+     есть не работало бы вовсе. Старые браузеры берут строку выше. */
   overflow: hidden;
+  overflow: clip;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   align-items: start;
 }
 @media (min-width: 1024px) {
-  .fin-plate { grid-template-columns: auto minmax(0, 1fr); }
+  /* Колонка тянется на всю высоту ряда — подложка и линия до низа плиты. */
+  .fin-plate { grid-template-columns: auto minmax(0, 1fr); align-items: stretch; }
+}
+
+/* ─── Внутренний слой колонки ─── */
+.fin-aside-inner { display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; }
+@media (min-width: 1024px) {
+  /* Прилипает к экрану: до «Интеграций» и «Правил» внизу колонки не нужно
+     прокручивать всю страницу, а длинный журнал не уносит навигацию вверх.
+     Если колонка выше экрана — прокручивается она сама. */
+  .fin-aside-inner {
+    position: sticky;
+    top: 0.75rem;
+    /* Высота с запасом на нижние отступы колонки и плиты: иначе в самом конце
+       страницы колонка упиралась в низ плиты и съезжала вверх за экран. */
+    max-height: calc(100dvh - 3.5rem);
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+    overscroll-behavior: contain;
+  }
 }
 
 /* ─── Боковая панель со счетами: раскрывается наведением ─── */
@@ -3271,7 +3296,10 @@ html, body { overflow-x: clip; }
   .fin-aside {
     width: var(--fin-rail-w);
     padding: 1.1rem 0.5rem 1.25rem;
+    /* `clip` по той же причине, что у плиты: иначе внутренний слой прилипал
+       бы к колонке, а не к экрану. */
     overflow: hidden;
+    overflow: clip;
     /* Своя подложка — чтобы колонка читалась колонкой, а не краем плиты. */
     background: var(--fin-rail-bg);
     transition:
