@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { UniverSheet, type UniverApi, type WorkbookSnapshot } from "@/components/univer/sheet";
 import { useFillHeight } from "@/components/books/use-fill-height";
@@ -182,7 +182,13 @@ export function TableView({ onChanged }: { onChanged: () => void }) {
    * правка уедет на сервер дважды.
    */
   const state = useRef<GridPayload | null>(null);
-  state.current = payload;
+  // Синхронизация в эффекте раскладки, а не присваиванием при рендере: рендер
+  // обязан быть чистым. Раскладочный эффект родителя срабатывает раньше
+  // обычного эффекта Univer, поэтому списки при монтировании листа видят
+  // свежие данные.
+  useLayoutEffect(() => {
+    state.current = payload;
+  }, [payload]);
 
   const load = useCallback(async () => {
     try {
@@ -194,9 +200,22 @@ export function TableView({ onChanged }: { onChanged: () => void }) {
     }
   }, []);
 
+  // Первое чтение — прямо в эффекте и с отменой: ответ, пришедший после ухода
+  // с раздела, не должен собирать лист в уже снятом компоненте.
   useEffect(() => {
-    void load();
-  }, [load]);
+    let alive = true;
+    financeApi
+      .grid({})
+      .then((next) => {
+        if (!alive) return;
+        setPayload(next);
+        setError("");
+      })
+      .catch((exc) => alive && setError(exc instanceof Error ? exc.message : "Лист не собрался"));
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const say = useCallback((text: string) => setBeat({ text, at: Date.now() }), []);
 
@@ -344,7 +363,7 @@ export function TableView({ onChanged }: { onChanged: () => void }) {
       window.clearTimeout(slower);
       window.removeEventListener("resize", place);
     };
-  }, [full, payload]);
+  }, [box, full, payload]);
 
   return (
     <div className="flex flex-col gap-2">

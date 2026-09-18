@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { CloseIcon, PhoneIcon, RefreshIcon } from "@/components/icons";
+import { CloseIcon, RefreshIcon } from "@/components/icons";
+import { AutocallServiceIcon } from "@/components/service-icons";
 import { useScrollLock } from "@/components/use-scroll-lock";
 
 const API = "/api/backend";
@@ -147,8 +148,8 @@ export function AutocallModal({ onClose }: { onClose: () => void }) {
         }}
       >
         <div className="flex items-center gap-2.5">
-          <span className="logo-badge">
-            <PhoneIcon size={16} />
+          <span className="logo-badge logo-badge-quiet">
+            <AutocallServiceIcon size={18} />
           </span>
           <h2 className="text-base font-semibold" style={{ color: "var(--text-primary)", letterSpacing: "-0.01em" }}>
             Autocall.kz

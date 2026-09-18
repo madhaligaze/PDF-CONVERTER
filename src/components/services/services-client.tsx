@@ -5,9 +5,13 @@ import Link from "next/link";
 import type { ComponentType } from "react";
 
 import { AutocallModal } from "@/components/services/autocall-modal";
-import { ArrowLeftIcon, PhoneIcon, PuzzleIcon, TableIcon } from "@/components/icons";
-// BBC Dashboard (removable module — см. src/components/bbc-dashboard/README.md)
-import { BbcDashboardIcon } from "@/components/bbc-dashboard/icon";
+import { ArrowLeftIcon } from "@/components/icons";
+import {
+  AutocallServiceIcon,
+  DashboardServiceIcon,
+  FinanceServiceIcon,
+  SourcesServiceIcon,
+} from "@/components/service-icons";
 
 type ServiceTile = {
   key: string;
@@ -23,14 +27,14 @@ const TILES: ServiceTile[] = [
     key: "autocall",
     title: "Autocall.kz",
     description: "Фактическая стоимость и дата обзвонов → Google Sheets",
-    Icon: PhoneIcon,
+    Icon: AutocallServiceIcon,
   },
   // BBC Dashboard (removable module)
   {
     key: "bbc-dashboard",
     title: "BBC Dashboard",
     description: "Интерактивный дашборд по сводной таблице в Google Sheets",
-    Icon: BbcDashboardIcon,
+    Icon: DashboardServiceIcon,
     href: "/bbc-dashboard",
   },
   // Финансы — обкатка управленческого учёта перед интеграцией с Finmap.
@@ -41,7 +45,7 @@ const TILES: ServiceTile[] = [
     key: "finance",
     title: "Финансы",
     description: "Учёт денег: журнал, отчёты, календарь платежей, загрузка выписок",
-    Icon: TableIcon,
+    Icon: FinanceServiceIcon,
     href: "/finance",
   },
   // Плитки «Книги» здесь нет намеренно. Страница объявляет себя как «внешние
@@ -57,11 +61,10 @@ const TILE_CLASS =
 function TileBody({ tile }: { tile: ServiceTile }) {
   return (
     <>
-      <span
-        className="inline-flex items-center justify-center w-11 h-11 rounded-xl transition-colors"
-        style={{ background: "var(--accent-soft)", color: "var(--text-accent)" }}
-      >
-        <tile.Icon size={20} />
+      {/* Плашка нейтральная: насыщенно-синяя делала значок игрушкой. Глубину
+          даёт сам значок (duotone), цвет плашке для этого не нужен. */}
+      <span className="service-mark">
+        <tile.Icon size={26} />
       </span>
       <span className="text-base font-semibold" style={{ color: "var(--text-primary)", letterSpacing: "-0.01em" }}>
         {tile.title}
@@ -87,8 +90,8 @@ export function ServicesClient() {
             <ArrowLeftIcon size={15} />
             <span className="hidden sm:inline">Назад</span>
           </Link>
-          <span className="logo-badge">
-            <PuzzleIcon size={16} />
+          <span className="logo-badge logo-badge-quiet">
+            <SourcesServiceIcon size={18} />
           </span>
           <span className="text-sm font-semibold" style={{ color: "var(--text-primary)", letterSpacing: "-0.01em" }}>
             Сервисы

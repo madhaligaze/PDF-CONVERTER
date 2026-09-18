@@ -37,9 +37,23 @@ export function PlanActualReport({ revision, onChanged }: { revision: number; on
     }
   }, [method]);
 
+  // Первое чтение и перечитывание по ревизии — прямо в эффекте, с отменой:
+  // ответ, пришедший после смены способа учёта, не должен перезаписать отчёт
+  // уже по другому способу.
   useEffect(() => {
-    void load();
-  }, [load, revision]);
+    let alive = true;
+    financeApi
+      .planActual({ method })
+      .then((next) => {
+        if (!alive) return;
+        setData(next);
+        setError("");
+      })
+      .catch((exc) => alive && setError(exc instanceof Error ? exc.message : "Отчёт не посчитался"));
+    return () => {
+      alive = false;
+    };
+  }, [method, revision]);
 
   const savePlan = async (item: PlanItem, month: string, amount: string) => {
     try {

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactElement } from "react";
 
 import {
   ArrowLeftIcon,
@@ -32,7 +32,6 @@ import {
 } from "@/components/icons";
 import {
   type Dictionaries,
-  type Me,
   type Overview,
   financeApi,
   compactMoney,
@@ -45,6 +44,7 @@ import { OperationDialog } from "@/components/finance/operation-dialog";
 import { Journal } from "@/components/finance/journal";
 import { ImportPanel } from "@/components/finance/import-panel";
 import { SheetsPanel } from "@/components/finance/sheets-panel";
+import { FinanceServiceIcon } from "@/components/service-icons";
 import { InvoicesPanel } from "@/components/finance/invoices-panel";
 import { RecurrencesPanel } from "@/components/finance/recurrences-panel";
 import { IntegrationsPanel } from "@/components/finance/integrations-panel";
@@ -149,6 +149,45 @@ const GROUPS: { title: string; items: SectionItem[] }[] = [
 
 const SECTIONS: SectionItem[] = GROUPS.flatMap((group) => group.items);
 
+/**
+ * Закреплена ли колонка разделов — выбор человека, переживающий перезагрузку.
+ *
+ * Через `useSyncExternalStore`, а не «прочитать в эффекте и положить в
+ * состояние»: второй способ сначала рисует свёрнутую колонку, потом раскрытую,
+ * и закреплённая панель мигает при каждом открытии раздела. Если хранилище
+ * недоступно (приватное окно), выбор живёт в памяти до перезагрузки.
+ */
+const RAIL_KEY = "fin_rail";
+let railMemory = false;
+const railListeners = new Set<() => void>();
+
+function readRail(): boolean {
+  try {
+    return localStorage.getItem(RAIL_KEY) === "pinned";
+  } catch {
+    return railMemory;
+  }
+}
+
+function writeRail(pinned: boolean): void {
+  railMemory = pinned;
+  try {
+    localStorage.setItem(RAIL_KEY, pinned ? "pinned" : "hover");
+  } catch {
+    /* выбор останется в памяти */
+  }
+  railListeners.forEach((listener) => listener());
+}
+
+function subscribeRail(listener: () => void): () => void {
+  railListeners.add(listener);
+  window.addEventListener("storage", listener);
+  return () => {
+    railListeners.delete(listener);
+    window.removeEventListener("storage", listener);
+  };
+}
+
 export function FinanceClient() {
   // Раздел сам решает, кто вошёл: своя учётка, свой вход, своя компания.
   const { me, setMe, loading } = useMe();
@@ -162,25 +201,8 @@ export function FinanceClient() {
    * плашкой. В прежнем виде — 60px пустоты с вертикальной цифрой — её
    * принимали за край экрана и не наводили на неё курсор вообще.
    */
-  const [railOpen, setRailOpen] = useState(false);
-  useEffect(() => {
-    try {
-      setRailOpen(localStorage.getItem("fin_rail") === "pinned");
-    } catch {
-      /* приватное окно — панель просто останется свёрнутой */
-    }
-  }, []);
-  const toggleRail = useCallback(() => {
-    setRailOpen((was) => {
-      const next = !was;
-      try {
-        localStorage.setItem("fin_rail", next ? "pinned" : "hover");
-      } catch {
-        /* не запомнилось — не беда */
-      }
-      return next;
-    });
-  }, []);
+  const railOpen = useSyncExternalStore(subscribeRail, readRail, () => false);
+  const toggleRail = useCallback(() => writeRail(!readRail()), []);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [dictionaries, setDictionaries] = useState<Dictionaries | null>(null);
   const [error, setError] = useState<string>("");
@@ -304,8 +326,8 @@ export function FinanceClient() {
         >
           <ArrowLeftIcon size={15} />
         </Link>
-        <span className="logo-badge">
-          <TableIcon size={16} />
+        <span className="fin-brand">
+          <FinanceServiceIcon size={18} />
         </span>
         {/* Компания в шапке, а не название раздела: человек ведёт несколько
             компаний, и первое, что ему надо знать, — в какой он сейчас. */}
@@ -503,6 +525,10 @@ export function FinanceClient() {
         </aside>
 
         <main className="fin-body min-w-0">
+          {/* Заголовок раздела. Пока разделы были лентой вкладок, лента и была
+              верхом страницы; когда она ушла в колонку, содержимое упёрлось в
+              край плиты, и страница читалась обрезанной. */}
+          <h1 className="fin-section-title">{SECTIONS.find((item) => item.key === section)?.title}</h1>
           {/* На телефоне колонка не работает — там разделы остаются лентой. */}
           <nav className="fin-tabs" aria-label="Разделы финансов">
             {SECTIONS.map((item) => (

@@ -247,6 +247,32 @@ body {
   color: var(--accent-fg);
   flex-shrink: 0;
 }
+/* Спокойный вариант значка в шапке сервиса: без заливки акцентом. Бренд
+   приложения остаётся синим, а сервис внутри него — нейтральным, иначе каждая
+   шапка спорит с главной кнопкой страницы. */
+.logo-badge.logo-badge-quiet {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-base);
+  color: var(--text-primary);
+}
+
+/* Плашка значка на плитке сервиса. */
+.service-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 13px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-base);
+  color: var(--text-primary);
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+.group:hover .service-mark { border-color: var(--border-strong); }
 
 /* ─── Card ────────────────────────────────────────────────────── */
 .card {
@@ -3571,6 +3597,34 @@ html, body { overflow-x: clip; }
 
 /* ─── Таблица журнала ─── */
 .fin-body { padding: 0 1rem 1.5rem; min-width: 0; color: var(--fin-text); }
+.fin-section-title {
+  margin: 0;
+  padding: 1.35rem 0 0.95rem;
+  font-size: 1.375rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: var(--fin-text);
+}
+@media (max-width: 1023.98px) {
+  /* На узком экране верх страницы — лента вкладок, и в ней уже видно, где ты.
+     Правило стоит сразу после объявления: выше по файлу оно проиграло бы. */
+  .fin-section-title { display: none; }
+}
+
+/* Значок раздела в тёмной шапке: своя плашка, без синей заливки. */
+.fin-brand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
 .fin-table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; color: var(--fin-text); }
 .fin-table th {
   text-align: left;
