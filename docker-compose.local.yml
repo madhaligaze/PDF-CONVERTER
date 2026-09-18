@@ -29,6 +29,10 @@ services:
     environment:
       APP_NAME: ${APP_NAME:-PDF Converter API}
       ENVIRONMENT: development
+      # Без этого development включал перезапуск по правке файлов — внутри
+      # контейнера, где их никто не правит: два лишних процесса (~57 МБ) и
+      # постоянная слежка за /app.
+      APP_RELOAD: "false"
       API_V1_PREFIX: /api/v1
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       APP_HOST: 0.0.0.0
