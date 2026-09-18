@@ -7,13 +7,18 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeftIcon, CloseIcon, RefreshIcon, TableIcon } from "@/components/icons";
 import {
   type Dictionaries,
+  type Me,
   type Overview,
   financeApi,
   formatMoney,
 } from "@/components/finance/api";
+import { AuthGate, AuthLoading, PasswordChangeGate, useMe } from "@/components/finance/auth-gate";
+import { TeamPanel } from "@/components/finance/team-panel";
+import { RulesPanel } from "@/components/finance/rules-panel";
 import { OperationDialog } from "@/components/finance/operation-dialog";
 import { Journal } from "@/components/finance/journal";
 import { ImportPanel } from "@/components/finance/import-panel";
+import { SheetsPanel } from "@/components/finance/sheets-panel";
 import { CashFlowReport, DebtsReport, ProfitReport, ProjectsReport } from "@/components/finance/reports";
 import { CalendarView } from "@/components/finance/calendar-view";
 import { PlanActualReport } from "@/components/finance/plan-actual";
@@ -39,7 +44,10 @@ type Section =
   | "projects"
   | "plan"
   | "import"
-  | "dictionaries";
+  | "sheets"
+  | "dictionaries"
+  | "rules"
+  | "team";
 
 const SECTIONS: { key: Section; title: string }[] = [
   { key: "journal", title: "Журнал" },
@@ -50,11 +58,16 @@ const SECTIONS: { key: Section; title: string }[] = [
   { key: "debts", title: "Долги" },
   { key: "projects", title: "Проекты" },
   { key: "plan", title: "План / Факт" },
-  { key: "import", title: "Загрузка файла" },
+  { key: "import", title: "Загрузка" },
+  { key: "sheets", title: "Google Таблицы" },
+  { key: "rules", title: "Правила" },
   { key: "dictionaries", title: "Справочники" },
+  { key: "team", title: "Команда" },
 ];
 
 export function FinanceClient() {
+  // Раздел сам решает, кто вошёл: своя учётка, свой вход, своя компания.
+  const { me, setMe, loading } = useMe();
   const [section, setSection] = useState<Section>("journal");
   const [overview, setOverview] = useState<Overview | null>(null);
   const [dictionaries, setDictionaries] = useState<Dictionaries | null>(null);
@@ -71,7 +84,10 @@ export function FinanceClient() {
   const [revision, setRevision] = useState(0);
   const reload = useCallback(() => setRevision((value) => value + 1), []);
 
+  const companyId = me?.company?.id ?? null;
+
   useEffect(() => {
+    if (!companyId) return;
     let alive = true;
     (async () => {
       try {
@@ -88,7 +104,9 @@ export function FinanceClient() {
     return () => {
       alive = false;
     };
-  }, [revision]);
+    // Компания в зависимостях не для порядка: при переключении надо перечитать
+    // всё, иначе на экране останутся счета и операции прежней компании.
+  }, [revision, companyId]);
 
   const currency = overview?.workspace.currency ?? "KZT";
   const symbol = currency === "KZT" ? "₸" : currency;
@@ -114,32 +132,77 @@ export function FinanceClient() {
         return <PlanActualReport revision={revision} onChanged={reload} />;
       case "import":
         return <ImportPanel onChanged={reload} accounts={dictionaries.accounts} />;
+      case "sheets":
+        return <SheetsPanel onChanged={reload} accounts={dictionaries.accounts} />;
+      case "rules":
+        return <RulesPanel dictionaries={dictionaries} onChanged={reload} />;
       case "dictionaries":
         return <DictionariesPanel dictionaries={dictionaries} onChanged={reload} />;
+      case "team":
+        return me ? <TeamPanel me={me} onChanged={reload} /> : null;
       default:
         return null;
     }
-  }, [section, dictionaries, revision, reload]);
+  }, [section, dictionaries, revision, reload, me]);
+
+  if (loading) return <AuthLoading />;
+  if (!me) return <AuthGate onReady={(next) => setMe(next)} />;
+  if (me.user?.must_change_password) {
+    return (
+      <PasswordChangeGate
+        onDone={async () => {
+          const next = await financeApi.me();
+          setMe(next.authenticated ? next : null);
+        }}
+      />
+    );
+  }
 
   return (
-    <div className="min-h-screen min-h-[100dvh] flex flex-col" style={{ background: "var(--page-bg)" }}>
-      <header
-        className="fin-head sticky top-0 z-40 flex items-center gap-2 px-3 sm:px-4 py-2.5 border-b backdrop-blur-md"
-        style={{ background: "var(--header-bg)", borderColor: "var(--border-subtle)" }}
-      >
-        <Link href="/services" className="btn-ghost text-xs px-2.5 py-1.5 flex items-center gap-1.5" title="К сервисам">
+    <div className="fin-page">
+      <header className="fin-head">
+        <Link
+          href="/services"
+          className="fin-act only-desktop"
+          style={{ padding: "0 0.75rem" }}
+          title="К сервисам"
+        >
           <ArrowLeftIcon size={15} />
-          <span className="only-desktop">Сервисы</span>
         </Link>
         <span className="logo-badge">
           <TableIcon size={16} />
         </span>
-        <span
-          className="text-sm font-semibold mr-auto"
-          style={{ color: "var(--text-primary)", letterSpacing: "-0.01em" }}
-        >
-          Финансы
-        </span>
+        {/* Компания в шапке, а не название раздела: человек ведёт несколько
+            компаний, и первое, что ему надо знать, — в какой он сейчас. */}
+        <div className="flex flex-col mr-auto min-w-0">
+          <span
+            className="fin-head-title text-sm font-semibold truncate"
+            style={{ letterSpacing: "-0.01em" }}
+          >
+            {me.company?.title ?? "Финансы"}
+          </span>
+          {(me.companies?.length ?? 0) > 1 ? (
+            <select
+              className="fin-head-sub text-xs bg-transparent cursor-pointer"
+              style={{ border: "none", outline: "none", padding: 0 }}
+              value={me.company?.id ?? ""}
+              onChange={async (event) => {
+                const next = await financeApi.switchCompany(event.target.value);
+                setMe(next);
+                reload();
+              }}
+              aria-label="Сменить компанию"
+            >
+              {(me.companies ?? []).map((company) => (
+                <option key={company.id} value={company.id}>
+                  {company.title}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span className="fin-head-sub text-xs">Финансы</span>
+          )}
+        </div>
 
         <div className="fin-actions">
           <button type="button" className="fin-act" data-kind="income" onClick={() => setDialogKind("income")}>
@@ -158,11 +221,23 @@ export function FinanceClient() {
         </div>
         <button
           type="button"
-          className="btn-ghost text-xs px-2 py-1.5 only-desktop"
+          className="fin-act only-desktop"
+          style={{ padding: "0 0.75rem" }}
           onClick={reload}
           title="Перечитать данные"
         >
           <RefreshIcon size={15} />
+        </button>
+        <button
+          type="button"
+          className="fin-act only-desktop"
+          onClick={async () => {
+            await financeApi.logout();
+            setMe(null);
+          }}
+          title={me.user?.email ?? ""}
+        >
+          Выйти
         </button>
       </header>
 
@@ -178,10 +253,19 @@ export function FinanceClient() {
         </div>
       ) : null}
 
-      <div className="fin-shell flex-1">
+      <div className="fin-plate">
         <aside className="fin-aside">
+          {/* Свёрнутая полоса: видна только сумма — то единственное, ради чего
+              на панель смотрят, не раскрывая её. */}
+          <div className="fin-aside-rail">
+            <span className="fin-num" style={{ writingMode: "vertical-rl", fontSize: "0.75rem" }}>
+              {overview ? formatMoney(overview.total) : "—"}
+            </span>
+          </div>
+
+          <div className="fin-aside-full flex flex-col gap-3">
           <div className="fin-total">
-            <span className="eyebrow">Всего на счетах</span>
+            <span className="fin-total-label">Всего на счетах</span>
             <span className="fin-total-value">
               {symbol} {overview ? formatMoney(overview.total) : "—"}
             </span>
@@ -193,7 +277,7 @@ export function FinanceClient() {
           </div>
 
           <div>
-            <p className="eyebrow mb-1">Счета</p>
+            <p className="fin-label mb-1">Счета</p>
             {(overview?.accounts ?? []).map((account) => (
               <div key={account.id} className="fin-acc-row">
                 <span className="fin-acc-name" title={account.name}>
@@ -207,13 +291,13 @@ export function FinanceClient() {
             ))}
             {overview && overview.accounts.length === 0 ? (
               <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                Счетов пока нет — завести их можно в «Справочниках».
+                Счетов пока нет
               </p>
             ) : null}
           </div>
 
           <div>
-            <p className="eyebrow mb-1">Ожидания</p>
+            <p className="fin-label mb-1">Ожидания</p>
             <div className="fin-acc-row">
               <span className="fin-acc-name">Нам должны</span>
               <span className="fin-num" style={{ color: "var(--text-primary)" }}>
@@ -235,9 +319,10 @@ export function FinanceClient() {
               </div>
             ) : null}
           </div>
+          </div>
         </aside>
 
-        <main className="min-w-0 px-3 sm:px-4 pb-10">
+        <main className="fin-body min-w-0">
           <nav className="fin-tabs" aria-label="Разделы финансов">
             {SECTIONS.map((item) => (
               <button

@@ -3113,45 +3113,165 @@ html, body { overflow-x: clip; }
    Раздел «Финансы» (удаляемый модуль)
    ═══════════════════════════════════════════════════════════════
 
-   Устройство взято у продуктов управленческого учёта, потому что у них оно
-   выстрадано: слева счета с остатками (первое, что спрашивают у учёта), сверху
-   три действия (доход, расход, перевод — почти вся работа), лентой вкладки
-   разделов, ниже плотная таблица.
+   Оформление снято с живого Finmap 18 сентября 2026 (`pw-finmap/design-probe*.mjs`),
+   потому что у них оно выстрадано, а не придумано: тёмная рама вокруг светлой
+   «плиты» с содержимым, три действия сверху с заливкой по смыслу, активная
+   вкладка чёрной пилюлей, слева счета с остатками.
 
-   Цвета — наши: ахроматика плюс сапфир. Зелёно-оранжевых градиентов, которыми
-   размечают приход и расход у соседей по рынку, здесь нет: у нас один акцент, и
-   второго не будет. Направление денег читается знаком и весом цифры, а
-   приглушённые --inflow/--outflow остаются подсказкой второго порядка.
+   Что взято числами, а не на глаз:
 
-   ВНИМАНИЕ про каскад: классы ниже задают display, а утилиты Tailwind лежат в
-   слое и неслоёному правилу проигрывают. Прятать эти элементы только через
-   .only-mobile / .only-desktop — hidden и sm:flex на них не сработают.       */
+   | что                  | у них                          |
+   |----------------------|--------------------------------|
+   | рама                 | #181D1F                        |
+   | кнопка «Доход»       | rgba(138,255,185,.16), r=12px, h=40 |
+   | кнопка «Расход»      | rgba(255,141,112,.16)          |
+   | кнопка «Перевод»     | rgba(255,255,255,.16)          |
+   | вкладка (активная)   | чёрная пилюля r=20px, 18px/700 |
+   | списание в журнале   | #FF6333, 13px                  |
+   | подпись в панели     | 12px, обычный вес              |
 
-.fin-shell {
+   Два отступления от оригинала, оба по делу
+   ─────────────────────────────────────────
+   **Обе темы.** Finmap только светлый. У нас переключатель темы есть, и
+   проверка гоняет оба вида, поэтому «плита» берёт цвет из наших токенов
+   поверхности, а рама остаётся тёмной в обеих темах — это их узнаваемая часть.
+
+   **Один акцент остаётся сапфировым.** Мятный и коралловый здесь не бренд, а
+   смысл: приход и расход. Кнопка «Записать» и выделение остаются сапфировыми,
+   как во всём продукте, — второй бренд-цвет мы не заводим.
+
+   ВНИМАНИЕ про каскад: классы ниже задают `display`, а утилиты Tailwind лежат
+   в слое и неслоёному правилу проигрывают. Прятать эти элементы только через
+   .only-mobile / .only-desktop — `hidden` и `sm:flex` на них не сработают. */
+
+:root {
+  /* Рама и плита */
+  --fin-chrome:        #181d1f;
+  --fin-chrome-text:   #ffffff;
+  --fin-chrome-muted:  rgba(255, 255, 255, 0.62);
+  --fin-plate:         #ffffff;
+  --fin-plate-radius:  20px;
+  --fin-plate-border:  rgba(9, 9, 11, 0.07);
+
+  /* Деньги: приход и расход — смысл, а не бренд */
+  --fin-income:        #0fa968;
+  --fin-income-soft:   rgba(138, 255, 185, 0.16);
+  --fin-income-line:   rgba(15, 169, 104, 0.28);
+  --fin-expense:       #ff6333;
+  --fin-expense-soft:  rgba(255, 141, 112, 0.16);
+  --fin-expense-line:  rgba(255, 99, 51, 0.28);
+  --fin-neutral-soft:  rgba(255, 255, 255, 0.16);
+
+  /* Текст на плите */
+  --fin-text:          #131313;
+  --fin-text-soft:     #5b6266;
+  --fin-line:          rgba(9, 9, 11, 0.08);
+
+  --fin-rail-w:        60px;
+  --fin-rail-open:     288px;
+}
+
+:root[data-theme="dark"] {
+  --fin-plate:         var(--bg-surface);
+  --fin-plate-border:  var(--border-base);
+  --fin-text:          var(--text-primary);
+  --fin-text-soft:     var(--text-secondary);
+  --fin-line:          var(--border-subtle);
+  /* На тёмной плите светлая мята читается лучше тёмной. */
+  --fin-income:        #6ee7b7;
+  --fin-expense:       #ff8d70;
+}
+
+/* ─── Рама и плита ─── */
+.fin-page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--fin-chrome);
+  display: flex;
+  flex-direction: column;
+}
+.fin-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: var(--fin-chrome);
+  color: var(--fin-chrome-text);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+.fin-head-title { color: var(--fin-chrome-text); }
+.fin-head-sub { color: var(--fin-chrome-muted); }
+
+/* Плита — то, из-за чего интерфейс выглядит собранным: содержимое живёт на
+   одном скруглённом листе, а не растекается по всему окну. */
+.fin-plate {
+  flex: 1;
+  margin: 0 0.75rem 0.75rem;
+  background: var(--fin-plate);
+  border-radius: var(--fin-plate-radius);
+  border: 1px solid var(--fin-plate-border);
+  overflow: hidden;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 0;
   align-items: start;
 }
 @media (min-width: 1024px) {
-  .fin-shell { grid-template-columns: 17.5rem minmax(0, 1fr); }
+  .fin-plate { grid-template-columns: auto minmax(0, 1fr); }
 }
 
-/* ─── Боковая панель со счетами ─── */
+/* ─── Боковая панель со счетами: раскрывается наведением ─── */
 .fin-aside {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  padding: 1rem 1rem 1.25rem;
-  border-right: 1px solid var(--border-subtle);
+  padding: 1.25rem 1.25rem 1.5rem;
+  border-right: 1px solid var(--fin-line);
+  color: var(--fin-text);
+  width: 100%;
 }
+@media (min-width: 1024px) {
+  /* Узкая полоса, которая расширяется под курсором. Ровно тот приём, что в
+     сайдбаре дашборда: место под таблицу остаётся, а счета в одном движении.
+     `:has(:focus-visible)`, а не `:focus-within`: второй срабатывает на клик
+     мышью и оставляет панель залипшей раскрытой — этот дефект в проекте уже
+     ловили. */
+  .fin-aside {
+    width: var(--fin-rail-w);
+    padding: 1.25rem 0.5rem;
+    overflow: hidden;
+    transition: width var(--dur-base) var(--ease-out), padding var(--dur-base) var(--ease-out);
+  }
+  .fin-aside:hover,
+  .fin-aside:has(:focus-visible),
+  .fin-aside[data-open="true"] {
+    width: var(--fin-rail-open);
+    padding: 1.25rem 1.25rem 1.5rem;
+  }
+  /* В свёрнутом виде видна только сумма на счетах — то единственное, ради чего
+     на панель смотрят, не раскрывая её. */
+  .fin-aside:not(:hover):not([data-open="true"]):not(:has(:focus-visible)) .fin-aside-full {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .fin-aside-full { transition: opacity var(--dur-fast) var(--ease-out); }
+  .fin-aside-rail { display: flex; }
+}
+.fin-aside-rail { display: none; flex-direction: column; align-items: center; gap: 0.5rem; }
+.fin-aside:hover .fin-aside-rail,
+.fin-aside[data-open="true"] .fin-aside-rail { display: none; }
+
 .fin-total { display: flex; flex-direction: column; gap: 0.125rem; }
+.fin-total-label { font-size: 0.75rem; color: var(--fin-text-soft); }
+/* Подпись поля: обычный мелкий текст, как у Finmap, а не наш капслок
+   моноширинным. Капслок — голос аналитики BBC, здесь он звучал бы чужим. */
+.fin-label { font-size: 0.75rem; color: var(--fin-text-soft); display: block; }
 .fin-total-value {
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
-  font-size: 1.5rem;
-  font-weight: 500;
+  font-size: 1.625rem;
+  font-weight: 700;
   letter-spacing: -0.02em;
-  color: var(--text-primary);
+  color: var(--fin-text);
   font-variant-numeric: tabular-nums;
 }
 .fin-acc-row {
@@ -3159,25 +3279,26 @@ html, body { overflow-x: clip; }
   align-items: baseline;
   justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.4rem 0;
-  border-bottom: 1px solid var(--border-subtle);
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--fin-line);
   font-size: 0.8125rem;
+  color: var(--fin-text);
 }
 .fin-acc-row:last-child { border-bottom: none; }
 .fin-acc-name {
-  color: var(--text-secondary);
+  color: var(--fin-text-soft);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* ─── Лента вкладок ─── */
+/* ─── Лента вкладок: активная — пилюля ─── */
 .fin-tabs {
   display: flex;
   gap: 0.25rem;
   overflow-x: auto;
-  padding: 0.5rem 0.25rem;
+  padding: 1rem 1rem 0.5rem;
   scrollbar-width: none;
 }
 .fin-tabs::-webkit-scrollbar { display: none; }
@@ -3186,152 +3307,163 @@ html, body { overflow-x: clip; }
   align-items: center;
   gap: 0.375rem;
   flex: 0 0 auto;
-  padding: 0.4rem 0.8rem;
-  border-radius: var(--radius-pill);
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: var(--text-muted);
+  padding: 0.4rem 1rem;
+  border-radius: 20px;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--fin-text-soft);
   background: transparent;
   border: 1px solid transparent;
   cursor: pointer;
   white-space: nowrap;
-  min-height: 2rem;
+  min-height: 2.25rem;
   transition: color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
 }
-.fin-tab:hover { color: var(--text-secondary); background: var(--bg-hover); }
+.fin-tab:hover { color: var(--fin-text); }
 .fin-tab[data-on="true"] {
-  color: var(--text-primary);
-  background: var(--bg-active);
-  border-color: var(--border-base);
+  color: var(--fin-plate);
+  background: var(--fin-chrome);
+}
+:root[data-theme="dark"] .fin-tab[data-on="true"] {
+  color: var(--fin-chrome);
+  background: var(--text-primary);
 }
 
 /* ─── Три действия ─── */
-.fin-actions { display: flex; gap: 0.375rem; }
+.fin-actions { display: flex; gap: 0.5rem; }
 .fin-act {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.375rem;
-  padding: 0.45rem 0.85rem;
-  border-radius: var(--radius-pill);
-  font-size: 0.8125rem;
-  font-weight: 600;
+  height: 40px;
+  padding: 0 1.25rem;
+  border-radius: 12px;
+  font-size: 0.9375rem;
+  font-weight: 700;
   cursor: pointer;
-  border: 1px solid var(--border-base);
-  background: var(--bg-raised);
-  color: var(--text-primary);
+  border: none;
+  background: var(--fin-neutral-soft);
+  color: var(--fin-chrome-text);
   white-space: nowrap;
-  min-height: 2.25rem;
+  transition: filter var(--dur-fast) var(--ease-out);
 }
-.fin-act:hover { background: var(--bg-hover); }
-.fin-act[data-kind="income"] { background: var(--inflow-bg); border-color: var(--inflow-border); }
-.fin-act[data-kind="expense"] { background: var(--outflow-bg); border-color: var(--outflow-border); }
+.fin-act:hover { filter: brightness(1.25); }
+.fin-act[data-kind="income"] { background: var(--fin-income-soft); }
+.fin-act[data-kind="expense"] { background: var(--fin-expense-soft); }
 
 /* ─── Таблица журнала ─── */
-.fin-table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+.fin-body { padding: 0 1rem 1.5rem; min-width: 0; color: var(--fin-text); }
+.fin-table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; color: var(--fin-text); }
 .fin-table th {
   text-align: left;
   font-weight: 500;
-  font-size: 0.6875rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  padding: 0.5rem 0.625rem;
-  border-bottom: 1px solid var(--border-base);
+  font-size: 0.75rem;
+  color: var(--fin-text-soft);
+  padding: 0.55rem 0.625rem;
+  border-bottom: 1px solid var(--fin-line);
   white-space: nowrap;
-  background: var(--bg-surface);
+  background: var(--fin-plate);
   position: sticky;
   top: 0;
   z-index: 1;
 }
 .fin-table td {
-  padding: 0.5rem 0.625rem;
-  border-bottom: 1px solid var(--border-subtle);
-  color: var(--text-secondary);
+  padding: 0.6rem 0.625rem;
+  border-bottom: 1px solid var(--fin-line);
+  color: var(--fin-text-soft);
   vertical-align: top;
 }
-.fin-table tbody tr:hover td { background: var(--bg-hover); }
-.fin-table td.fin-strong { color: var(--text-primary); }
+.fin-table tbody tr:hover td { background: rgba(127, 127, 127, 0.06); }
+.fin-table td.fin-strong { color: var(--fin-text); }
 .fin-num {
   font-family: var(--font-plex-mono), ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
   text-align: right;
   white-space: nowrap;
 }
-.fin-in { color: #6ee7b7; }
-.fin-out { color: #fda4af; }
-:root[data-theme="light"] .fin-in { color: #047857; }
-:root[data-theme="light"] .fin-out { color: #be123c; }
+/* Цвет денег обязан выигрывать у цвета ячейки.
+ *
+ * `.fin-table td` — это класс плюс элемент, то есть специфичность выше, чем у
+ * одного `.fin-in`. Порядок правил тут ни при чём: одиночный класс проигрывает
+ * всегда. Суммы в журнале молча оказывались серыми — приход и расход
+ * переставали различаться взглядом, а именно это Finmap делает хорошо и именно
+ * за этим сюда смотрят. Поэтому селекторы перечислены явно. */
+.fin-in,
+.fin-table td.fin-in,
+.fin-report td.fin-in { color: var(--fin-income); }
+.fin-out,
+.fin-table td.fin-out,
+.fin-report td.fin-out { color: var(--fin-expense); }
 
-/* Строка ожидания: план отличается не цветом, а насыщенностью. Цвет здесь
+/* Строка ожидания: план отличается насыщенностью, а не цветом. Цвет здесь
    означал бы «всё плохо», а запланированный платёж — это норма. */
-.fin-table tr[data-plan="true"] td { color: var(--text-muted); }
-.fin-table tr[data-plan="true"] .fin-num { opacity: 0.75; }
+.fin-table tr[data-plan="true"] td { opacity: 0.66; }
 
 .fin-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  padding: 0.1rem 0.45rem;
-  border-radius: var(--radius-pill);
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
   font-size: 0.6875rem;
-  border: 1px dashed var(--border-strong);
-  color: var(--text-muted);
+  border: 1px solid var(--fin-line);
+  color: var(--fin-text-soft);
   background: transparent;
   cursor: pointer;
 }
-.fin-chip:hover { color: var(--text-secondary); border-color: var(--accent-line); }
+.fin-chip:hover { color: var(--fin-text); border-color: var(--fin-text-soft); }
 
 /* ─── Отчёты ─── */
-.fin-report { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
-.fin-report th, .fin-report td { padding: 0.4rem 0.6rem; white-space: nowrap; }
+.fin-report { width: 100%; border-collapse: collapse; font-size: 0.8125rem; color: var(--fin-text); }
+.fin-report th, .fin-report td { padding: 0.45rem 0.65rem; white-space: nowrap; }
 .fin-report thead th {
-  font-size: 0.6875rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-muted);
+  font-size: 0.75rem;
+  color: var(--fin-text-soft);
   font-weight: 500;
-  border-bottom: 1px solid var(--border-base);
+  border-bottom: 1px solid var(--fin-line);
   text-align: right;
 }
 .fin-report thead th:first-child { text-align: left; }
-.fin-report tbody td { border-bottom: 1px solid var(--border-subtle); color: var(--text-secondary); }
-.fin-report tbody td:first-child { color: var(--text-primary); white-space: normal; }
+.fin-report tbody td { border-bottom: 1px solid var(--fin-line); color: var(--fin-text-soft); }
+.fin-report tbody td:first-child { color: var(--fin-text); white-space: normal; }
 .fin-report tbody tr[data-total="true"] td {
-  border-top: 1px solid var(--border-base);
-  color: var(--text-primary);
-  font-weight: 600;
+  border-top: 1px solid var(--fin-line);
+  color: var(--fin-text);
+  font-weight: 700;
 }
 .fin-report-scroll { overflow-x: auto; }
 
 /* ─── Календарь ─── */
-.fin-cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.25rem; }
+.fin-cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.375rem; }
 .fin-cal-day {
   display: flex;
   flex-direction: column;
   gap: 0.125rem;
-  min-height: 4.5rem;
-  padding: 0.375rem;
-  border-radius: var(--radius-inner);
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-raised);
+  min-height: 4.75rem;
+  padding: 0.5rem;
+  border-radius: 12px;
+  border: 1px solid var(--fin-line);
+  background: transparent;
   font-size: 0.6875rem;
+  color: var(--fin-text-soft);
 }
-.fin-cal-day[data-out="true"] { opacity: 0.45; }
-/* Кассовый разрыв — единственное место в разделе, где цвет служит сигналом.
-   Это отказ: денег на платёж не хватит. */
+.fin-cal-day[data-out="true"] { opacity: 0.4; }
+/* Кассовый разрыв — единственное место, где цвет служит сигналом: это отказ,
+   денег на платёж не хватит. */
 .fin-cal-day[data-gap="true"] {
-  border-color: var(--outflow-border);
-  background: var(--outflow-bg);
+  border-color: var(--fin-expense-line);
+  background: var(--fin-expense-soft);
 }
-.fin-cal-num { color: var(--text-muted); font-family: var(--font-plex-mono), ui-monospace, monospace; }
+.fin-cal-num { color: var(--fin-text-soft); font-weight: 600; }
 .fin-cal-bal {
   margin-top: auto;
   font-family: var(--font-plex-mono), ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
-  color: var(--text-secondary);
+  color: var(--fin-text);
 }
-.fin-cal-day[data-gap="true"] .fin-cal-bal { color: #fda4af; }
-:root[data-theme="light"] .fin-cal-day[data-gap="true"] .fin-cal-bal { color: #be123c; }
+.fin-cal-day[data-gap="true"] .fin-cal-bal { color: var(--fin-expense); }
 
 /* ─── Импорт ─── */
 .fin-drop {
@@ -3339,12 +3471,13 @@ html, body { overflow-x: clip; }
   flex-direction: column;
   align-items: center;
   gap: 0.5rem;
-  padding: 2rem 1rem;
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius-card);
-  background: var(--bg-raised);
+  padding: 2.25rem 1rem;
+  border: 1px dashed var(--fin-line);
+  border-radius: 16px;
+  background: transparent;
   text-align: center;
   cursor: pointer;
+  color: var(--fin-text);
   transition: border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
 }
 .fin-drop[data-over="true"] { border-color: var(--accent); background: var(--accent-soft); }
@@ -3352,19 +3485,15 @@ html, body { overflow-x: clip; }
   display: grid;
   grid-template-columns: 3.5rem minmax(0, 1fr);
   gap: 0.5rem;
-  padding: 0.5rem 0.625rem;
-  border-bottom: 1px solid var(--border-subtle);
+  padding: 0.55rem 0.625rem;
+  border-bottom: 1px solid var(--fin-line);
   font-size: 0.75rem;
   align-items: start;
 }
 .fin-row-issue:last-child { border-bottom: none; }
-.fin-issue-line {
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
-  color: var(--text-muted);
-}
-.fin-issue-text { color: #fda4af; }
-:root[data-theme="light"] .fin-issue-text { color: #be123c; }
-.fin-issue-skip { color: var(--text-muted); }
+.fin-issue-line { font-family: var(--font-plex-mono), ui-monospace, monospace; color: var(--fin-text-soft); }
+.fin-issue-text { color: var(--fin-expense); }
+.fin-issue-skip { color: var(--fin-text-soft); }
 
 /* ─── Сводные плитки ─── */
 .fin-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; }
@@ -3373,36 +3502,58 @@ html, body { overflow-x: clip; }
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  padding: 0.75rem 0.875rem;
-  border-radius: var(--radius-inner);
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-raised);
+  padding: 0.8rem 0.9rem;
+  border-radius: 14px;
+  border: 1px solid var(--fin-line);
+  background: transparent;
 }
+.fin-kpi-label { font-size: 0.75rem; color: var(--fin-text-soft); }
 .fin-kpi-value {
   font-family: var(--font-plex-mono), ui-monospace, monospace;
-  font-size: 1.0625rem;
+  font-size: 1.125rem;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: var(--text-primary);
+  color: var(--fin-text);
+}
+
+/* Карточка внутри плиты: у Finmap это не «карточка в карточке», а участок с
+   тонкой рамкой — иначе на плите получается матрёшка из теней. */
+.fin-card {
+  border: 1px solid var(--fin-line);
+  border-radius: 16px;
+  background: transparent;
+  color: var(--fin-text);
 }
 
 /* Лист Univer занимает всю оставшуюся высоту; замер — use-fill-height. */
-.fin-sheet { border-radius: var(--radius-inner); overflow: hidden; border: 1px solid var(--border-base); }
+.fin-sheet { border-radius: 14px; overflow: hidden; border: 1px solid var(--fin-line); }
 
-/* Календарь на телефоне — список по дням, а не сетка из семи колонок.
- *
- * Сетка на 390 пикселях не сжимается: в клетке стоят три числа моноширинным
- * шрифтом («+2 400 000»), и их минимальная ширина больше сорока пикселей,
- * которые остаются на колонку. Страница становилась 395 пикселей при окне 390 —
- * человек тянул страницу вбок вместо того, чтобы листать календарь.
- *
- * Обрезать числа многоточием здесь нельзя: обрезанная сумма — это не
- * «компактно», это цифра, которой нельзя верить. Поэтому меняется раскладка:
- * один день — одна строка, дата слева, движение и остаток справа. Ровно так
- * календарь платежей и читают на телефоне.
- *
- * Прятать шапку недели и клетки-заполнители только через .only-desktop и
- * .fin-cal-pad: у обоих свой display, и утилиты Tailwind им проиграют. */
+/* ─── Телефон ─── */
 @media (max-width: 639.98px) {
+  .fin-head { flex-wrap: wrap; }
+  .fin-actions { flex: 1 0 100%; }
+  .fin-act { flex: 1; padding: 0 0.75rem; }
+  .fin-plate { margin: 0 0.5rem 0.5rem; border-radius: 16px; }
+  .fin-body { padding: 0 0.75rem 1.25rem; }
+
+  /* Отборы журнала — одна прокручиваемая строка, а не четыре ряда: стопкой
+     они занимали больше двухсот пикселей, и до первой цифры приходилось
+     листать. Тот же приём, что у отборов книг. */
+  .fin-filters {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 0.25rem;
+    scrollbar-width: none;
+  }
+  .fin-filters::-webkit-scrollbar { display: none; }
+  .fin-filters > * { flex: 0 0 10.5rem; }
+  .fin-filters select,
+  .fin-filters input { width: 100%; }
+
+  /* Календарь списком по дням: сетка из семи колонок на 390 пикселях не
+     сжимается — в клетке три числа моноширинным шрифтом. Обрезать суммы
+     нельзя: обрезанная сумма это не «компактно», а цифра, которой нельзя
+     верить. */
   .fin-cal { grid-template-columns: minmax(0, 1fr); gap: 0.25rem; }
   .fin-cal-pad { display: none; }
   .fin-cal-day {
@@ -3414,35 +3565,4 @@ html, body { overflow-x: clip; }
     padding: 0.5rem 0.625rem;
   }
   .fin-cal-bal { margin-top: 0; margin-left: auto; }
-}
-
-/* ─── Раздел «Финансы» на телефоне ───────────────────────────────
-   Два исправления по итогам живого прогона 18 сентября 2026.
-
-   1. Шапка переносит три действия на свою строку во всю ширину.
-      До этого «Перевод» пряталась через .only-desktop, потому что в одну
-      строку с «Доходом» и «Расходом» она не влезала. Это было неправильно:
-      перевод между кассой и счётом — обычная операция кассира, и на телефоне
-      она нужна ровно так же. Перенос строки даёт все три кнопки и заодно
-      увеличивает площадь нажатия.
-
-   2. Отборы журнала — одна прокручиваемая вбок строка, а не четыре ряда.
-      Стопкой они занимали больше двухсот пикселей, и до первой цифры
-      приходилось листать. Тот же приём и по той же причине уже применён к
-      отборам книг (.bbc-books-picks).                                       */
-@media (max-width: 639.98px) {
-  .fin-head { flex-wrap: wrap; }
-  .fin-actions { flex: 1 0 100%; }
-  .fin-act { flex: 1; justify-content: center; }
-
-  .fin-filters {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    padding-bottom: 0.25rem;
-    scrollbar-width: none;
-  }
-  .fin-filters::-webkit-scrollbar { display: none; }
-  .fin-filters > * { flex: 0 0 10.5rem; }
-  .fin-filters select,
-  .fin-filters input { width: 100%; }
 }

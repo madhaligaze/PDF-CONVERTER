@@ -128,6 +128,44 @@ function buildWorkbook(payload: GridPayload): WorkbookSnapshot {
   };
 }
 
+/**
+ * Выпадающие списки на колонках-справочниках.
+ *
+ * Это то, чего нашей таблице не хватало по сравнению с Google Sheets: в книге
+ * «Журнал ГК BBC» у колонок «Счёт», «Подкатегория» и прочих стоят списки, и
+ * человек не печатает названия руками, а выбирает. Печать руками — это
+ * опечатки, а опечатка в названии статьи создаёт вторую статью и делит отчёт
+ * надвое.
+ *
+ * Список — подсказка, а не запрет. Новая статья появляется в работе постоянно,
+ * и запретить ввести её значило бы заставить идти в справочник посреди
+ * заполнения. Счёт — исключение, но его строгость обеспечивает сервер: он
+ * откажет с объяснением, а не создаст счёт из опечатки.
+ */
+async function applyDropdowns(api: UniverApi, payload: GridPayload): Promise<void> {
+  const sheet = api.getActiveWorkbook?.()?.getActiveSheet?.();
+  if (!sheet || typeof api.newDataValidation !== "function") return;
+  const rows = payload.rows.length + SPARE_ROWS;
+
+  for (let index = 0; index < payload.columns.length; index += 1) {
+    const column = payload.columns[index];
+    if (column.kind !== "enum" || !column.source) continue;
+    const list = payload.options?.[column.source] ?? [];
+    if (!list.length) continue;
+    try {
+      const rule = api
+        .newDataValidation()
+        .requireValueInList(list, false, true)
+        .setOptions({ allowBlank: true, showErrorMessage: false })
+        .build();
+      await sheet.getRange(1, index, rows, 1).setDataValidation(rule);
+    } catch {
+      // Список — удобство, а не условие работы листа: не собрался — значит
+      // человек печатает руками, как и раньше.
+    }
+  }
+}
+
 type Beat = { text: string; at: number };
 
 export function TableView({ onChanged }: { onChanged: () => void }) {
@@ -221,6 +259,8 @@ export function TableView({ onChanged }: { onChanged: () => void }) {
   const onReady = useCallback(
     (api: UniverApi) => {
       const disposers: Array<() => void> = [];
+      const current = state.current;
+      if (current) void applyDropdowns(api, current);
       const values = api.addEvent?.(
         api.Event.SheetValueChanged,
         (event: { effectedRanges?: Array<{ getRow: () => number; getColumn: () => number }> }) => {
@@ -245,11 +285,6 @@ export function TableView({ onChanged }: { onChanged: () => void }) {
 
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-        Тот же журнал листом: правка ячейки — это правка операции, а напечатанная
-        внизу строка становится новой. Вид операции и состояние правятся в карточке —
-        от них зависит, какие поля обязательны.
-      </p>
       {error ? (
         <p className="text-xs" style={{ color: "var(--accent-rose)" }}>
           {error}
@@ -261,9 +296,10 @@ export function TableView({ onChanged }: { onChanged: () => void }) {
         ) : null}
       </div>
       {/* Строка состояния: таблица обязана говорить, что записала. Молчание
-          после правки — это и есть сомнение «сохранилось ли». */}
+          после правки — это и есть сомнение «сохранилось ли». В покое пусто:
+          место держим, текста не пишем. */}
       <p className="text-xs" role="status" style={{ color: "var(--text-secondary)", minHeight: "1.2em" }}>
-        {beat ? beat.text : "Правки сохраняются сразу — кнопки «Сохранить» здесь нет."}
+        {beat ? beat.text : ""}
       </p>
     </div>
   );

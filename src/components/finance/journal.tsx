@@ -104,7 +104,7 @@ export function Journal({ dictionaries, revision, onChanged }: Props) {
     <div className="flex flex-col gap-3">
       <div className="fin-filters flex flex-wrap items-end gap-2">
         <label className="flex flex-col gap-1">
-          <span className="eyebrow">Период</span>
+          <span className="fin-label">Период</span>
           <select
             className="input-field"
             style={{ width: "auto" }}
@@ -123,7 +123,7 @@ export function Journal({ dictionaries, revision, onChanged }: Props) {
         </label>
 
         <label className="flex flex-col gap-1">
-          <span className="eyebrow">Вид</span>
+          <span className="fin-label">Вид</span>
           <select
             className="input-field"
             style={{ width: "auto" }}
@@ -138,7 +138,7 @@ export function Journal({ dictionaries, revision, onChanged }: Props) {
         </label>
 
         <label className="flex flex-col gap-1">
-          <span className="eyebrow">Счёт</span>
+          <span className="fin-label">Счёт</span>
           <select
             className="input-field"
             style={{ width: "auto" }}
@@ -155,7 +155,7 @@ export function Journal({ dictionaries, revision, onChanged }: Props) {
         </label>
 
         <label className="flex flex-col gap-1">
-          <span className="eyebrow">Категория</span>
+          <span className="fin-label">Категория</span>
           <select
             className="input-field"
             style={{ width: "auto" }}
@@ -172,7 +172,7 @@ export function Journal({ dictionaries, revision, onChanged }: Props) {
         </label>
 
         <label className="flex flex-col gap-1 flex-1 min-w-[10rem]">
-          <span className="eyebrow">Поиск по комментарию</span>
+          <span className="fin-label">Поиск по комментарию</span>
           <input
             className="input-field"
             value={search}
@@ -185,19 +185,19 @@ export function Journal({ dictionaries, revision, onChanged }: Props) {
       {page ? (
         <div className="fin-kpis">
           <div className="fin-kpi">
-            <span className="eyebrow">Операций</span>
+            <span className="fin-kpi-label">Операций</span>
             <span className="fin-kpi-value">{page.total}</span>
           </div>
           <div className="fin-kpi">
-            <span className="eyebrow">Поступило</span>
+            <span className="fin-kpi-label">Поступило</span>
             <span className="fin-kpi-value fin-in">{formatMoney(page.sums.income)}</span>
           </div>
           <div className="fin-kpi">
-            <span className="eyebrow">Списано</span>
+            <span className="fin-kpi-label">Списано</span>
             <span className="fin-kpi-value fin-out">{formatMoney(page.sums.expense)}</span>
           </div>
           <div className="fin-kpi">
-            <span className="eyebrow">Разница</span>
+            <span className="fin-kpi-label">Разница</span>
             <span className="fin-kpi-value">
               {formatMoney(Number(page.sums.income) - Number(page.sums.expense), { sign: true })}
             </span>
@@ -211,7 +211,7 @@ export function Journal({ dictionaries, revision, onChanged }: Props) {
         </p>
       ) : null}
 
-      <div className="card overflow-x-auto">
+      <div className="fin-card overflow-x-auto">
         <table className="fin-table">
           <thead>
             <tr>
@@ -295,7 +295,7 @@ export function Journal({ dictionaries, revision, onChanged }: Props) {
             {!items.length && !busy ? (
               <tr>
                 <td colSpan={8} style={{ textAlign: "center", padding: "2rem" }}>
-                  За этот период операций нет. Выберите другой период или запишите первую.
+                  За этот период операций нет
                 </td>
               </tr>
             ) : null}

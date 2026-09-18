@@ -63,13 +63,9 @@ export function DictionariesPanel({ dictionaries, onChanged }: Props) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="card p-4 flex flex-col gap-3">
+      <div className="fin-card p-4 flex flex-col gap-3">
         <div>
-          <p className="eyebrow">Счета</p>
-          <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
-            Начальный остаток — это деньги, которые лежали на счёте к началу учёта.
-            Без него первый отчёт не сойдётся с выпиской, и учёту не поверят.
-          </p>
+          <p className="fin-label">Счета</p>
         </div>
         {dictionaries.accounts.map((account) => (
           <div key={account.id} className="fin-acc-row">
@@ -89,7 +85,7 @@ export function DictionariesPanel({ dictionaries, onChanged }: Props) {
 
         <div className="flex flex-wrap items-end gap-2">
           <label className="flex flex-col gap-1">
-            <span className="eyebrow">Название</span>
+            <span className="fin-label">Название</span>
             <input
               className="input-field"
               style={{ width: "12rem" }}
@@ -99,7 +95,7 @@ export function DictionariesPanel({ dictionaries, onChanged }: Props) {
             />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="eyebrow">Тип</span>
+            <span className="fin-label">Тип</span>
             <select
               className="input-field"
               style={{ width: "auto" }}
@@ -114,7 +110,7 @@ export function DictionariesPanel({ dictionaries, onChanged }: Props) {
             </select>
           </label>
           <label className="flex flex-col gap-1">
-            <span className="eyebrow">Начальный остаток</span>
+            <span className="fin-label">Начальный остаток</span>
             <input
               className="input-field fin-num"
               style={{ width: "10rem", textAlign: "left" }}
@@ -196,8 +192,8 @@ function EntryList({
   };
 
   return (
-    <div className="card p-4 flex flex-col gap-2">
-      <p className="eyebrow">{title}</p>
+    <div className="fin-card p-4 flex flex-col gap-2">
+      <p className="fin-label">{title}</p>
       <div className="flex flex-wrap gap-1.5">
         {items.length ? (
           items.map((item) => (
@@ -213,7 +209,7 @@ function EntryList({
           ))
         ) : (
           <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-            Пока ничего нет — появится само при первой загрузке файла.
+            Пока пусто
           </span>
         )}
       </div>

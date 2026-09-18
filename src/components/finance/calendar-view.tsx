@@ -89,7 +89,7 @@ export function CalendarView({ revision }: { revision: number }) {
 
       {data && data.cash_gaps.length ? (
         <div
-          className="card-inner p-3 text-xs"
+          className="fin-card p-3 text-xs"
           style={{ borderColor: "var(--outflow-border)", background: "var(--outflow-bg)", color: "var(--text-primary)" }}
         >
           Кассовый разрыв: с {data.cash_gaps[0]} остатка не хватает на запланированные
@@ -101,7 +101,7 @@ export function CalendarView({ revision }: { revision: number }) {
         {WEEKDAYS.map((day) => (
           <div
             key={day}
-            className="eyebrow only-desktop"
+            className="fin-label only-desktop"
             style={{ textAlign: "center", padding: "0.25rem 0" }}
           >
             {day}
@@ -136,10 +136,6 @@ export function CalendarView({ revision }: { revision: number }) {
         })}
       </div>
 
-      <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-        В остаток дня входят и факты, и ожидания: календарь отвечает на вопрос «хватит ли
-        денег», а не «сколько уже прошло».
-      </p>
     </div>
   );
 }

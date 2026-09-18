@@ -82,7 +82,7 @@ export function PlanActualReport({ revision, onChanged }: { revision: number; on
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-end gap-2">
         <label className="flex flex-col gap-1">
-          <span className="eyebrow">Факт считаем</span>
+          <span className="fin-label">Факт считаем</span>
           <select
             className="input-field"
             style={{ width: "auto" }}
@@ -93,10 +93,6 @@ export function PlanActualReport({ revision, onChanged }: { revision: number; on
             <option value="accrual">по начислению</option>
           </select>
         </label>
-        <p className="text-xs flex-1 min-w-[14rem]" style={{ color: "var(--text-muted)" }}>
-          Планы у этих двух способов разные и не складываются. Нажмите на пустую клетку
-          плана, чтобы поставить его на месяц.
-        </p>
       </div>
 
       {error ? (
@@ -109,8 +105,8 @@ export function PlanActualReport({ revision, onChanged }: { revision: number; on
         const items = data.items.filter((item) => item.side === side.key);
         if (!items.length) return null;
         return (
-          <div key={side.key} className="card fin-report-scroll">
-            <p className="eyebrow p-3 pb-0">{side.title}</p>
+          <div key={side.key} className="fin-card fin-report-scroll">
+            <p className="fin-label p-3 pb-0">{side.title}</p>
             <table className="fin-report">
               <thead>
                 <tr>
@@ -175,8 +171,7 @@ export function PlanActualReport({ revision, onChanged }: { revision: number; on
 
       {!data.items.length ? (
         <p className="text-sm p-6" style={{ color: "var(--text-muted)" }}>
-          Ни операций, ни планов за период. Планы ставятся по статьям — они появятся
-          здесь, как только в журнале будет хотя бы одна операция.
+          Ни операций, ни планов за период
         </p>
       ) : null}
     </div>

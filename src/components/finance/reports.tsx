@@ -64,28 +64,28 @@ export function CashFlowReport({ revision }: { revision: number }) {
     <div className="flex flex-col gap-3">
       <div className="fin-kpis">
         <div className="fin-kpi">
-          <span className="eyebrow">Остаток на начало</span>
+          <span className="fin-kpi-label">Остаток на начало</span>
           <span className="fin-kpi-value">{formatMoney(data.opening_balance)}</span>
         </div>
         <div className="fin-kpi">
-          <span className="eyebrow">Остаток на конец</span>
+          <span className="fin-kpi-label">Остаток на конец</span>
           <span className="fin-kpi-value">{formatMoney(data.closing_balance)}</span>
         </div>
         <div className="fin-kpi">
-          <span className="eyebrow">Поступило за период</span>
+          <span className="fin-kpi-label">Поступило за период</span>
           <span className="fin-kpi-value fin-in">
             {formatMoney(data.rows.reduce((sum, row) => sum + Number(row.income), 0))}
           </span>
         </div>
         <div className="fin-kpi">
-          <span className="eyebrow">Списано за период</span>
+          <span className="fin-kpi-label">Списано за период</span>
           <span className="fin-kpi-value fin-out">
             {formatMoney(data.rows.reduce((sum, row) => sum + Number(row.expense), 0))}
           </span>
         </div>
       </div>
 
-      <div className="card fin-report-scroll">
+      <div className="fin-card fin-report-scroll">
         <table className="fin-report">
           <thead>
             <tr>
@@ -122,8 +122,8 @@ export function CashFlowReport({ revision }: { revision: number }) {
       {/* Контрольные суммы показываются всегда, а не только при расхождении:
           отчёт, который доказывает свою правоту, проверяют один раз, а
           отчёту, который просто выводит числа, не верят никогда. */}
-      <div className="card p-3">
-        <p className="eyebrow mb-2">Сходимость</p>
+      <div className="fin-card p-3">
+        <p className="fin-label mb-2">Сходимость</p>
         <div className="flex flex-col gap-1">
           {data.checks.map((check) => (
             <div key={check.name} className="flex items-baseline justify-between gap-3 text-xs">
@@ -166,8 +166,8 @@ function Breakdown({
   );
   const plannedTotal = items.reduce((sum, item) => sum + Number(item.planned ?? 0), 0);
   return (
-    <div className="card fin-report-scroll">
-      <p className="eyebrow p-3 pb-0">{title}</p>
+    <div className="fin-card fin-report-scroll">
+      <p className="fin-label p-3 pb-0">{title}</p>
       <table className="fin-report">
         <thead>
           <tr>
@@ -214,8 +214,7 @@ function Breakdown({
       </table>
       {plannedTotal ? (
         <p className="text-xs px-3 pb-3" style={{ color: "var(--text-muted)" }}>
-          Кроме этого ожидается {formatMoney(plannedTotal)} — деньги ещё не двигались,
-          поэтому в итог они не входят.
+          Ожидается ещё {formatMoney(plannedTotal)} — вне итога
         </p>
       ) : null}
     </div>
@@ -230,11 +229,7 @@ export function ProfitReport({ revision }: { revision: number }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-        Считается по дате сделки, а не по дате платежа. Поэтому цифры здесь не обязаны
-        совпадать с отчётом «Деньги» — разница между ними и есть долги.
-      </p>
-      <div className="card fin-report-scroll">
+      <div className="fin-card fin-report-scroll">
         <table className="fin-report">
           <thead>
             <tr>
@@ -292,14 +287,10 @@ export function DebtsReport({ revision, onChanged }: { revision: number; onChang
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-        Долг — это операция в состоянии «ожидание»: обязательство есть, деньги не
-        двигались. Срок прошёл — значит платёж просрочен, и это видно днями, а не цветом.
-      </p>
       {sides.map((side) => (
-        <div key={side.key} className="card">
+        <div key={side.key} className="fin-card">
           <div className="flex flex-wrap items-baseline justify-between gap-2 p-3">
-            <p className="eyebrow">{side.title}</p>
+            <p className="fin-label">{side.title}</p>
             <p className="fin-num" style={{ color: "var(--text-primary)" }}>
               {formatMoney(side.data.total)}
               {Number(side.data.overdue) > 0 ? (
@@ -370,7 +361,7 @@ export function ProjectsReport({ revision }: { revision: number }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="card fin-report-scroll">
+      <div className="fin-card fin-report-scroll">
         <table className="fin-report">
           <thead>
             <tr>
@@ -399,12 +390,11 @@ export function ProjectsReport({ revision }: { revision: number }) {
 
       {/* Строка «не разнесено» обязательна: без неё сумма проектов не сходится
           с прибылью, и объяснить расхождение нечем. */}
-      <div className="card p-3 text-xs flex flex-col gap-1" style={{ color: "var(--text-secondary)" }}>
-        <p className="eyebrow">Не разнесено по проектам</p>
+      <div className="fin-card p-3 text-xs flex flex-col gap-1" style={{ color: "var(--text-secondary)" }}>
+        <p className="fin-label">Не разнесено по проектам</p>
         <p>
           Поступления {formatMoney(data.not_split.income)}, списания{" "}
-          {formatMoney(data.not_split.expense)} — {data.not_split.note}. Пока эти суммы не
-          разнесены, прибыль по проектам меньше прибыли компании, и это не ошибка расчёта.
+          {formatMoney(data.not_split.expense)} — {data.not_split.note}
         </p>
       </div>
     </div>

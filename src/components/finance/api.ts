@@ -40,6 +40,33 @@ export type Dictionaries = {
   tags: DictEntry[];
 };
 
+export type Company = { id: string; title: string; role: string };
+
+export type Me = {
+  authenticated: boolean;
+  user?: { id: string; email: string; full_name: string; must_change_password: boolean };
+  company?: Company | null;
+  companies?: Company[];
+  /** Что человеку можно: read | write | accounts | people | company. */
+  abilities?: string[];
+};
+
+export type MemberRow = {
+  id: string;
+  email: string;
+  full_name: string;
+  status: string;
+  last_login_at: string | null;
+  role: string;
+};
+
+export type SessionRow = {
+  id: string;
+  created_at: string | null;
+  last_seen_at: string | null;
+  user_agent: string;
+};
+
 export type Overview = {
   workspace: { id: string; title: string; currency: string };
   accounts: AccountBalance[];
@@ -216,6 +243,28 @@ export type GridPayload = {
   total: number;
 };
 
+export type RuleCondition = { field: string; op: string; value: string };
+
+export type Rule = {
+  id: string;
+  name: string;
+  active: boolean;
+  match: string;
+  conditions: RuleCondition[];
+  actions: Record<string, string>;
+  /** Сколько операций правило разметило. Ноль у включённого — условие не совпадает. */
+  applied_count: number;
+  position: number;
+};
+
+export type RuleSuggestion = {
+  keyword: string;
+  kind: string;
+  count: number;
+  amount: Money;
+  examples: string[];
+};
+
 export type ImportProblem = { field: string; text: string };
 
 export type ImportRow = {
@@ -235,12 +284,18 @@ export type ImportQuestion = {
   options: { value: string; label: string; example: string }[];
 };
 
+/** Книга Google, открытая сервисному аккаунту программы. */
+export type SheetBook = { id: string; name: string; modified?: string };
+export type SheetTab = { title: string; sheet_id: number; rows: number; cols: number; hidden?: boolean };
+
 export type ImportPreview = {
   batch_id: string;
   file_name: string;
   header_line: number;
   counts: { total: number; ready: number; failed: number; skipped: number };
   question: ImportQuestion | null;
+  /** Что разметили правила: «название правила» → сколько строк. */
+  rules_applied?: Record<string, number>;
   date_order: string;
   date_evidence: string;
   mapping: { columns: Record<string, { index: number; header: string; how: string }>; width: number };
@@ -306,6 +361,41 @@ const qs = (params: Record<string, string | number | undefined | null>) => {
 };
 
 export const financeApi = {
+  // ── Учётки ───────────────────────────────────────────────────────────────
+  me: () => request<Me>("/auth/me"),
+  login: (body: { email: string; password: string }) =>
+    request<Me>("/auth/login", { method: "POST", body: JSON.stringify(body) }),
+  register: (body: { email: string; password: string; company: string; full_name?: string }) =>
+    request<Me>("/auth/register", { method: "POST", body: JSON.stringify(body) }),
+  logout: () => request<{ ok: boolean }>("/auth/logout", { method: "POST" }),
+  switchCompany: (companyId: string) =>
+    request<Me>("/auth/switch", { method: "POST", body: JSON.stringify({ company_id: companyId }) }),
+  addCompany: (title: string) =>
+    request<Company>("/auth/companies", { method: "POST", body: JSON.stringify({ title }) }),
+  renameCompany: (title: string) =>
+    request<{ id: string; title: string }>("/auth/company", {
+      method: "PATCH",
+      body: JSON.stringify({ title }),
+    }),
+  members: () => request<{ items: MemberRow[] }>("/auth/members"),
+  invite: (body: { email: string; password: string; role: string; full_name?: string }) =>
+    request<{ id: string; email: string; role: string }>("/auth/members", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  changeRole: (userId: string, role: string) =>
+    request<{ ok: boolean }>(`/auth/members/${userId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ role }),
+    }),
+  removeMember: (userId: string) =>
+    request<{ ok: boolean }>(`/auth/members/${userId}`, { method: "DELETE" }),
+  changePassword: (body: { old_password: string; new_password: string }) =>
+    request<{ ok: boolean }>("/auth/password", { method: "POST", body: JSON.stringify(body) }),
+  sessions: () => request<{ items: SessionRow[] }>("/auth/sessions"),
+  revokeSession: (id: string) =>
+    request<{ ok: boolean }>(`/auth/sessions/${id}`, { method: "DELETE" }),
+
   overview: () => request<Overview>("/overview"),
   dictionaries: () => request<Dictionaries>("/dictionaries"),
 
@@ -355,11 +445,37 @@ export const financeApi = {
   archiveEntry: (kind: string, id: string) =>
     request<{ ok: boolean }>(`/dictionaries/${kind}/${id}`, { method: "DELETE" }),
 
+  rules: () => request<{ items: Rule[] }>("/rules"),
+  createRule: (body: {
+    name: string;
+    conditions: RuleCondition[];
+    actions: Record<string, string>;
+    match?: string;
+  }) => request<{ id: string; name: string }>("/rules", { method: "POST", body: JSON.stringify(body) }),
+  toggleRule: (id: string, active: boolean) =>
+    request<{ id: string; active: boolean }>(`/rules/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ active }),
+    }),
+  deleteRule: (id: string) => request<{ ok: boolean }>(`/rules/${id}`, { method: "DELETE" }),
+  applyRules: (body: { only_uncategorized?: boolean } = {}) =>
+    request<{ rules: number; updated: number; by_rule: Record<string, number> }>("/rules/apply", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  ruleSuggestions: () => request<{ items: RuleSuggestion[] }>("/rules/suggest"),
+
   importPreview: (file: File, params: { date_order?: string; default_account?: string } = {}) => {
     const form = new FormData();
     form.append("file", file);
     return request<ImportPreview>(`/import/preview${qs(params)}`, { method: "POST", body: form });
   },
+  sheetBooks: () => request<{ configured: boolean; items: SheetBook[] }>("/sheets/books"),
+  sheetBook: (id: string) =>
+    request<{ id: string; title: string; url: string; tabs: SheetTab[] }>(`/sheets/books/${id}`),
+  /** Вкладка книги разбирается тем же разбором, что и загруженный файл. */
+  sheetPreview: (body: { book_id: string; tab: string; date_order?: string; default_account?: string }) =>
+    request<ImportPreview>("/sheets/preview", { method: "POST", body: JSON.stringify(body) }),
   importBatches: () => request<{ items: ImportBatch[] }>("/import/batches"),
   importBatch: (id: string) =>
     request<{ id: string; file_name: string; status: string; counts: Record<string, number>; rows: ImportRow[]; decisions: Record<string, unknown> }>(

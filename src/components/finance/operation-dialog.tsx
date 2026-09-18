@@ -118,7 +118,7 @@ export function OperationDialog({ kind, dictionaries, operation, onClose, onSave
       }}
     >
       <div
-        className="card w-full sm:max-w-lg max-h-[92dvh] overflow-y-auto p-4 sm:p-5"
+        className="fin-card w-full sm:max-w-lg max-h-[92dvh] overflow-y-auto p-4 sm:p-5"
         style={{ boxShadow: "var(--shadow-float)" }}
         role="dialog"
         aria-label={TITLES[kind]}
@@ -135,7 +135,7 @@ export function OperationDialog({ kind, dictionaries, operation, onClose, onSave
         <div className="flex flex-col gap-3">
           {(isTransfer || kind === "expense") && (
             <label className="flex flex-col gap-1">
-              <span className="eyebrow">Со счёта</span>
+              <span className="fin-label">Со счёта</span>
               <select
                 ref={focusOn === "from" ? firstField : undefined}
                 className="input-field"
@@ -154,7 +154,7 @@ export function OperationDialog({ kind, dictionaries, operation, onClose, onSave
 
           {(isTransfer || kind === "income") && (
             <label className="flex flex-col gap-1">
-              <span className="eyebrow">На счёт</span>
+              <span className="fin-label">На счёт</span>
               <select
                 ref={focusOn === "to" ? firstField : undefined}
                 className="input-field"
@@ -172,7 +172,7 @@ export function OperationDialog({ kind, dictionaries, operation, onClose, onSave
           )}
 
           <label className="flex flex-col gap-1">
-            <span className="eyebrow">Сумма</span>
+            <span className="fin-label">Сумма</span>
             <input
               className="input-field fin-num"
               style={{ textAlign: "left" }}
@@ -186,7 +186,7 @@ export function OperationDialog({ kind, dictionaries, operation, onClose, onSave
           {!isTransfer && (
             <>
               <label className="flex flex-col gap-1">
-                <span className="eyebrow">Категория</span>
+                <span className="fin-label">Категория</span>
                 <select
                   className="input-field"
                   value={categoryId}
@@ -202,7 +202,7 @@ export function OperationDialog({ kind, dictionaries, operation, onClose, onSave
               </label>
 
               <label className="flex flex-col gap-1">
-                <span className="eyebrow">Контрагент</span>
+                <span className="fin-label">Контрагент</span>
                 <select
                   className="input-field"
                   value={counterpartyId}
@@ -220,7 +220,7 @@ export function OperationDialog({ kind, dictionaries, operation, onClose, onSave
           )}
 
           <label className="flex flex-col gap-1">
-            <span className="eyebrow">Дата платежа</span>
+            <span className="fin-label">Дата платежа</span>
             <input
               className="input-field"
               type="date"
@@ -246,22 +246,18 @@ export function OperationDialog({ kind, dictionaries, operation, onClose, onSave
             <>
               {!isTransfer && (
                 <label className="flex flex-col gap-1">
-                  <span className="eyebrow">Дата сделки</span>
+                  <span className="fin-label">Дата сделки</span>
                   <input
                     className="input-field"
                     type="date"
                     value={accruedAt}
                     onChange={(event) => setAccruedAt(event.target.value)}
                   />
-                  <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-                    Отчёт «Прибыль» посчитает операцию по этой дате, а «Деньги» — по дате
-                    платежа. Разница между отчётами и есть долг.
-                  </span>
                 </label>
               )}
 
               <label className="flex flex-col gap-1">
-                <span className="eyebrow">Проект</span>
+                <span className="fin-label">Проект</span>
                 <select
                   className="input-field"
                   value={projectId}
@@ -277,7 +273,7 @@ export function OperationDialog({ kind, dictionaries, operation, onClose, onSave
               </label>
 
               <label className="flex flex-col gap-1">
-                <span className="eyebrow">Комментарий</span>
+                <span className="fin-label">Комментарий</span>
                 <textarea
                   className="input-field"
                   rows={2}
