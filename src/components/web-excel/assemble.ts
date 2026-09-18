@@ -9,7 +9,11 @@ export type TabPayload = {
   styles: Record<string, unknown>;
   fonts?: string[];
   checkboxes?: CellRange[];
+  lists?: SheetList[];
 };
+
+/** Выпадающий список книги: состав и клетки, на которых он стоит. */
+export type SheetList = { values: string[]; ranges: CellRange[] };
 
 type CellRange = { startRow: number; endRow: number; startColumn: number; endColumn: number };
 
@@ -40,7 +44,7 @@ export function assembleWorkbook(
   spreadsheetId: string,
   title: string,
   tabs: TabPayload[],
-): { workbook: WorkbookSnapshot; fonts: string[] } {
+): { workbook: WorkbookSnapshot; fonts: string[]; lists: Record<string, SheetList[]> } {
   const styles: Record<string, unknown> = {};
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sheets: Record<string, any> = {};
@@ -49,6 +53,10 @@ export function assembleWorkbook(
   // Правила проверки данных лежат не в листах, а в отдельном ресурсе книги,
   // разложенном по id листов.
   const validation: Record<string, Array<Record<string, unknown>>> = {};
+  // Списки выдаём наружу, а не пишем в ресурс: Univer хранит состав списка
+  // одной строкой через запятую, и значение вроде «Аренда, коммуналка»,
+  // собранное нами вручную, разъехалось бы на два пункта. Их ставит API.
+  const lists: Record<string, SheetList[]> = {};
 
   tabs.forEach((tab, index) => {
     (tab.fonts ?? []).forEach((font) => fonts.add(font));
@@ -87,6 +95,9 @@ export function assembleWorkbook(
         { uid: `gs-checkbox-${id}`, type: "checkbox", ranges: boxes },
       ];
     }
+
+    const tabLists = (tab.lists ?? []).filter((item) => item.values.length && item.ranges.length);
+    if (tabLists.length) lists[id] = tabLists;
   });
 
   return {
@@ -103,5 +114,6 @@ export function assembleWorkbook(
       custom: { source: "google-sheets", spreadsheetId },
     },
     fonts: [...fonts],
+    lists,
   };
 }

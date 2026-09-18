@@ -6,10 +6,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeftIcon, ClockIcon, GridIcon } from "@/components/icons";
 import { webExcelApi, type ImportStats, type SavedBook } from "./api";
 import { ImportDialog } from "./import-dialog";
-import { assembleWorkbook, type TabPayload } from "./assemble";
+import { assembleWorkbook, type SheetList, type TabPayload } from "./assemble";
 import { ensureSheetFonts } from "./sheet-fonts";
 import { forgetSavedChoice, readSavedChoice, StartGate, type GateChoice } from "./start-gate";
-import { blankWorkbook, UniverSheet, type UniverSheetHandle, type WorkbookSnapshot } from "@/components/univer/sheet";
+import { blankWorkbook, UniverSheet, type UniverApi, type UniverSheetHandle, type WorkbookSnapshot } from "@/components/univer/sheet";
 
 type Origin = { spreadsheetId: string; title: string; tabs: string[] } | null;
 
@@ -52,6 +52,13 @@ export function WebExcelWorkbench() {
   const [savedOpen, setSavedOpen] = useState(false);
 
   const sheetRef = useRef<UniverSheetHandle>(null);
+  /**
+   * Списки книги, ожидающие постановки на лист.
+   *
+   * В ref, а не в состоянии: они нужны один раз, в момент готовности Univer, и
+   * перерисовывать из-за них компонент незачем.
+   */
+  const pendingLists = useRef<Record<string, SheetList[]>>({});
 
   // Сохранённый выбор применяется в эффекте, а не при инициализации состояния:
   // localStorage на сервере нет, и чтение при рендере разошлось бы с разметкой,
@@ -93,6 +100,64 @@ export function WebExcelWorkbench() {
    * Последовательно, а не параллельно: квота Google — 60 чтений в минуту на
    * весь сервисный аккаунт, и этот же аккаунт обслуживает дашборд.
    */
+  /**
+   * Поставить на лист выпадающие списки книги.
+   *
+   * В книгах, которые ведут руками, у колонок стоят списки — в «Журнале ГК BBC»
+   * это статьи, счета и подкатегории. Без них зеркало отличается от книги в
+   * самом рабочем месте: там выбирают, здесь печатают, и первая же опечатка
+   * заводит вторую статью.
+   *
+   * Ставятся через API, а не через ресурс книги: состав списка Univer хранит
+   * одной строкой через запятую, и «Аренда, коммуналка», собранная нами,
+   * разъехалась бы на два пункта — молча.
+   */
+  const applyLists = useCallback((api: UniverApi) => {
+    const lists = pendingLists.current;
+    pendingLists.current = {};
+    if (!Object.keys(lists).length) return;
+
+    void (async () => {
+      const book = api.getActiveWorkbook?.();
+      const sheets = book?.getSheets?.() ?? [];
+      const byId = new Map<string, UniverApi>(
+        sheets.map((sheet: UniverApi) => [String(sheet.getSheetId?.() ?? ""), sheet]),
+      );
+      let applied = 0;
+      for (const [sheetId, rules] of Object.entries(lists)) {
+        const sheet = byId.get(sheetId);
+        if (!sheet || typeof api.newDataValidation !== "function") continue;
+        for (const rule of rules) {
+          try {
+            const built = api
+              .newDataValidation()
+              .requireValueInList(rule.values, false, true)
+              .setOptions({ allowBlank: true, showErrorMessage: false })
+              .build();
+            for (const range of rule.ranges) {
+              await sheet
+                .getRange(
+                  range.startRow,
+                  range.startColumn,
+                  range.endRow - range.startRow + 1,
+                  range.endColumn - range.startColumn + 1,
+                )
+                .setDataValidation(built);
+              applied += 1;
+            }
+          } catch {
+            // Список — удобство, а не условие открытия книги.
+          }
+        }
+      }
+      if (!applied) {
+        // Молчаливое «списков нет» — худший исход: книга выглядит целой, а в
+        // самом рабочем месте отличается от оригинала. Пусть будет видно.
+        console.warn("Выпадающие списки книги не встали на лист");
+      }
+    })();
+  }, []);
+
   const doImport = async (spreadsheetId: string, tabs: string[], title: string) => {
     setBusy(true);
     setError(null);
@@ -108,7 +173,8 @@ export function WebExcelWorkbench() {
         collected.push(payload.stats);
       }
 
-      const { workbook: assembled, fonts } = assembleWorkbook(spreadsheetId, title, loaded);
+      const { workbook: assembled, fonts, lists } = assembleWorkbook(spreadsheetId, title, loaded);
+      pendingLists.current = lists;
       // Шрифты — до того, как книга попадёт в Univer: он меряет ширины текста
       // в момент первой отрисовки, и опоздавший шрифт уже ничего не исправит.
       setProgress("Загружаем шрифты книги…");
@@ -289,7 +355,7 @@ export function WebExcelWorkbench() {
       )}
 
       <div className="we-grid" data-blurred={gateOpen ? "true" : undefined}>
-        <UniverSheet key={workbookKey} ref={sheetRef} data={workbook} />
+        <UniverSheet key={workbookKey} ref={sheetRef} data={workbook} onReady={applyLists} />
       </div>
 
       {gateOpen && <StartGate onChoose={onChoose} />}
