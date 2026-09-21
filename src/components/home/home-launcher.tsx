@@ -15,7 +15,7 @@ type Tile = {
 const TILES: Tile[] = [
   {
     href: "/analyzer",
-    label: "Анализатор выписок",
+    label: "Управленческий учёт финансов",
     corner: "tl",
     Icon: TableIcon,
   },
