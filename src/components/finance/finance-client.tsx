@@ -309,7 +309,7 @@ export function FinanceClient() {
       case "plan":
         return <PlanActualReport revision={revision} onChanged={reload} />;
       case "import":
-        return <ImportPanel onChanged={reload} accounts={dictionaries.accounts} />;
+        return <ImportPanel onChanged={reload} accounts={dictionaries.accounts} onNext={() => setSection("rules")} />;
       case "sheets":
         return <SheetsPanel onChanged={reload} accounts={dictionaries.accounts} />;
       case "rules":

@@ -38,6 +38,7 @@ export function PreviewView({
   onApplied,
   onReset,
   resetLabel,
+  onNext,
 }: {
   preview: ImportPreview;
   setPreview: (next: ImportPreview) => void;
@@ -47,6 +48,8 @@ export function PreviewView({
   onApplied: () => void;
   onReset: () => void;
   resetLabel: string;
+  /** Куда идти после того, как операции заведены: разметка статей. */
+  onNext?: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -230,7 +233,9 @@ export function PreviewView({
             : `Завести ${ready.length} ${plural(ready.length, "операцию", "операции", "операций")}`}
         </button>
         {result ? (
-          <span className="text-sm" style={{ color: "var(--fin-income)" }}>
+          // Без цвета: «заведено» — это «всё хорошо», а цвет в разделе только
+          // у отказа (CLAUDE.md, «Индикаторы состояния»).
+          <span className="text-sm" style={{ color: "var(--text-primary)" }}>
             {result}
           </span>
         ) : ready.length === 0 && duplicate.length ? (
@@ -245,6 +250,11 @@ export function PreviewView({
           </span>
         )}
         <span style={{ flex: 1 }} />
+        {result && onNext ? (
+          <button type="button" className="btn-ghost text-xs" onClick={onNext}>
+            Разметить статьи
+          </button>
+        ) : null}
         <button type="button" className="btn-ghost text-xs" onClick={onReset}>
           {resetLabel}
         </button>

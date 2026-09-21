@@ -14,6 +14,8 @@ import { PreviewView } from "@/components/finance/preview-view";
 type Props = {
   accounts: Account[];
   onChanged: () => void;
+  /** Перейти к разметке статей, когда операции заведены. */
+  onNext?: () => void;
 };
 
 /**
@@ -22,7 +24,7 @@ type Props = {
  * Разбор показывает `PreviewView` — тот же, что показывает вкладку книги
  * Google. Одно и то же обязано выглядеть одинаково, откуда бы ни пришли строки.
  */
-export function ImportPanel({ accounts, onChanged }: Props) {
+export function ImportPanel({ accounts, onChanged, onNext }: Props) {
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [batches, setBatches] = useState<ImportBatch[]>([]);
   const [busy, setBusy] = useState(false);
@@ -212,6 +214,7 @@ export function ImportPanel({ accounts, onChanged }: Props) {
             setFile(null);
           }}
           resetLabel="Другой файл"
+          onNext={onNext}
         />
       )}
     </div>

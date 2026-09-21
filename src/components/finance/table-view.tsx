@@ -523,6 +523,39 @@ export function TableView({ onChanged, refresh = 0 }: { onChanged: () => void; r
       },
     );
     if (values?.dispose) disposers.push(() => values.dispose());
+
+    /**
+     * Печать в ячейке со списком — это печать, а не выбор.
+     *
+     * Univer открывает выпадающий список, как только в такой ячейке открылся
+     * редактор, и настройки, чтобы этого не делать, у него нет. Строка поиска
+     * списка забирает фокус на второй-третьей букве: «Ба» оставалось в
+     * ячейке, «нковский счёт» уходило в поиск, и Enter не записывал ничего.
+     * Человек из Excel печатает название и жмёт Enter — поэтому правку,
+     * начатую с клавиатуры, мы оставляем ячейке и список закрываем; сервер
+     * узнаёт счёт и статью по началу названия. Мышью список открывается как
+     * прежде — стрелкой в ячейке.
+     */
+    const KEYBOARD = 4; // DeviceInputEventType.Keyboard
+    const edits = api.addEvent?.(
+      api.Event.SheetEditStarted,
+      (event: { column: number; eventType?: number }) => {
+        if (event.eventType !== KEYBOARD || columns[event.column]?.kind !== "enum") return;
+        const hide = () => {
+          try {
+            api.executeCommand?.("sheet.operation.hide-data-validation-dropdown", {});
+          } catch {
+            /* нет списка — нечего и закрывать */
+          }
+        };
+        // Список открывается в той же подписке на редактор, что и событие, —
+        // закрываем и сразу, и следующим тактом, после его отрисовки.
+        hide();
+        window.setTimeout(hide, 0);
+        window.setTimeout(hide, 60);
+      },
+    );
+    if (edits?.dispose) disposers.push(() => edits.dispose());
     return () => disposers.forEach((stop) => stop());
   }, []);
 

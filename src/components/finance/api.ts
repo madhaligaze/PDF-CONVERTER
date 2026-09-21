@@ -271,6 +271,23 @@ export type Rule = {
   position: number;
 };
 
+/** Группа авторазметки: статья, сколько операций в неё ляжет и на какую сумму. */
+export type AutotagGroup = {
+  category: string;
+  side: "income" | "expense";
+  /** Правдива, но почти ничего не говорит: «Покупки без уточнения». */
+  broad: boolean;
+  /** Чем доказано: тип операции банка, продавец, назначение платежа. */
+  reason: string;
+  count: number;
+  amount: Money;
+  examples: string[];
+  /** Статья уже есть в справочнике; иначе заведётся. */
+  exists: boolean;
+};
+
+export type AutotagPreview = { uncategorized: number; covered: number; groups: AutotagGroup[] };
+
 export type RuleSuggestion = {
   keyword: string;
   kind: string;
@@ -620,6 +637,12 @@ export const financeApi = {
 
   grid: (params: Record<string, string | number | undefined>) =>
     request<GridPayload>(`/grid${qs(params)}`),
+  autotagPreview: () => request<AutotagPreview>("/autotag"),
+  autotagApply: (groups: { side: string; category: string }[]) =>
+    request<{ updated: number; by_category: Record<string, number> }>("/autotag", {
+      method: "POST",
+      body: JSON.stringify({ groups }),
+    }),
   setStartingBalance: (accountId: string, value: string) =>
     request<{ id: string; name: string; starting_balance: Money }>(`/accounts/${accountId}`, {
       method: "PATCH",

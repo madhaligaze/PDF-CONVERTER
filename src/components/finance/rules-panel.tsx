@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { type Dictionaries, type Rule, type RuleSuggestion, financeApi, formatMoney } from "@/components/finance/api";
+import { AutotagCard } from "@/components/finance/autotag-card";
 
 const FIELD_TITLES: Record<string, string> = {
   comment: "комментарий",
@@ -93,7 +94,7 @@ export function RulesPanel({
       const done = await financeApi.applyRules({ only_uncategorized: true });
       setResult(
         done.updated
-          ? `Разметили ${done.updated} операций: ${Object.entries(done.by_rule)
+          ? `Разметили операций: ${done.updated} — ${Object.entries(done.by_rule)
               .map(([name, count]) => `${name} — ${count}`)
               .join(", ")}`
           : "Ни одна операция не подошла под правила",
@@ -109,6 +110,12 @@ export function RulesPanel({
 
   return (
     <div className="flex flex-col gap-4">
+      <AutotagCard
+        onChanged={() => {
+          onChanged();
+          void load();
+        }}
+      />
       {suggestions.length ? (
         <div className="fin-card p-4 flex flex-col gap-2">
           <div>
@@ -120,7 +127,7 @@ export function RulesPanel({
                 <b style={{ color: "var(--text-primary)" }}>{hint.keyword}</b>
                 <span style={{ color: "var(--text-muted)" }}>
                   {" · "}
-                  {hint.count} операций · {hint.kind === "income" ? "поступления" : "списания"}
+                  {hint.count} {operations(hint.count)} · {hint.kind === "income" ? "поступления" : "списания"}
                   {hint.examples[0] ? ` · «${hint.examples[0]}»` : ""}
                 </span>
               </span>
@@ -298,4 +305,13 @@ export function RulesPanel({
       ) : null}
     </div>
   );
+}
+
+/** «1 операция», «4 операции», «12 операций» — число в строке подсказки. */
+function operations(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return "операция";
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "операции";
+  return "операций";
 }
