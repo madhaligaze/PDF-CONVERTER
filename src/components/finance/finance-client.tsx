@@ -245,6 +245,15 @@ export function FinanceClient() {
    */
   const [revision, setRevision] = useState(0);
   const reload = useCallback(() => setRevision((value) => value + 1), []);
+  /**
+   * Пересобрать лист «Таблицы» — только по кнопке «Перечитать».
+   *
+   * Отдельно от `revision`, потому что лист сам зовёт `reload` после каждой
+   * правки, чтобы обновились остатки слева. Пересобирай он себя на каждый
+   * такой вызов — прыгал бы в начало после каждой ячейки, а строки меняли бы
+   * порядок прямо под курсором.
+   */
+  const [sheetRefresh, setSheetRefresh] = useState(0);
 
   const companyId = me?.company?.id ?? null;
 
@@ -279,7 +288,7 @@ export function FinanceClient() {
       case "journal":
         return <Journal dictionaries={dictionaries} revision={revision} onChanged={reload} />;
       case "table":
-        return <TableView onChanged={reload} />;
+        return <TableView onChanged={reload} refresh={sheetRefresh} />;
       case "calendar":
         return <CalendarView revision={revision} />;
       case "cash":
@@ -326,7 +335,7 @@ export function FinanceClient() {
       default:
         return null;
     }
-  }, [section, dictionaries, revision, reload, me]);
+  }, [section, dictionaries, revision, reload, me, sheetRefresh]);
 
   if (loading) return <AuthLoading />;
   if (!me) return <AuthGate onReady={(next) => setMe(next)} />;
@@ -412,7 +421,10 @@ export function FinanceClient() {
           type="button"
           className="fin-act only-desktop"
           style={{ padding: "0 0.75rem" }}
-          onClick={reload}
+          onClick={() => {
+            reload();
+            setSheetRefresh((value) => value + 1);
+          }}
           title="Перечитать данные"
         >
           <RefreshIcon size={15} />

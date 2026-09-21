@@ -28,6 +28,10 @@ const PERIODS = [
 
 type PeriodKey = (typeof PERIODS)[number]["key"];
 
+/** Строк на одну страницу журнала и сколько раскрывается на экране всего. */
+const PAGE = 250;
+const PAGE_CEILING = 5000;
+
 function periodRange(key: PeriodKey): { from?: string; to?: string } {
   if (key === "all") return {};
   if (key === "this") return { date_from: monthEdges(0).from, date_to: monthEdges(0).to } as never;
@@ -56,20 +60,32 @@ export function Journal({ dictionaries, revision, onChanged }: Props) {
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<Operation | null>(null);
-  const [offset, setOffset] = useState(0);
+  /**
+   * Сколько страниц по 250 уже раскрыто.
+   *
+   * Раньше «Показать ещё» сдвигало смещение, и вместо добавления строк
+   * страница подменялась следующей: первые 250 исчезали, вернуться к ним было
+   * нечем. А смена фильтра смещение не сбрасывала — фильтр, под который
+   * попадает десять операций, открывался на «второй странице» и показывал
+   * «операций нет». Теперь раскрытие копится, а любой фильтр начинает с начала.
+   */
+  const [pages, setPages] = useState(1);
 
-  const params = useMemo(
+  const filters = useMemo(
     () => ({
       ...periodRange(period),
       kinds: kinds || undefined,
       account_id: accountId || undefined,
       category_id: categoryId || undefined,
       search: search || undefined,
-      limit: 250,
-      offset,
     }),
-    [period, kinds, accountId, categoryId, search, offset],
+    [period, kinds, accountId, categoryId, search],
   );
+  useEffect(() => {
+    setPages(1);
+  }, [filters]);
+
+  const params = useMemo(() => ({ ...filters, limit: Math.min(PAGE * pages, PAGE_CEILING) }), [filters, pages]);
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -109,10 +125,7 @@ export function Journal({ dictionaries, revision, onChanged }: Props) {
             className="input-field"
             style={{ width: "auto" }}
             value={period}
-            onChange={(event) => {
-              setPeriod(event.target.value as PeriodKey);
-              setOffset(0);
-            }}
+            onChange={(event) => setPeriod(event.target.value as PeriodKey)}
           >
             {PERIODS.map((item) => (
               <option key={item.key} value={item.key}>
@@ -180,6 +193,9 @@ export function Journal({ dictionaries, revision, onChanged }: Props) {
             placeholder="номер договора, назначение"
           />
         </label>
+        <a className="btn-ghost text-xs" href={financeApi.exportJournalUrl(filters)} download>
+          Скачать в Excel
+        </a>
       </div>
 
       {page ? (
@@ -303,13 +319,9 @@ export function Journal({ dictionaries, revision, onChanged }: Props) {
         </table>
       </div>
 
-      {page && page.total > items.length + offset ? (
-        <button
-          type="button"
-          className="btn-ghost self-start"
-          onClick={() => setOffset(offset + (page.limit || 250))}
-        >
-          Показать ещё
+      {page && page.total > items.length && items.length < PAGE_CEILING ? (
+        <button type="button" className="btn-ghost self-start" onClick={() => setPages((was) => was + 1)}>
+          Показать ещё {Math.min(PAGE, page.total - items.length)}
         </button>
       ) : null}
 

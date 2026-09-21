@@ -77,9 +77,7 @@ export function DictionariesPanel({ dictionaries, onChanged }: Props) {
                 {account.excluded_from_reports ? " · вне отчётов" : ""}
               </span>
             </span>
-            <span className="fin-num" style={{ color: "var(--text-secondary)" }}>
-              начальный {formatMoney(account.starting_balance)}
-            </span>
+            <StartingBalance account={account} onSaved={onChanged} onError={setError} />
           </div>
         ))}
 
@@ -336,5 +334,77 @@ function EntryList({
         </p>
       ) : null}
     </div>
+  );
+}
+
+
+/**
+ * Начальный остаток — щелчком по цифре.
+ *
+ * Раньше он задавался только при создании счёта, а «Банковский счёт» и
+ * «Касса» создаются при регистрации сами, с нулём. Загрузил в них выписку —
+ * и остаток навсегда с минусом: учёт начинается с нуля, а карта нет.
+ */
+function StartingBalance({
+  account,
+  onSaved,
+  onError,
+}: {
+  account: Dictionaries["accounts"][number];
+  onSaved: () => void;
+  onError: (text: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      await financeApi.setStartingBalance(account.id, value.replace(/\s/g, "").replace(",", ".") || "0");
+      setEditing(false);
+      onError("");
+      onSaved();
+    } catch (exc) {
+      onError(exc instanceof Error ? exc.message : "Остаток не записался");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        className="fin-num"
+        style={{ color: "var(--text-secondary)", textDecoration: "underline dotted", textUnderlineOffset: 3 }}
+        onClick={() => {
+          setValue(String(account.starting_balance).replace(".", ","));
+          setEditing(true);
+        }}
+        title="Изменить начальный остаток"
+      >
+        начальный {formatMoney(account.starting_balance)}
+      </button>
+    );
+  }
+  return (
+    <span className="flex items-center gap-1">
+      <input
+        className="input-field fin-num"
+        style={{ width: "9rem" }}
+        value={value}
+        autoFocus
+        onChange={(event) => setValue(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") void save();
+          if (event.key === "Escape") setEditing(false);
+        }}
+        aria-label={`Начальный остаток «${account.name}»`}
+      />
+      <button type="button" className="btn-ghost text-xs" disabled={busy} onClick={() => void save()}>
+        Сохранить
+      </button>
+    </span>
   );
 }

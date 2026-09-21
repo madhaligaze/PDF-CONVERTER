@@ -241,9 +241,18 @@ export type GridColumn = {
   source: string;
 };
 
+export type GridRow = {
+  id: string;
+  version: number;
+  cells: Record<string, string>;
+  kind: string;
+  status: string;
+  split_count: number;
+};
+
 export type GridPayload = {
   columns: GridColumn[];
-  rows: { id: string; version: number; cells: Record<string, string>; kind: string; status: string; split_count: number }[];
+  rows: GridRow[];
   options: Record<string, string[]>;
   total: number;
 };
@@ -293,11 +302,34 @@ export type ImportQuestion = {
 export type SheetBook = { id: string; name: string; modified?: string };
 export type SheetTab = { title: string; sheet_id: number; rows: number; cols: number; hidden?: boolean };
 
+/**
+ * Сверка выписки с банком: что банк напечатал и что получилось из строк.
+ * Есть только у PDF-выписок, где банк печатает остатки на начало и конец.
+ */
+export type BankCheck = {
+  period_start: string | null;
+  period_end: string | null;
+  opening_balance: Money | null;
+  closing_balance: Money | null;
+  account_number: string;
+  card_number: string;
+  account: string | null;
+  file_net: Money;
+  expected_closing: Money | null;
+  gap: Money | null;
+  account_id: string | null;
+  starting_balance: Money | null;
+  ledger_opening: Money | null;
+  earlier_operations: number;
+  can_set_start: boolean;
+};
+
 export type ImportPreview = {
   batch_id: string;
   file_name: string;
   header_line: number;
-  counts: { total: number; ready: number; failed: number; skipped: number };
+  counts: { total: number; ready: number; failed: number; skipped: number; duplicate?: number };
+  bank?: BankCheck | null;
   question: ImportQuestion | null;
   /** Что разметили правила: «название правила» → сколько строк. */
   rules_applied?: Record<string, number>;
@@ -588,10 +620,23 @@ export const financeApi = {
 
   grid: (params: Record<string, string | number | undefined>) =>
     request<GridPayload>(`/grid${qs(params)}`),
+  setStartingBalance: (accountId: string, value: string) =>
+    request<{ id: string; name: string; starting_balance: Money }>(`/accounts/${accountId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ starting_balance: value }),
+    }),
+  /**
+   * Адрес выгрузки журнала в Excel с теми же фильтрами, что на экране.
+   *
+   * Ссылка, а не запрос из кода: файл скачивает браузер, со своим окном
+   * сохранения и своим именем файла из заголовка ответа.
+   */
+  exportJournalUrl: (params: Record<string, string | number | undefined>) =>
+    `${API}/export/journal.xlsx${qs(params)}`,
   patchCell: (body: { operation_id: string; column: string; value: unknown; version?: number }) =>
-    request<Operation>("/grid/cell", { method: "PATCH", body: JSON.stringify(body) }),
+    request<Operation & { row: GridRow }>("/grid/cell", { method: "PATCH", body: JSON.stringify(body) }),
   addGridRow: (cells: Record<string, unknown>) =>
-    request<Operation>("/grid/row", { method: "POST", body: JSON.stringify({ cells }) }),
+    request<Operation & { row: GridRow }>("/grid/row", { method: "POST", body: JSON.stringify({ cells }) }),
 
   cashFlow: (params: Record<string, string | undefined>) =>
     request<CashFlow>(`/reports/cash-flow${qs(params)}`),
@@ -689,13 +734,27 @@ export const financeApi = {
  * который мешает сравнивать порядки величин глазом. Там, где копейки есть, они
  * показываются: это не округление, а отсутствие ложной точности.
  */
-export function formatMoney(value: Money | number, options: { sign?: boolean } = {}): string {
+export function formatMoney(
+  value: Money | number,
+  options: { sign?: boolean; whole?: boolean } = {},
+): string {
   const number = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(number)) return String(value);
-  const fraction = Math.abs(number % 1) > 0.0001 ? 2 : 0;
+  /**
+   * Копейки показываем всегда.
+   *
+   * Раньше целая сумма печаталась без них, и в одной колонке отчёта стояли
+   * «2 084 872» и «915 207,42». Колонку денег читают по разрядам сверху вниз;
+   * когда у части чисел запятой нет, разряды перестают стоять друг под
+   * другом, и взгляд спотыкается там, где должен скользить. Это не украшение:
+   * ровно так глазами ловят лишний ноль.
+   *
+   * `whole` оставлен для мест, где копейки заведомо не нужны и место дорого.
+   */
+  const fraction = options.whole ? 0 : 2;
   const text = new Intl.NumberFormat("ru-RU", {
     minimumFractionDigits: fraction,
-    maximumFractionDigits: 2,
+    maximumFractionDigits: fraction,
   }).format(Math.abs(number));
   const prefix = options.sign ? (number < 0 ? "−" : "+") : number < 0 ? "−" : "";
   return `${prefix}${text}`;

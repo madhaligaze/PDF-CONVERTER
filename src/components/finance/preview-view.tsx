@@ -175,6 +175,15 @@ export function PreviewView({
   );
   const ready = preview.rows.filter((row) => row.state === "imported");
   const skipped = preview.rows.filter((row) => row.state === "skipped" || row.state === "duplicate");
+  /**
+   * Повторы считаем отдельно от прочих пропущенных.
+   *
+   * «Пропущено 2050» на повторной загрузке того же файла читается как поломка
+   * разбора. Причина другая и она хорошая: эти операции уже в учёте. Разница
+   * между «не понял файл» и «этот файл уже заводили» — это разница между
+   * «загружу ещё раз» и «всё на месте».
+   */
+  const duplicate = preview.rows.filter((row) => row.state === "duplicate");
 
   return (
     <>
@@ -224,6 +233,12 @@ export function PreviewView({
           <span className="text-sm" style={{ color: "var(--fin-income)" }}>
             {result}
           </span>
+        ) : ready.length === 0 && duplicate.length ? (
+          <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
+            {duplicate.length === preview.rows.length
+              ? "этот файл уже заводили — всё есть в учёте"
+              : `${duplicate.length} ${plural(duplicate.length, "операция", "операции", "операций")} уже в учёте`}
+          </span>
         ) : (
           <span className="text-xs" style={{ color: "var(--text-muted)" }}>
             в учёт ещё не записано
@@ -249,10 +264,58 @@ export function PreviewView({
           <span className={`fin-kpi-value ${failed.length ? "fin-out" : ""}`}>{failed.length}</span>
         </div>
         <div className="fin-kpi">
-          <span className="fin-kpi-label">Пропущено</span>
-          <span className="fin-kpi-value">{skipped.length}</span>
+          <span className="fin-kpi-label">{duplicate.length ? "Уже в учёте" : "Пропущено"}</span>
+          <span className="fin-kpi-value">{duplicate.length || skipped.length}</span>
         </div>
       </div>
+
+      {/* Что разметят правила — до записи. Сервер считал это всегда, а экран
+          не показывал, и человек узнавал о разметке уже в отчёте. */}
+      {Object.keys(preview.rules_applied ?? {}).length ? (
+        <div className="fin-card p-4 flex flex-col gap-1">
+          <p className="fin-label mb-1">Правила разметят</p>
+          {Object.entries(preview.rules_applied ?? {})
+            .sort((a, b) => b[1] - a[1])
+            .map(([name, count]) => (
+              <div key={name} className="fin-acc-row">
+                <span className="fin-acc-name">{name}</span>
+                <span className="fin-num">
+                  {count} {plural(count, "строку", "строки", "строк")}
+                </span>
+              </div>
+            ))}
+        </div>
+      ) : null}
+
+      {preview.bank ? (
+        <BankCard
+          check={preview.bank}
+          busy={busy}
+          onSetStart={async () => {
+            const bank = preview.bank;
+            if (!bank?.account_id || !bank.opening_balance) return;
+            setBusy(true);
+            setError("");
+            try {
+              await financeApi.setStartingBalance(bank.account_id, bank.opening_balance);
+              setPreview({
+                ...preview,
+                bank: {
+                  ...bank,
+                  starting_balance: bank.opening_balance,
+                  ledger_opening: bank.opening_balance,
+                  can_set_start: false,
+                },
+              });
+              onApplied();
+            } catch (exc) {
+              setError(exc instanceof Error ? exc.message : "Остаток не записался");
+            } finally {
+              setBusy(false);
+            }
+          }}
+        />
+      ) : null}
 
       {preview.accounts_missing.length ? (
         <div className="fin-card p-3 flex flex-col gap-2">
@@ -509,4 +572,93 @@ export function plural(count: number, one: string, few: string, many: string): s
   if (mod10 === 1) return one;
   if (mod10 >= 2 && mod10 <= 4) return few;
   return many;
+}
+
+
+/**
+ * Сверка выписки с банком.
+ *
+ * Банк печатает в выписке остаток на начало и на конец периода. Разобранные
+ * строки обязаны пройти ровно этот путь: начало плюс движение — это конец.
+ * Сходится — при разборе не потерялось ни одной операции. Не сходится — это
+ * видно до того, как операции легли в учёт, а не через месяц в отчёте.
+ *
+ * Здесь же — начальный остаток счёта из выписки. Без него счёт, в который
+ * загрузили выписку за год, показывал минус: учёт начинался с нуля, а карта —
+ * нет. Кнопка появляется, только если раньше периода по счёту ничего не было:
+ * иначе остаток на начало задают прежние операции, и подгонять его нельзя.
+ */
+function BankCard({
+  check,
+  busy,
+  onSetStart,
+}: {
+  check: NonNullable<ImportPreview["bank"]>;
+  busy: boolean;
+  onSetStart: () => void;
+}) {
+  const start = check.period_start ? formatDate(check.period_start) : "начало";
+  const end = check.period_end ? formatDate(check.period_end) : "конец";
+  const gap = check.gap === null ? null : Number(check.gap);
+  // Остаток счёта в учёте на начало периода — против банка. Показываем, как
+  // только счёт выбран и начальный остаток из выписки не предлагается: тогда
+  // именно эта строка говорит, сойдётся ли счёт с банком после загрузки.
+  const ledgerGap =
+    check.ledger_opening !== null && check.opening_balance !== null && !check.can_set_start
+      ? Number(check.ledger_opening) - Number(check.opening_balance)
+      : null;
+  const who = [check.card_number, check.account_number].filter(Boolean).join(" · ");
+
+  return (
+    <div className="fin-card p-4 flex flex-col gap-1">
+      <p className="fin-label mb-1">Сверка с банком{who ? ` · ${who}` : ""}</p>
+      {check.opening_balance !== null ? (
+        <div className="fin-acc-row">
+          <span className="fin-acc-name">Банк на {start}</span>
+          <span className="fin-num">{formatMoney(check.opening_balance)}</span>
+        </div>
+      ) : null}
+      <div className="fin-acc-row">
+        <span className="fin-acc-name">Движение по строкам выписки</span>
+        <span className="fin-num">{formatMoney(check.file_net, { sign: true })}</span>
+      </div>
+      {check.expected_closing !== null ? (
+        <div className="fin-acc-row">
+          <span className="fin-acc-name">Выходит на {end}</span>
+          <span className="fin-num">{formatMoney(check.expected_closing)}</span>
+        </div>
+      ) : null}
+      {check.closing_balance !== null ? (
+        <div className="fin-acc-row">
+          <span className="fin-acc-name">Банк на {end}</span>
+          <span className="fin-num">{formatMoney(check.closing_balance)}</span>
+        </div>
+      ) : null}
+      {gap !== null ? (
+        <div className="fin-acc-row">
+          <span className="fin-acc-name" style={{ fontWeight: 600 }}>
+            {Math.abs(gap) < 0.005 ? "Сошлось с банком" : "Расхождение с банком"}
+          </span>
+          <span className={`fin-num ${Math.abs(gap) < 0.005 ? "" : "fin-out"}`} style={{ fontWeight: 600 }}>
+            {Math.abs(gap) < 0.005 ? "0,00" : formatMoney(gap, { sign: true })}
+          </span>
+        </div>
+      ) : null}
+      {ledgerGap !== null ? (
+        <div className="fin-acc-row">
+          <span className="fin-acc-name">
+            В учёте на {start} ({check.account}) — {formatMoney(check.ledger_opening ?? "0")}
+          </span>
+          <span className={`fin-num ${Math.abs(ledgerGap) < 0.005 ? "" : "fin-out"}`}>
+            {Math.abs(ledgerGap) < 0.005 ? "сходится" : formatMoney(ledgerGap, { sign: true })}
+          </span>
+        </div>
+      ) : null}
+      {check.can_set_start && check.opening_balance !== null ? (
+        <button type="button" className="btn-ghost text-xs self-start mt-2" disabled={busy} onClick={onSetStart}>
+          Начальный остаток «{check.account}» — {formatMoney(check.opening_balance)}
+        </button>
+      ) : null}
+    </div>
+  );
 }
