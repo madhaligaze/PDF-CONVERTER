@@ -14,7 +14,7 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Анализатор выписок",
+  title: "Управленческий учёт финансов",
   description: "Интеллектуальный анализ банковских выписок и экспорт в Excel.",
 };
 
