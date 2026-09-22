@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { type Me, financeApi } from "@/components/finance/api";
+import { AuthStage, AuthWait } from "@/components/stage/auth-stage";
 
 /**
  * Вход и регистрация раздела «Финансы».
@@ -43,98 +44,84 @@ export function AuthGate({ onReady }: { onReady: (me: Me) => void }) {
   };
 
   return (
-    <div
-      className="min-h-screen min-h-[100dvh] flex items-center justify-center px-4 py-10"
-      style={{ background: "var(--page-bg)" }}
-    >
-      <div className="fin-card w-full max-w-md p-6 flex flex-col gap-4">
-        <div>
-          <p className="fin-label mb-1">Финансы</p>
-          <h1 className="text-xl font-semibold" style={{ color: "var(--text-primary)", letterSpacing: "-0.02em" }}>
-            {mode === "login" ? "Вход в учёт компании" : "Регистрация компании"}
-          </h1>
-        </div>
+    <AuthStage owner="Финансы" title="Учёт денег компании" backHref="/services" backLabel="Сервисы">
+      <h2 className="auth-heading">{mode === "login" ? "Вход в учёт компании" : "Регистрация компании"}</h2>
 
-        <form className="flex flex-col gap-3" onSubmit={submit}>
-          {mode === "register" ? (
-            <label className="flex flex-col gap-1">
-              <span className="fin-label">Название компании</span>
-              <input
-                className="input-field"
-                value={company}
-                onChange={(event) => setCompany(event.target.value)}
-                placeholder="ТОО «Компания»"
-                autoComplete="organization"
-                required
-              />
-            </label>
-          ) : null}
-
-          <label className="flex flex-col gap-1">
-            <span className="fin-label">Почта</span>
+      <form className="auth-fields" onSubmit={submit}>
+        {mode === "register" ? (
+          <label className="auth-field">
+            <span className="eyebrow">Название компании</span>
             <input
               className="input-field"
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="buh@company.kz"
-              autoComplete="email"
+              value={company}
+              onChange={(event) => setCompany(event.target.value)}
+              placeholder="ТОО «Компания»"
+              autoComplete="organization"
               required
             />
           </label>
+        ) : null}
 
-          <label className="flex flex-col gap-1">
-            <span className="fin-label">Пароль</span>
+        <label className="auth-field">
+          <span className="eyebrow">Почта</span>
+          <input
+            className="input-field"
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="buh@company.kz"
+            autoComplete="email"
+            required
+          />
+        </label>
+
+        <label className="auth-field">
+          <span className="eyebrow">Пароль</span>
+          <input
+            className="input-field"
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            autoComplete={mode === "login" ? "current-password" : "new-password"}
+            required
+          />
+          {mode === "register" ? <span className="auth-hint">От восьми символов.</span> : null}
+        </label>
+
+        {mode === "register" ? (
+          <label className="auth-field">
+            <span className="eyebrow">Ваше имя (необязательно)</span>
             <input
               className="input-field"
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              autoComplete={mode === "login" ? "current-password" : "new-password"}
-              required
+              value={fullName}
+              onChange={(event) => setFullName(event.target.value)}
+              autoComplete="name"
             />
-            {mode === "register" ? (
-              <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-                От восьми символов.
-              </span>
-            ) : null}
           </label>
+        ) : null}
 
-          {mode === "register" ? (
-            <label className="flex flex-col gap-1">
-              <span className="fin-label">Ваше имя (необязательно)</span>
-              <input
-                className="input-field"
-                value={fullName}
-                onChange={(event) => setFullName(event.target.value)}
-                autoComplete="name"
-              />
-            </label>
-          ) : null}
+        {error ? (
+          <p className="auth-error" role="alert">
+            {error}
+          </p>
+        ) : null}
 
-          {error ? (
-            <p className="text-xs" style={{ color: "var(--accent-rose)" }}>
-              {error}
-            </p>
-          ) : null}
-
-          <button type="submit" className="btn-primary" disabled={busy}>
-            {busy ? "Минуту…" : mode === "login" ? "Войти" : "Зарегистрировать компанию"}
-          </button>
-        </form>
-
-        <button
-          type="button"
-          className="btn-ghost text-xs self-start"
-          onClick={() => {
-            setMode(mode === "login" ? "register" : "login");
-            setError("");
-          }}
-        >
-          {mode === "login" ? "Регистрация компании" : "У меня уже есть учётная запись"}
+        <button type="submit" className="btn-primary mt-1" disabled={busy}>
+          {busy ? "Минуту…" : mode === "login" ? "Войти" : "Зарегистрировать компанию"}
         </button>
-      </div>
-    </div>
+      </form>
+
+      <button
+        type="button"
+        className="btn-ghost auth-switch"
+        onClick={() => {
+          setMode(mode === "login" ? "register" : "login");
+          setError("");
+        }}
+      >
+        {mode === "login" ? "Регистрация компании" : "У меня уже есть учётная запись"}
+      </button>
+    </AuthStage>
   );
 }
 
@@ -166,17 +153,11 @@ export function PasswordChangeGate({ onDone }: { onDone: () => void }) {
   };
 
   return (
-    <div
-      className="min-h-screen min-h-[100dvh] flex items-center justify-center px-4 py-10"
-      style={{ background: "var(--page-bg)" }}
-    >
-      <form className="fin-card w-full max-w-md p-6 flex flex-col gap-3" onSubmit={submit}>
-        <p className="fin-label">Финансы</p>
-        <h1 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>
-          Смените временный пароль
-        </h1>
-        <label className="flex flex-col gap-1">
-          <span className="fin-label">Временный пароль</span>
+    <AuthStage owner="Финансы" title="Учёт денег компании">
+      <h2 className="auth-heading">Смените временный пароль</h2>
+      <form className="auth-fields" onSubmit={submit}>
+        <label className="auth-field">
+          <span className="eyebrow">Временный пароль</span>
           <input
             className="input-field"
             type="password"
@@ -186,8 +167,8 @@ export function PasswordChangeGate({ onDone }: { onDone: () => void }) {
             required
           />
         </label>
-        <label className="flex flex-col gap-1">
-          <span className="fin-label">Новый пароль</span>
+        <label className="auth-field">
+          <span className="eyebrow">Новый пароль</span>
           <input
             className="input-field"
             type="password"
@@ -198,28 +179,27 @@ export function PasswordChangeGate({ onDone }: { onDone: () => void }) {
           />
         </label>
         {error ? (
-          <p className="text-xs" style={{ color: "var(--accent-rose)" }}>
+          <p className="auth-error" role="alert">
             {error}
           </p>
         ) : null}
-        <button type="submit" className="btn-primary" disabled={busy}>
+        <button type="submit" className="btn-primary mt-1" disabled={busy}>
           {busy ? "Меняем…" : "Сменить пароль"}
         </button>
       </form>
-    </div>
+    </AuthStage>
   );
 }
 
-/** Пока не знаем, вошёл ли человек, показываем не пустоту, а ожидание. */
+/**
+ * Пока не знаем, вошёл ли человек, показываем не пустоту, а ожидание.
+ *
+ * Не афишей: следом почти всегда идёт форма входа, и афиша, собранная дважды
+ * за полсекунды (сначала здесь, потом в форме), читалась бы как рывок.
+ * Подпись проявляется с задержкой — при обычной проверке её не видно вовсе.
+ */
 export function AuthLoading() {
-  return (
-    <div
-      className="min-h-screen min-h-[100dvh] flex items-center justify-center"
-      style={{ background: "var(--page-bg)", color: "var(--text-muted)" }}
-    >
-      <span className="text-sm">Проверяем доступ…</span>
-    </div>
-  );
+  return <AuthWait>Проверяем доступ…</AuthWait>;
 }
 
 export function useMe() {

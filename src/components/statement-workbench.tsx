@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
+import { useState } from "react";
 
 import { WorkbenchProvider, useWorkbench } from "@/components/workbench/context";
 import { ToastContainer } from "@/components/workbench/toast";
@@ -10,16 +9,10 @@ import { HistoryPanel } from "@/components/workbench/history-panel";
 import { QualityPanel } from "@/components/workbench/quality-panel";
 import { VariantPreviewPanel } from "@/components/workbench/variant-preview-panel";
 import { OcrReviewPanel } from "@/components/workbench/ocr-review-panel";
-import {
-  ArrowLeftIcon,
-  TableIcon,
-  AlertIcon,
-  ScanIcon,
-  MoonIcon,
-  SunIcon,
-  AutoThemeIcon,
-  CloseIcon,
-} from "@/components/icons";
+import { TableIcon, AlertIcon, ScanIcon, CloseIcon } from "@/components/icons";
+import { SplitReveal } from "@/components/motion/split-reveal";
+import { SectionBar } from "@/components/stage/section-bar";
+import { ThemeToggle } from "@/components/stage/theme-toggle";
 
 type Tab = "table" | "quality" | "ocr";
 
@@ -28,54 +21,6 @@ const TABS: { key: Tab; label: string; shortLabel: string; Icon: typeof TableIco
   { key: "quality", label: "Качество", shortLabel: "Качество", Icon: AlertIcon },
   { key: "ocr", label: "Распознавание", shortLabel: "Скан", Icon: ScanIcon },
 ];
-
-type Theme = "dark" | "light" | "system";
-
-function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme>("system");
-
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem("theme") as Theme | null;
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setTheme(stored === "dark" || stored === "light" ? stored : "system");
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  const cycle = () => {
-    const next: Theme = theme === "dark" ? "light" : theme === "light" ? "system" : "dark";
-    setTheme(next);
-    try {
-      if (next === "system") {
-        localStorage.removeItem("theme");
-        const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-        document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
-      } else {
-        localStorage.setItem("theme", next);
-        document.documentElement.setAttribute("data-theme", next);
-      }
-    } catch {
-      // ignore
-    }
-  };
-
-  const Icon = theme === "dark" ? MoonIcon : theme === "light" ? SunIcon : AutoThemeIcon;
-  const labels: Record<Theme, string> = { dark: "Тёмная", light: "Светлая", system: "Авто" };
-
-  return (
-    <button
-      onClick={cycle}
-      className="btn-ghost text-xs px-2.5 py-1.5 flex items-center gap-1.5"
-      type="button"
-      title={`Тема: ${labels[theme]}`}
-    >
-      <Icon size={15} />
-      <span className="hidden sm:inline">{labels[theme]}</span>
-    </button>
-  );
-}
 
 function WorkbenchInner({ openHistory = false }: { openHistory?: boolean }) {
   const {
@@ -108,6 +53,7 @@ function WorkbenchInner({ openHistory = false }: { openHistory?: boolean }) {
 
   const hasPreview = Boolean(deferredPreview?.session_id);
   const hasOcrReview = Boolean(deferredPreview?.ocr_review);
+  const heading = hasPreview ? "Разбор выписки" : "Загрузите выписку";
 
   const visibleTabs = TABS.filter((item) => {
     if (item.key === "quality" && !hasPreview) return false;
@@ -127,38 +73,32 @@ function WorkbenchInner({ openHistory = false }: { openHistory?: boolean }) {
   // вместе с исчезающей адресной строкой Safari.
   return (
     <div className="min-h-screen min-h-[100svh] flex flex-col" style={{ background: "var(--page-bg)" }}>
-      <header
-        className="sticky top-0 z-40 flex items-center justify-between gap-2 px-4 py-2.5 border-b backdrop-blur-md"
-        style={{ background: "var(--header-bg)", borderColor: "var(--border-subtle)" }}
-      >
-        <Link
-          href="/"
-          className="btn-ghost text-xs px-2.5 py-1.5 flex items-center gap-1.5 flex-shrink-0"
-          title="На главный экран"
-        >
-          <ArrowLeftIcon size={15} />
-          <span className="hidden sm:inline">Разделы</span>
-        </Link>
-        {/* Ссылок на другие разделы здесь нет намеренно: разделы равны, и
-            переход между ними идёт через стартовый экран. Кнопки «Таблицы»,
-            «Сервисы» и «История» в шапке анализатора делали его главным, а
-            остальные — его подразделами; ровно от этого и уходили, когда
-            появился стартовый экран. */}
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <ThemeToggle />
-        </div>
-      </header>
+      {/* Ссылок на другие разделы здесь нет намеренно: разделы равны, и
+          переход между ними идёт через стартовый экран. Кнопки «Таблицы»,
+          «Сервисы» и «История» в шапке анализатора делали его главным, а
+          остальные — его подразделами; ровно от этого и уходили, когда
+          появился стартовый экран. */}
+      <SectionBar>
+        <ThemeToggle />
+      </SectionBar>
+
+      <div className="wb-head max-w-6xl w-full mx-auto">
+        <p className="annot">Анализатор выписок</p>
+        {/* key по тексту обязателен: SplitText переписывает DOM надписи, и
+            сменить её текст на месте React уже не сможет — только пересоздать. */}
+        <SplitReveal key={heading} as="h1" className="headline">
+          {heading}
+        </SplitReveal>
+      </div>
 
       <div className="hidden sm:block max-w-6xl w-full mx-auto px-6">
-        <nav className="flex" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+        <nav className="wb-tabs">
           {visibleTabs.map((item) => {
             const badge = tabBadge(item.key);
             return (
               <button
                 key={item.key}
-                className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap flex items-center gap-1.5 ${
-                  tab === item.key ? "tab-active" : "tab-inactive"
-                }`}
+                className={`wb-tab ${tab === item.key ? "tab-active" : "tab-inactive"}`}
                 onClick={() => setTab(item.key)}
                 type="button"
               >
@@ -281,7 +221,7 @@ function WorkbenchInner({ openHistory = false }: { openHistory?: boolean }) {
               key={item.key}
               className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 relative"
               style={{
-                color: active ? "var(--accent-blue)" : "var(--text-muted)",
+                color: active ? "var(--text-primary)" : "var(--text-muted)",
                 minHeight: "56px",
               }}
               onClick={() => setTab(item.key)}
@@ -290,7 +230,10 @@ function WorkbenchInner({ openHistory = false }: { openHistory?: boolean }) {
               <item.Icon size={19} />
               <span className="text-[10px] leading-tight">{item.shortLabel}</span>
               {badge && (
-                <span className="absolute top-1.5 right-1/4 h-4 w-4 rounded-full bg-rose-500 text-white text-[9px] flex items-center justify-center font-bold">
+                <span
+                  className="absolute top-1.5 right-1/4 h-4 min-w-4 px-1 rounded-full text-[9px] flex items-center justify-center font-bold"
+                  style={{ background: "var(--accent-rose)", color: "var(--accent-fg)" }}
+                >
                   {badge}
                 </span>
               )}

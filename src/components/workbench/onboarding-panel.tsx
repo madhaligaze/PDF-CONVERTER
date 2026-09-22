@@ -8,7 +8,7 @@ const STATUS_BADGE: Record<string, string> = {
   draft:              "badge-slate",
   collecting_samples: "badge-blue",
   mapping:            "badge-amber",
-  validated:          "badge-emerald",
+  validated:          "badge-slate",
 };
 
 const STATUS_LABEL: Record<string, string> = {

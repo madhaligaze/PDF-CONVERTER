@@ -30,7 +30,8 @@ const FINDING_ICON: Record<string, string> = {
 };
 
 const CONFIDENCE_COLOR = (c: number) =>
-  c >= 0.85 ? "var(--green-500, #22c55e)" :
+  // Уверенная сверка цветом не помечается: цвет — только на сомнении и отказе.
+  c >= 0.85 ? "var(--text-secondary)" :
   c >= 0.65 ? "var(--amber-500, #f59e0b)" :
   "var(--text-secondary)";
 

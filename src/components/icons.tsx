@@ -15,7 +15,7 @@ function Svg({ size = 16, children, ...props }: IconProps & { children: React.Re
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth={1.6}
+      strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
@@ -23,6 +23,15 @@ function Svg({ size = 16, children, ...props }: IconProps & { children: React.Re
     >
       {children}
     </svg>
+  );
+}
+
+/** Стрелка «туда» — в строках указателя разделов и на кнопках перехода. */
+export function ArrowRightIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 12h16M14 6l6 6-6 6" />
+    </Svg>
   );
 }
 

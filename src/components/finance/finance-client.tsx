@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import dynamic from "next/dynamic";
 import {
   useCallback,
@@ -46,6 +45,9 @@ import {
   formatMoney,
 } from "@/components/finance/api";
 import { AuthGate, AuthLoading, PasswordChangeGate, useMe } from "@/components/finance/auth-gate";
+import { FadeIn } from "@/components/motion/fade-in";
+import { SplitReveal } from "@/components/motion/split-reveal";
+import { StageLink } from "@/components/motion/stage-transition";
 import { TeamPanel } from "@/components/finance/team-panel";
 import { RulesPanel } from "@/components/finance/rules-panel";
 import { OperationDialog } from "@/components/finance/operation-dialog";
@@ -353,14 +355,15 @@ export function FinanceClient() {
   return (
     <div className="fin-page">
       <header className="fin-head">
-        <Link
+        <StageLink
           href="/services"
+          label="Сервисы"
           className="fin-act only-desktop"
           style={{ padding: "0 0.75rem" }}
           title="К сервисам"
         >
           <ArrowLeftIcon size={15} />
-        </Link>
+        </StageLink>
         <span className="fin-brand">
           <FinanceServiceIcon size={18} />
         </span>
@@ -572,7 +575,14 @@ export function FinanceClient() {
           {/* Заголовок раздела. Пока разделы были лентой вкладок, лента и была
               верхом страницы; когда она ушла в колонку, содержимое упёрлось в
               край плиты, и страница читалась обрезанной. */}
-          <h1 className="fin-section-title">{SECTIONS.find((item) => item.key === section)?.title}</h1>
+          {/* Смена раздела: заголовок поднимается буквами, содержимое
+              проявляется. key обязателен у обоих — SplitText переписывает DOM
+              надписи, и сменить её текст на месте React уже не сможет. Ключи
+              у соседей разные: одинаковые (оба `section`) React в сборке не
+              различал, и старые заголовки не удалялись — копились над новыми. */}
+          <SplitReveal key={`title-${section}`} as="h1" className="fin-section-title" duration={0.9}>
+            {SECTIONS.find((item) => item.key === section)?.title ?? ""}
+          </SplitReveal>
           {/* На телефоне колонка не работает — там разделы остаются лентой. */}
           <nav className="fin-tabs" aria-label="Разделы финансов">
             {SECTIONS.map((item) => (
@@ -587,7 +597,7 @@ export function FinanceClient() {
               </button>
             ))}
           </nav>
-          {content}
+          <FadeIn key={`body-${section}`}>{content}</FadeIn>
         </main>
       </div>
 

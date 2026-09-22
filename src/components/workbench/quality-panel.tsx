@@ -24,24 +24,22 @@ export function QualityPanel({ summary, diagnostics }: Props) {
 
   if (!summary) return null;
 
+  // Цвет — только там, где что-то не так. Высокая уверенность зелёным не
+  // горит: постоянный зелёный перестают замечать ровно к тому моменту, когда
+  // он должен был насторожить (правило из CLAUDE.md).
   const conf = summary.overall_confidence;
   const confColor =
-    conf >= 0.85 ? "text-emerald-400" : conf >= 0.65 ? "text-amber-400" : "text-rose-400";
+    conf >= 0.85 ? "var(--text-primary)" : conf >= 0.65 ? "var(--accent-amber)" : "var(--accent-rose)";
   const anomalyBar = Math.round(summary.anomaly_score * 100);
 
   return (
     <section className="card p-4 sm:p-5 animate-fade-in">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-base sm:text-lg font-semibold" style={{ color: "var(--text-primary)" }}>
-            Контроль качества
-          </h2>
-          <p className="mt-0.5 text-sm" style={{ color: "var(--text-secondary)" }}>
-            Флаги, уверенность и строки для проверки
-          </p>
-        </div>
+        <h2 className="headline" style={{ fontSize: "1.75rem" }}>
+          Контроль качества
+        </h2>
         <div className="flex items-baseline gap-1.5">
-          <span className={`text-3xl font-bold tabular-nums ${confColor}`}>
+          <span className="text-3xl font-normal tabular-nums" style={{ color: confColor, letterSpacing: "-0.04em" }}>
             {formatPercent(conf)}
           </span>
           <span className="text-xs" style={{ color: "var(--text-muted)" }}>общий</span>
@@ -50,10 +48,18 @@ export function QualityPanel({ summary, diagnostics }: Props) {
 
       {/* Metrics */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 mb-4">
-        <Metric label="Проверка" value={String(summary.review_required_count)} color="text-amber-400" />
-        <Metric label="Высокий риск" value={String(summary.high_risk_count)} color="text-rose-400" />
-        <Metric label="Исправлено" value={String(summary.corrected_count)} color="text-sky-400" />
-        <Metric label="Чистые" value={String(summary.clean_count)} color="text-emerald-400" />
+        <Metric
+          label="Проверка"
+          value={summary.review_required_count}
+          color={summary.review_required_count ? "var(--accent-amber)" : undefined}
+        />
+        <Metric
+          label="Высокий риск"
+          value={summary.high_risk_count}
+          color={summary.high_risk_count ? "var(--accent-rose)" : undefined}
+        />
+        <Metric label="Исправлено" value={summary.corrected_count} />
+        <Metric label="Чистые" value={summary.clean_count} />
       </div>
 
       {/* Anomaly bar */}
@@ -64,11 +70,14 @@ export function QualityPanel({ summary, diagnostics }: Props) {
             <p className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>{anomalyBar}%</p>
           </div>
           <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-hover)" }}>
+            {/* Графитовая, пока аномалий мало: низкий индекс — не повод красить. */}
             <div
-              className={`h-full rounded-full transition-all duration-500 ${
-                anomalyBar > 40 ? "bg-rose-400" : anomalyBar > 15 ? "bg-amber-400" : "bg-emerald-400"
-              }`}
-              style={{ width: `${anomalyBar}%` }}
+              className="h-full rounded-full transition-all duration-500"
+              style={{
+                width: `${anomalyBar}%`,
+                background:
+                  anomalyBar > 40 ? "var(--accent-rose)" : anomalyBar > 15 ? "var(--accent-amber)" : "var(--border-strong)",
+              }}
             />
           </div>
         </div>
@@ -77,7 +86,7 @@ export function QualityPanel({ summary, diagnostics }: Props) {
       {/* Totals mismatch */}
       {summary.totals_mismatch && (
         <div className="mb-4 banner-amber px-4 py-3 text-xs">
-          ⚠ Расхождение открытия/закрытия — проверьте чистый денежный поток.
+          Расхождение открытия/закрытия — проверьте чистый денежный поток.
         </div>
       )}
 
@@ -109,11 +118,11 @@ export function QualityPanel({ summary, diagnostics }: Props) {
               style={{
                 background:
                   selectedDiagnosticRow === row.row_number
-                    ? "rgba(59,130,246,0.08)"
+                    ? "var(--accent-soft)"
                     : "var(--bg-raised)",
                 borderColor:
                   selectedDiagnosticRow === row.row_number
-                    ? "rgba(59,130,246,0.30)"
+                    ? "var(--border-strong)"
                     : "var(--border-subtle)",
               }}
               onClick={() =>
@@ -134,7 +143,7 @@ export function QualityPanel({ summary, diagnostics }: Props) {
                     {row.amount.toLocaleString("ru-RU", { minimumFractionDigits: 2 })}
                   </span>
                   <span className={`badge text-[0.62rem] ${
-                    row.confidence >= 0.9 ? "badge-emerald"
+                    row.confidence >= 0.9 ? "badge-slate"
                     : row.confidence >= 0.7 ? "badge-amber"
                     : "badge-rose"
                   }`}>
@@ -153,7 +162,7 @@ export function QualityPanel({ summary, diagnostics }: Props) {
                     </span>
                   ))
                 ) : (
-                  <span className="badge badge-emerald text-[0.62rem]">Чистая</span>
+                  <span className="badge badge-slate text-[0.62rem]">Чистая</span>
                 )}
               </div>
             </button>
@@ -163,11 +172,11 @@ export function QualityPanel({ summary, diagnostics }: Props) {
               <div
                 className="mt-1 ml-2 sm:ml-3 rounded-[var(--radius-inner)] border p-4 animate-slide-up"
                 style={{
-                  background: "rgba(59,130,246,0.05)",
-                  borderColor: "rgba(59,130,246,0.20)",
+                  background: "var(--bg-raised)",
+                  borderColor: "var(--border-base)",
                 }}
               >
-                <p className="text-xs font-semibold mb-3 text-blue-400">
+                <p className="text-xs font-semibold mb-3" style={{ color: "var(--text-primary)" }}>
                   Редактировать строку {row.row_number}
                 </p>
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -214,13 +223,17 @@ export function QualityPanel({ summary, diagnostics }: Props) {
   );
 }
 
-function Metric({ label, value, color }: { label: string; value: string; color: string }) {
+/** Цвет у числа появляется, только когда оно не ноль и означает проблему. */
+function Metric({ label, value, color }: { label: string; value: number; color?: string }) {
   return (
-    <div className="card-inner p-3 text-center">
-      <p className="text-[10px] uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>
-        {label}
+    <div className="card-inner p-3">
+      <p className="eyebrow">{label}</p>
+      <p
+        className="mt-1 text-2xl tabular-nums"
+        style={{ color: color ?? "var(--text-primary)", letterSpacing: "-0.04em" }}
+      >
+        {value}
       </p>
-      <p className={`mt-1 text-xl font-bold tabular-nums ${color}`}>{value}</p>
     </div>
   );
 }

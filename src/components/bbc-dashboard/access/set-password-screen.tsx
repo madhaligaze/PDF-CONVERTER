@@ -13,8 +13,9 @@
  */
 import { useState, type FormEvent } from "react";
 
+import { AuthStage } from "@/components/stage/auth-stage";
+
 import { BbcApiError, setOwnPassword } from "../api";
-import { BbcDashboardIcon, LockIcon } from "../icon";
 
 const MIN_LENGTH = 8;
 
@@ -54,116 +55,76 @@ export function SetPasswordScreen({
   }
 
   return (
-    <div
-      className="min-h-screen min-h-[100dvh] flex items-center justify-center px-5"
-      style={{ background: "var(--page-bg)" }}
-    >
-      <div
-        className="card bbc-grain relative w-full max-w-sm p-7 animate-slide-up"
-        style={{ animationDuration: "var(--dur-base)" }}
-      >
-        <div className="flex items-center gap-2.5 mb-6">
-          <span className="logo-badge">
-            <BbcDashboardIcon size={16} />
+    <AuthStage owner="BBC Consulting" title={fullName || "Первый вход"}>
+      <h2 className="auth-heading">Задайте свой пароль</h2>
+
+      {/* Предупреждение о закрытом состоянии — не дежурное пояснение: без
+          него экран читается как «ещё одна форма», а не как «дальше не пустят». */}
+      <p className="auth-note">
+        Тот, что вам передали, знает не только вы — он остался в переписке. Пока он не сменён,
+        дашборд закрыт.
+      </p>
+
+      <form onSubmit={submit} className="auth-fields">
+        <label className="auth-field">
+          <span className="eyebrow">Пароль, который вам выдали</span>
+          <input
+            className="input-field"
+            type="password"
+            value={current}
+            onChange={(event) => setCurrent(event.target.value)}
+            autoComplete="current-password"
+            autoFocus
+            required
+          />
+        </label>
+
+        <label className="auth-field">
+          <span className="eyebrow">Новый пароль</span>
+          <input
+            className="input-field"
+            type="password"
+            value={next}
+            onChange={(event) => setNext(event.target.value)}
+            autoComplete="new-password"
+            minLength={MIN_LENGTH}
+            required
+          />
+          <span className="auth-hint" style={tooShort ? { color: "var(--accent-rose)" } : undefined}>
+            Не короче {MIN_LENGTH} символов
           </span>
-          <div className="min-w-0">
-            <p className="eyebrow">BBC Consulting</p>
-            <h1
-              className="text-base font-semibold truncate"
-              style={{ color: "var(--text-primary)", letterSpacing: "-0.01em" }}
-            >
-              {fullName || "Первый вход"}
-            </h1>
-          </div>
-        </div>
+        </label>
 
-        <div
-          className="card-inner p-4 mb-5 text-xs leading-relaxed"
-          style={{ color: "var(--text-secondary)" }}
-        >
-          <p className="mb-2" style={{ color: "var(--text-primary)" }}>
-            Задайте свой пароль
-          </p>
-          Тот, что вам передали, знает не только вы — он остался в переписке. Пока он не сменён,
-          дашборд закрыт.
-        </div>
-
-        <form onSubmit={submit} className="flex flex-col gap-3">
-          <label className="flex flex-col gap-1.5">
-            <span className="eyebrow">Пароль, который вам выдали</span>
-            <input
-              className="input-field"
-              type="password"
-              value={current}
-              onChange={(event) => setCurrent(event.target.value)}
-              autoComplete="current-password"
-              autoFocus
-              required
-            />
-          </label>
-
-          <label className="flex flex-col gap-1.5">
-            <span className="eyebrow">Новый пароль</span>
-            <input
-              className="input-field"
-              type="password"
-              value={next}
-              onChange={(event) => setNext(event.target.value)}
-              autoComplete="new-password"
-              minLength={MIN_LENGTH}
-              required
-            />
-            <span className="text-xs" style={{ color: tooShort ? "var(--accent-rose)" : "var(--text-muted)" }}>
-              Не короче {MIN_LENGTH} символов
+        <label className="auth-field">
+          <span className="eyebrow">Ещё раз</span>
+          <input
+            className="input-field"
+            type="password"
+            value={repeat}
+            onChange={(event) => setRepeat(event.target.value)}
+            autoComplete="new-password"
+            required
+            aria-invalid={mismatch}
+          />
+          {mismatch ? (
+            <span className="auth-hint" style={{ color: "var(--accent-rose)" }}>
+              Пароли не совпадают
             </span>
-          </label>
-
-          <label className="flex flex-col gap-1.5">
-            <span className="eyebrow">Ещё раз</span>
-            <input
-              className="input-field"
-              type="password"
-              value={repeat}
-              onChange={(event) => setRepeat(event.target.value)}
-              autoComplete="new-password"
-              required
-              aria-invalid={mismatch}
-            />
-            {mismatch ? (
-              <span className="text-xs" style={{ color: "var(--accent-rose)" }}>
-                Пароли не совпадают
-              </span>
-            ) : null}
-          </label>
-
-          {error ? (
-            <p
-              className="text-xs px-3 py-2 rounded-lg"
-              style={{
-                color: "var(--accent-rose)",
-                background: "var(--outflow-bg)",
-                border: "1px solid var(--outflow-border)",
-              }}
-              role="alert"
-            >
-              {error}
-            </p>
           ) : null}
+        </label>
 
-          <button
-            type="submit"
-            className="btn-primary mt-1 px-4 py-2.5"
-            disabled={busy || mismatch || tooShort || !next}
-          >
-            <LockIcon size={15} />
-            {busy ? "Сохраняем…" : "Сменить пароль"}
-          </button>
-        </form>
+        {error ? (
+          <p className="auth-error" role="alert">
+            {error}
+          </p>
+        ) : null}
 
-        <p className="mt-5 text-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>
-          После смены нужно будет войти заново — с новым паролем.
-        </p>
-      </div>
-    </div>
+        <button type="submit" className="btn-primary mt-1" disabled={busy || mismatch || tooShort || !next}>
+          {busy ? "Сохраняем…" : "Сменить пароль"}
+        </button>
+      </form>
+
+      <p className="auth-hint">После смены нужно будет войти заново — с новым паролем.</p>
+    </AuthStage>
   );
 }

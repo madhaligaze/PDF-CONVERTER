@@ -298,7 +298,7 @@ function DepartmentRow({
                   value={link.url}
                   onFocus={(event) => event.currentTarget.select()}
                   className="input-field text-xs flex-1 min-w-[200px]"
-                  style={{ fontFamily: "var(--font-plex-mono), ui-monospace, monospace" }}
+                  style={{ fontFamily: "var(--font-martian), ui-monospace, monospace" }}
                   aria-label={`Ссылка для отдела ${code}`}
                 />
                 <button

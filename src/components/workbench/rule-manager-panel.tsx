@@ -55,7 +55,7 @@ export function RuleManagerPanel({ snapshot, loading, onToggle, onRollback, onCo
                         >
                           v{tpl.version}
                         </span>
-                        <span className={`badge text-[0.6rem] ${tpl.is_active ? "badge-emerald" : "badge-slate"}`}>
+                        <span className={`badge text-[0.6rem] ${tpl.is_active ? "badge-blue" : "badge-slate"}`}>
                           {tpl.is_active ? "активен" : "отключён"}
                         </span>
                       </div>

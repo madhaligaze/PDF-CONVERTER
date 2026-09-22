@@ -21,9 +21,9 @@ export function CorrectionMemoryPanel({ entries }: { entries: CorrectionMemoryEn
                     {entry.field_name}
                   </p>
                   <p className="text-sm truncate">
-                    <span className="text-rose-400">{entry.original_value}</span>
+                    <span style={{ color: "var(--text-muted)", textDecoration: "line-through" }}>{entry.original_value}</span>
                     <span className="mx-1.5" style={{ color: "var(--text-muted)" }}>→</span>
-                    <span className="text-emerald-400">{entry.corrected_value}</span>
+                    <span style={{ color: "var(--text-primary)" }}>{entry.corrected_value}</span>
                   </p>
                 </div>
                 <span className="badge badge-slate flex-shrink-0">{entry.frequency}×</span>

@@ -9,7 +9,7 @@ type Props = {
 
 export function HistoryPanel({ history, loading, onOpen }: Props) {
   return (
-    <SectionCard title="Последние сессии" subtitle="Нажмите для повторной загрузки">
+    <SectionCard title="Последние сессии">
       {history.length === 0 ? (
         <p className="text-sm py-4 text-center" style={{ color: "var(--text-muted)" }}>
           Сессий ещё нет.

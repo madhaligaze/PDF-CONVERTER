@@ -20,7 +20,8 @@
  * `opacity: 0`, а не `display: none`, и остаются в дереве доступности.
  */
 import type { CSSProperties } from "react";
-import Link from "next/link";
+
+import { StageLink } from "@/components/motion/stage-transition";
 
 import { BbcDashboardIcon } from "../icon";
 import type { BlockDefinition } from "./nav-items";
@@ -47,13 +48,13 @@ export function Sidebar({
             как шаг назад по истории, а уводило из дашборда целиком. Клик по
             логотипу, ведущий на уровень выше, — то, чего от него и ждут, и
             подпись при раскрытии говорит куда. */}
-        <Link href="/services" className="bbc-sidebar-logo" title="К списку сервисов">
+        <StageLink href="/services" label="Сервисы" className="bbc-sidebar-logo" title="К списку сервисов">
           <span className="bbc-sidebar-glyph">
             <BbcDashboardIcon size={17} />
           </span>
           <span className="bbc-sidebar-label bbc-sidebar-wordmark">BBC</span>
           <span className="bbc-sidebar-label bbc-sidebar-exit">к сервисам</span>
-        </Link>
+        </StageLink>
 
         <nav className="bbc-sidebar-nav">
           {blocks.map((item) => (

@@ -1,130 +1,56 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
-import type { ComponentType } from "react";
 
+import { SplitReveal } from "@/components/motion/split-reveal";
 import { AutocallModal } from "@/components/services/autocall-modal";
-import { ArrowLeftIcon } from "@/components/icons";
-import {
-  AutocallServiceIcon,
-  DashboardServiceIcon,
-  FinanceServiceIcon,
-  SourcesServiceIcon,
-} from "@/components/service-icons";
+import { IndexList, type IndexEntry } from "@/components/stage/index-list";
+import { SectionBar } from "@/components/stage/section-bar";
+import { ThemeToggle } from "@/components/stage/theme-toggle";
 
-type ServiceTile = {
-  key: string;
-  title: string;
-  description: string;
-  Icon: ComponentType<{ size?: number }>;
-  /** When set, the tile navigates to this page instead of opening a modal. */
-  href?: string;
-};
-
-const TILES: ServiceTile[] = [
-  {
-    key: "autocall",
-    title: "Autocall.kz",
-    description: "Фактическая стоимость и дата обзвонов → Google Sheets",
-    Icon: AutocallServiceIcon,
-  },
-  // BBC Dashboard (removable module)
-  {
-    key: "bbc-dashboard",
-    title: "BBC Dashboard",
-    description: "Интерактивный дашборд по сводной таблице в Google Sheets",
-    Icon: DashboardServiceIcon,
-    href: "/bbc-dashboard",
-  },
-  // Финансы — обкатка управленческого учёта перед интеграцией с Finmap.
-  // Плитка здесь по делу, в отличие от «Книг»: раздел работает с теми же
-  // внешними источниками (выписки банков, выгрузки), а не с нашей копией
-  // чужой книги, и открывается он как отдельный продукт.
-  {
-    key: "finance",
-    title: "Финансы",
-    description: "Учёт денег: журнал, отчёты, календарь платежей, загрузка выписок",
-    Icon: FinanceServiceIcon,
-    href: "/finance",
-  },
-  // Плитки «Книги» здесь нет намеренно. Страница объявляет себя как «внешние
-  // сервисы, из которых мы тянем данные», а внутренние книги — не сервис и не
-  // источник: это наша копия чужой книги. Плитка стояла тут ровно потому, что
-  // тут была сетка плиток, и читалась как новая интеграция неизвестно с чем.
-  // Раздел живёт в сайдбаре дашборда, рядом с панелью управления.
-];
-
-const TILE_CLASS =
-  "group text-left card p-5 transition-colors flex flex-col gap-3.5 hover:bg-[var(--bg-hover)]";
-
-function TileBody({ tile }: { tile: ServiceTile }) {
-  return (
-    <>
-      {/* Плашка нейтральная: насыщенно-синяя делала значок игрушкой. Глубину
-          даёт сам значок (duotone), цвет плашке для этого не нужен. */}
-      <span className="service-mark">
-        <tile.Icon size={26} />
-      </span>
-      <span className="text-base font-semibold" style={{ color: "var(--text-primary)", letterSpacing: "-0.01em" }}>
-        {tile.title}
-      </span>
-      <span className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>
-        {tile.description}
-      </span>
-    </>
-  );
-}
-
+/**
+ * Сервисы — тот же указатель, что на стартовом экране, только мельче: это
+ * второй уровень, и он не должен спорить с первым ростом букв.
+ *
+ * Подзаголовок «внешние сервисы, из которых мы тянем данные» снят вместе с
+ * остальными дежурными пояснениями: пометка у каждой строки говорит то же
+ * самое по делу, а общий абзац над ними читали один раз.
+ */
 export function ServicesClient() {
   const [openService, setOpenService] = useState<string | null>(null);
 
-  return (
-    <div className="min-h-screen min-h-[100dvh] flex flex-col" style={{ background: "var(--page-bg)" }}>
-      <header
-        className="sticky top-0 z-40 flex items-center justify-between gap-2 px-4 py-2.5 border-b backdrop-blur-md"
-        style={{ background: "var(--header-bg)", borderColor: "var(--border-subtle)" }}
-      >
-        <div className="flex items-center gap-2.5">
-          <Link href="/" className="btn-ghost text-xs px-2.5 py-1.5 flex items-center gap-1.5" title="На главную">
-            <ArrowLeftIcon size={15} />
-            <span className="hidden sm:inline">Назад</span>
-          </Link>
-          <span className="logo-badge logo-badge-quiet">
-            <SourcesServiceIcon size={18} />
-          </span>
-          <span className="text-sm font-semibold" style={{ color: "var(--text-primary)", letterSpacing: "-0.01em" }}>
-            Сервисы
-          </span>
-        </div>
-      </header>
+  const entries: IndexEntry[] = [
+    {
+      key: "autocall",
+      title: "Autocall.kz",
+      meta: "Обзвоны → Google Sheets",
+      onSelect: () => setOpenService("autocall"),
+    },
+    // BBC Dashboard (removable module)
+    { key: "bbc-dashboard", title: "BBC Dashboard", meta: "Сводная таблица", href: "/bbc-dashboard" },
+    // Финансы — обкатка управленческого учёта перед интеграцией с Finmap.
+    // Строка здесь по делу, в отличие от «Книг»: раздел работает с теми же
+    // внешними источниками (выписки банков, выгрузки), а не с нашей копией
+    // чужой книги, и открывается он как отдельный продукт.
+    { key: "finance", title: "Финансы", meta: "Журнал · отчёты · выписки", href: "/finance" },
+    // Строки «Книги» здесь нет намеренно. Внутренние книги — не сервис и не
+    // источник: это наша копия чужой книги. Раздел живёт в сайдбаре дашборда,
+    // рядом с панелью управления.
+  ];
 
-      <main className="flex-1 max-w-5xl w-full mx-auto px-5 py-10">
-        <p className="eyebrow mb-2">Интеграции</p>
-        <h1 className="text-2xl font-semibold mb-2" style={{ color: "var(--text-primary)", letterSpacing: "-0.02em" }}>
-          Источники данных
-        </h1>
-        <p className="text-sm mb-8 max-w-xl" style={{ color: "var(--text-secondary)" }}>
-          Внешние сервисы, из которых мы тянем данные для формирования таблиц.
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {TILES.map((tile) =>
-            tile.href ? (
-              <Link key={tile.key} href={tile.href} className={TILE_CLASS}>
-                <TileBody tile={tile} />
-              </Link>
-            ) : (
-              <button
-                key={tile.key}
-                type="button"
-                onClick={() => setOpenService(tile.key)}
-                className={TILE_CLASS}
-              >
-                <TileBody tile={tile} />
-              </button>
-            ),
-          )}
-        </div>
+  return (
+    <div className="page-shell">
+      <SectionBar>
+        <ThemeToggle />
+      </SectionBar>
+
+      <main className="page-main">
+        <p className="annot">Интеграции</p>
+        <SplitReveal as="h1" className="headline-xl">
+          Сервисы
+        </SplitReveal>
+        <div className="page-lead-gap" />
+        <IndexList entries={entries} size="section" delay={0.15} label="Сервисы" />
       </main>
 
       {openService === "autocall" && <AutocallModal onClose={() => setOpenService(null)} />}

@@ -64,7 +64,7 @@ export function OverviewPanel({ preview }: { preview: PreviewResponse | null }) 
           </div>
           <div className="flex flex-wrap gap-2">
             {preview.parser_matches.slice(0, 2).map((m) => (
-              <span key={m.key} className={`badge ${m.matched ? "badge-emerald" : "badge-slate"}`}>
+              <span key={m.key} className={`badge ${m.matched ? "badge-blue" : "badge-slate"}`}>
                 {m.label} {Math.round(m.score * 100)}%
               </span>
             ))}

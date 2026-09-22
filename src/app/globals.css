@@ -1,86 +1,111 @@
 @import "tailwindcss";
 
 /* ═══════════════════════════════════════════════════════════════
-   Atlas-inspired design system — "midnight vault, one sapphire light".
-   Achromatic neutrals (the premium cue), a single sapphire accent used
-   sparingly, geometric sans for voice + monospace for metadata, flat
-   colour-stepped depth instead of glowing shadows.
-   Both themes are tuned deliberately; light is a "paper vault".
+   «Сцена» — дизайн-система продукта.
+
+   Два референса из DESIGN_TOKENS и что взято из каждого.
+
+   GSAP — почти чёрная тёплая сцена (#0e100f) и кремовый «мел» (#fffce1)
+   вместо белого на чёрном; крупная типографика с тугим трекингом;
+   кнопки — пилюли с волосяной обводкой; пометки в { фигурных скобках };
+   глубина без теней, только шагом поверхности.
+
+   monopo saigon — монохромный интерфейс без собственного цвета:
+   единственный хроматический жест — переливающаяся жидкая сцена
+   (шалфей → янтарь → бычья кровь), и живёт она только фоном, никогда
+   заливкой кнопки; терпеливое движение по кривой (0.19, 1, 0.22, 1).
+
+   Главное следствие — у интерфейса больше нет акцентного цвета.
+   Сапфир ушёл: «акцент» — это сам мел (в светлой теме — тушь). Цвет
+   в интерфейсе остаётся ровно за двумя вещами: отказ (роза) и смысл
+   денег (приход / расход). Это правило из CLAUDE.md про индикаторы,
+   доведённое до системы: раз «всё хорошо» цветом не показывается,
+   цвету в интерфейсе больше нечего делать.
+
+   Имена токенов и классов сохранены: на них стоит больше девятисот
+   мест в компонентах, и смена облика проходит по всем разом.
    ═══════════════════════════════════════════════════════════════ */
 
-/* ─── Dark theme (default) — the vault ────────────────────────── */
+/* ─── Тёмная тема (по умолчанию) — сцена ─────────────────────── */
 :root {
   color-scheme: dark;
 
-  --bg-base:       #09090b;
-  --bg-surface:    #141416;
-  --bg-raised:     #1b1b1f;
-  --bg-hover:      #232327;
-  --bg-active:     #2b2b31;
+  --bg-base:       #0e100f;
+  --bg-surface:    #141614;
+  --bg-raised:     #1a1c19;
+  --bg-hover:      #232521;
+  --bg-active:     #2c2e29;
 
-  --border-subtle: rgba(255,255,255,0.055);
-  --border-base:   rgba(255,255,255,0.10);
-  --border-strong: rgba(255,255,255,0.18);
+  --border-subtle: rgba(255, 252, 225, 0.07);
+  --border-base:   rgba(255, 252, 225, 0.12);
+  --border-strong: rgba(255, 252, 225, 0.22);
 
-  --text-primary:  #f4f4f5;
-  --text-secondary:#a1a1aa;
-  /* 4.50:1 на самом светлом из фонов, где этот токен стоит (--bg-hover).
-     Было #6c6c75 — 3.01:1, то есть порог AA не брался нигде и ни при каком
-     кегле. Замер живых страниц: 3101 надпись из 9732 ниже порога, и 94% из
-     них — этот один токен. Светлота поднята на 11%, оттенок и насыщенность
-     сохранены, чтобы приглушённый регистр остался приглушённым.             */
-  --text-muted:    #898992;
-  --text-accent:   #9db0ff;
+  --text-primary:  #fffce1;
+  --text-secondary:#c9c6ae;
+  /* 4.8:1 на самом светлом фоне, где этот токен стоит (--bg-active), и 5.4:1
+     на --bg-hover. Порог AA держится везде, где он встречается.             */
+  --text-muted:    #9a9988;
+  --text-accent:   #fffce1;
 
-  /* The single chromatic voice — sapphire, rare and high-commitment */
-  --accent:        #3d5afe;
-  --accent-hover:  #5670ff;
-  --accent-press:  #2f49d6;
-  --accent-fg:     #f6f7ff;
-  --accent-soft:   rgba(61,90,254,0.15);
-  --accent-line:   rgba(61,90,254,0.40);
+  /* «Акцент» — мел. Главное действие — кремовая пилюля с тёмным текстом:
+     самый контрастный предмет на экране без единого нового цвета.         */
+  --accent:        #fffce1;
+  --accent-hover:  #f1edcf;
+  --accent-press:  #e0dbba;
+  --accent-fg:     #0e100f;
+  --accent-soft:   rgba(255, 252, 225, 0.08);
+  --accent-line:   rgba(255, 252, 225, 0.38);
 
-  /* Functional data-semantics (kept minimal, for financial meaning only) */
-  --accent-emerald:#34d399;
-  --accent-amber:  #fbbf24;
-  --accent-rose:   #fb7185;
+  /* Смысл денег и отказ. Тёплые, в тон мелу: холодный изумруд и розовый из
+     прежней палитры на тёплом чёрном выглядели чужими.                     */
+  --accent-emerald:#8fdca0;
+  --accent-amber:  #ffb547;
+  --accent-rose:   #ff6f5e;
 
-  --inflow-bg:     rgba(52,211,153,0.07);
-  --inflow-border: rgba(52,211,153,0.18);
-  --outflow-bg:    rgba(251,113,133,0.06);
-  --outflow-border:rgba(251,113,133,0.15);
+  --inflow-bg:     rgba(143, 220, 160, 0.07);
+  --inflow-border: rgba(143, 220, 160, 0.20);
+  --outflow-bg:    rgba(255, 111, 94, 0.07);
+  --outflow-border:rgba(255, 111, 94, 0.22);
 
-  --radius-card:   1rem;
-  --radius-inner:  0.75rem;
-  --radius-btn:    0.8rem;
+  /* Жидкая сцена — единственный хроматический жест, и только фоном. */
+  --iris-sage:     #a0e0ab;
+  --iris-amber:    #ffac2e;
+  --iris-blood:    #a52d25;
+  --iris:          linear-gradient(100deg, var(--iris-sage) 0%, var(--iris-amber) 52%, var(--iris-blood) 100%);
+
+  /* Карточки почти острые (8px у GSAP), кнопки — пилюли. Середины нет:
+     скругление в 16px на всём подряд — примета шаблона.                    */
+  --radius-card:   8px;
+  --radius-inner:  6px;
+  --radius-btn:    6px;
   --radius-pill:   9999px;
 
-  /* Depth = colour stepping, not shadow. Dark mode is flat. */
   --shadow-card:   none;
-  --shadow-raised: 0 1px 0 rgba(255,255,255,0.04) inset;
-  --shadow-float:  0 24px 64px -24px rgba(0,0,0,0.85);
+  --shadow-raised: none;
+  --shadow-float:  0 30px 80px -30px rgba(0, 0, 0, 0.9);
 
-  --page-bg:       radial-gradient(120% 80% at 50% -20%, rgba(61,90,254,0.08) 0%, transparent 55%), #09090b;
-  --header-bg:     rgba(9,9,11,0.72);
-  --input-bg:      rgba(255,255,255,0.025);
-  --scrollbar-bg:  rgba(255,255,255,0.10);
-  --scrollbar-hover: rgba(255,255,255,0.22);
-  --selection-bg:  rgba(61,90,254,0.32);
+  --page-bg:       #0e100f;
+  --header-bg:     rgba(14, 16, 15, 0.78);
+  --input-bg:      rgba(255, 252, 225, 0.03);
+  --scrollbar-bg:  rgba(255, 252, 225, 0.12);
+  --scrollbar-hover: rgba(255, 252, 225, 0.26);
+  --selection-bg:  rgba(255, 252, 225, 0.24);
 
-  /* ── Motion ────────────────────────────────────────────────────────────────
-     One timing scale for the whole product. Rules: entrances are slower than
-     exits, series stagger by --dur-stagger, and only transform/opacity animate.
-     Everything collapses to 0 under prefers-reduced-motion (bottom of file).   */
-  --ease-out:      cubic-bezier(0.32, 0.72, 0, 1);
-  --ease-in-out:   cubic-bezier(0.65, 0, 0.35, 1);
+  /* ── Движение ────────────────────────────────────────────────────────────
+     Кривая monopo — скольжение с долгим дотягиванием. Длительности короче,
+     чем у них (у агентства 1.25s, у рабочего экрана столько нет), характер
+     тот же: вход медленнее выхода, анимируются transform и opacity. Под
+     prefers-reduced-motion всё обнуляется внизу файла.                      */
+  --ease-out:      cubic-bezier(0.19, 1, 0.22, 1);
+  --ease-in-out:   cubic-bezier(0.7, 0, 0.2, 1);
   --ease-spring:   cubic-bezier(0.34, 1.56, 0.64, 1);
 
   --dur-instant:   80ms;
-  --dur-fast:      140ms;   /* exits, hovers */
-  --dur-base:      220ms;   /* entrances */
-  --dur-slow:      360ms;
-  --dur-tell:      560ms;   /* the variant morph — the one animation that narrates */
-  --dur-stagger:   35ms;
+  --dur-fast:      160ms;   /* выходы, наведение */
+  --dur-base:      280ms;   /* входы */
+  --dur-slow:      520ms;
+  --dur-tell:      900ms;   /* то, что рассказывает, — смена вида */
+  --dur-stagger:   40ms;
 
   /* ── Mobile scale ──────────────────────────────────────────────────────────
      На десктопе эти значения — тождество: отступов не добавляют, размеров не
@@ -96,7 +121,7 @@
   --ios-value:         0.8125rem;
   --ios-section:       0.8125rem;
   --ios-title:         0.875rem;
-  --ios-sheet-radius:  1.25rem;
+  --ios-sheet-radius:  14px;
   --ios-bar-h:         56px;
 
   /* Сайдбар. Свёрнутая ширина — она же ширина подложки в раскладке, поэтому
@@ -114,59 +139,78 @@
   --safe-r: env(safe-area-inset-right, 0px);
 }
 
-/* ─── Light theme — the paper vault ───────────────────────────── */
+/* ─── Светлая тема — бумага и тушь ────────────────────────────── */
 :root[data-theme="light"] {
   color-scheme: light;
 
-  --bg-base:       #f4f4f5;
-  --bg-surface:    #ffffff;
-  --bg-raised:     #fafafa;
-  --bg-hover:      #f0f0f2;
-  --bg-active:     #e7e7ea;
+  --bg-base:       #f2f0e6;
+  --bg-surface:    #fbfaf4;
+  --bg-raised:     #f6f4eb;
+  --bg-hover:      #eceade;
+  --bg-active:     #e3e0d2;
 
-  --border-subtle: rgba(9,9,11,0.06);
-  --border-base:   rgba(9,9,11,0.11);
-  --border-strong: rgba(9,9,11,0.17);
+  --border-subtle: rgba(14, 16, 15, 0.07);
+  --border-base:   rgba(14, 16, 15, 0.13);
+  --border-strong: rgba(14, 16, 15, 0.24);
 
-  --text-primary:  #18181b;
-  --text-secondary:#52525b;
-  /* 4.51:1 на самом тёмном из фонов, где стоит (--bg-hover). Было #9a9aa3 —
-     2.45:1, худший показатель во всём продукте. Светлота опущена на 17%.    */
-  --text-muted:    #6d6d77;
-  --text-accent:   #1e34c4;
+  --text-primary:  #0e100f;
+  --text-secondary:#45463f;
+  /* 4.9:1 на самом тёмном из фонов, где стоит (--bg-active). */
+  --text-muted:    #5f5f55;
+  --text-accent:   #0e100f;
 
-  --accent:        #1f3bd6;
-  --accent-hover:  #2846e8;
-  --accent-press:  #16299e;
-  --accent-fg:     #ffffff;
-  --accent-soft:   rgba(31,59,214,0.09);
-  --accent-line:   rgba(31,59,214,0.30);
+  --accent:        #0e100f;
+  --accent-hover:  #2a2c28;
+  --accent-press:  #050605;
+  --accent-fg:     #fffce1;
+  --accent-soft:   rgba(14, 16, 15, 0.06);
+  --accent-line:   rgba(14, 16, 15, 0.32);
 
-  /* Смысловые цвета на светлом фоне порог не брали: изумруд давал 3.31,
-     янтарь 2.80, роза 4.13. В тёмной теме те же три токена проходят с
-     запасом (8.14 / 9.38 / 5.82) и не тронуты — беда была только здесь.
-     Двигалась одна светлота: оттенки денежных значений узнаваемы, и менять
-     их значило бы менять язык цифр, а не чинить контраст.                   */
-  --accent-emerald:#047d58;
-  --accent-amber:  #a55b05;
-  --accent-rose:   #d61c44;
+  /* Каждый проходит 5:1 на бумаге: оттенок тот же, что в тёмной теме,
+     опущена только светлота.                                              */
+  --accent-emerald:#1f7a4a;
+  --accent-amber:  #97570a;
+  --accent-rose:   #c2331f;
 
-  --inflow-bg:     rgba(5,150,105,0.055);
-  --inflow-border: rgba(5,150,105,0.16);
-  --outflow-bg:    rgba(225,29,72,0.045);
-  --outflow-border:rgba(225,29,72,0.13);
+  --inflow-bg:     rgba(31, 122, 74, 0.06);
+  --inflow-border: rgba(31, 122, 74, 0.18);
+  --outflow-bg:    rgba(194, 51, 31, 0.05);
+  --outflow-border:rgba(194, 51, 31, 0.18);
 
-  /* Light gets the faintest hairline lift; still no heavy shadow */
-  --shadow-card:   0 1px 2px rgba(9,9,11,0.04), 0 1px 0 rgba(255,255,255,0.7) inset;
+  --shadow-card:   none;
   --shadow-raised: none;
-  --shadow-float:  0 24px 60px -28px rgba(9,9,11,0.30);
+  --shadow-float:  0 30px 70px -32px rgba(14, 16, 15, 0.35);
 
-  --page-bg:       radial-gradient(120% 80% at 50% -20%, rgba(31,59,214,0.05) 0%, transparent 55%), #f4f4f5;
-  --header-bg:     rgba(244,244,245,0.78);
-  --input-bg:      #ffffff;
-  --scrollbar-bg:  rgba(9,9,11,0.12);
-  --scrollbar-hover: rgba(9,9,11,0.24);
-  --selection-bg:  rgba(31,59,214,0.18);
+  --page-bg:       #f2f0e6;
+  --header-bg:     rgba(242, 240, 230, 0.82);
+  --input-bg:      #fbfaf4;
+  --scrollbar-bg:  rgba(14, 16, 15, 0.14);
+  --scrollbar-hover: rgba(14, 16, 15, 0.28);
+  --selection-bg:  rgba(14, 16, 15, 0.14);
+}
+
+/* Псевдонимы для компонентов, которые ссылались на несуществующие токены.
+   Неизвестная переменная убивает объявление целиком: у модалок анализатора
+   из-за `var(--surface)` фон был прозрачным, а активная вкладка на телефоне
+   (`var(--accent-blue)`) не красилась вовсе.
+
+   Значение с var() вычисляется там, где объявлено, поэтому псевдонимы
+   объявлены заново на каждой сцене, которая переопределяет палитру у себя
+   (стартовый экран и афиша входа — всегда тёмные): объявленные только на
+   :root, они несли бы внутрь сцены цвета корня, то есть чужую тему.       */
+:root,
+.home-stage,
+.auth-poster,
+.stage-curtain {
+  --surface:       var(--bg-surface);
+  --accent-blue:   var(--accent);
+  --accent-border: var(--accent-line);
+  --green-500:     var(--accent-emerald);
+  --amber-500:     var(--accent-amber);
+  --rose-500:      var(--accent-rose);
+  --red-600:       var(--accent-rose);
+  --red-50:        var(--outflow-bg);
+  --blue-400:      var(--text-secondary);
 }
 
 /* ─── Tailwind theme tokens ───────────────────────────────────── */
@@ -176,23 +220,14 @@
   --color-foreground:  var(--text-primary);
   --color-muted:       var(--text-muted);
   --color-accent:      var(--accent);
-  --font-sans: var(--font-manrope);
-  --font-mono: var(--font-plex-mono);
+  --font-sans: var(--font-geologica);
+  --font-mono: var(--font-martian);
 
-  /* Тело интерфейса было 12px: класс text-xs стоит 311 раз из 467 всех
-     упоминаний кегля — две трети продукта набраны им. Двенадцать пикселей
-     ниже, чем у любого сопоставимого продукта (Linear 13, Stripe и Vercel и
-     GitHub 14), и именно на них приходилась основная масса надписей, не
-     проходивших порог читаемости.
-
-     Переопределение здесь двигает все 311 мест разом, поэтому и выбрано:
-     переписывать классы по файлам значило бы 311 шансов пропустить одно.
-     13px — минимальный шаг, который решает задачу и не ломает плотность
-     таблиц; 14 уже потребовал бы пересчёта высот строк.
-
-     Междустрочный задан явно: при 12px Tailwind даёт 16px (1.33), и без этой
-     строки подъём кегля утащил бы за собой интерлиньяж, а вместе с ним и
-     высоту каждой строки реестра.                                           */
+  /* Тело интерфейса было 12px: класс text-xs стоит больше трёхсот раз, две
+     трети продукта набраны им. Переопределение здесь двигает все места
+     разом. 13px — минимальный шаг, который решает читаемость и не ломает
+     плотность таблиц. Междустрочный задан явно, иначе подъём кегля утащил
+     бы за собой высоту каждой строки реестра.                             */
   --text-xs: 0.8125rem;
   --text-xs--line-height: calc(1 / 0.8125);
 }
@@ -203,8 +238,8 @@ html { scroll-behavior: smooth; }
 body {
   background: var(--bg-base);
   color: var(--text-primary);
-  font-family: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
-  letter-spacing: -0.006em;
+  font-family: var(--font-geologica), ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.008em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -213,61 +248,117 @@ body {
 
 ::selection { background: var(--selection-bg); }
 
+:focus-visible { outline-color: var(--text-primary); }
+
 /* ─── Scrollbar ───────────────────────────────────────────────── */
 ::-webkit-scrollbar        { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track  { background: transparent; }
 ::-webkit-scrollbar-thumb  { background: var(--scrollbar-bg); border-radius: 9999px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-hover); }
 
-/* ─── Eyebrow / mono metadata — the "annotation" voice ────────── */
+/* ─── Типографика ─────────────────────────────────────────────────
+   Три голоса. Крупный — Geologica тонким весом с тугим трекингом: у monopo
+   заголовок «шепчет» весом 300–400, у GSAP — сжат трекингом до -0.02em и
+   ниже. Рабочий — та же Geologica, обычный вес. Пометка — Martian Mono в
+   фигурных скобках, подпись GSAP.                                          */
+
+.headline-xl {
+  font-size: clamp(3rem, 8vw, 7.5rem);
+  font-weight: 400;
+  line-height: 0.92;
+  letter-spacing: -0.05em;
+  color: var(--text-primary);
+}
+.headline {
+  font-size: clamp(1.75rem, 3.4vw, 2.75rem);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -0.035em;
+  color: var(--text-primary);
+}
+
+/* Пометка в фигурных скобках. Скобки — псевдоэлементы, в тексте их нет:
+   скринридер читает «Разделы», а не «фигурная скобка, Разделы».           */
+.annot {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.55em;
+  margin: 0;
+  font-family: var(--font-martian), ui-monospace, monospace;
+  font-variation-settings: "wdth" 87.5;
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.3;
+  letter-spacing: 0;
+  color: var(--text-secondary);
+}
+.annot::before { content: "{"; color: var(--text-muted); }
+.annot::after  { content: "}"; color: var(--text-muted); }
+
+/* Подпись поля и колонки. Была моноширинным капслоком с разрядкой — самая
+   узнаваемая примета сгенерированного интерфейса. Теперь это обычная
+   приглушённая подпись: она подписывает, а не украшает.                   */
 .eyebrow {
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
-  font-size: 0.66rem;
+  font-family: var(--font-geologica), ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.75rem;
   font-weight: 500;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--text-muted);
 }
 .mono-meta {
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
-  font-size: 0.72rem;
-  letter-spacing: 0.01em;
+  font-family: var(--font-martian), ui-monospace, monospace;
+  font-variation-settings: "wdth" 87.5;
+  font-size: 0.7rem;
+  letter-spacing: 0;
   color: var(--text-secondary);
 }
 
-/* ─── Brand mark — sapphire chip (logo lockup badge) ──────────── */
+/* ─── Движение: что прячется до входа ─────────────────────────────
+   Класс `motion` ставит скрипт в <head> (см. layout.tsx) и сам снимает
+   через четыре секунды. Прячется только то, что потом выедет анимацией; без
+   JS всё это просто видно.                                                  */
+.motion [data-split]:not([data-split-ready]) { visibility: hidden; }
+.motion .ix-rule { transform: scaleX(0); }
+.motion .ix-num,
+.motion .ix-meta { opacity: 0; }
+
+/* Окно строки при разрезке. Запас сверху и снизу — под «Й», «Ё» и хвосты
+   «у», «д», «р»: при межстрочном 0.92 окно ровно по строке обрезало бы их. */
+.sr-line-mask {
+  padding-block: 0.14em;
+  margin-block: -0.14em;
+}
+
+/* ─── Brand mark ───────────────────────────────────────────────── */
+/* Значок продукта — волосяной круг, как иконки-кнопки у GSAP. Синей заливки
+   больше нет: цвету в интерфейсе нечего делать.                           */
 .logo-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background: var(--accent);
-  color: var(--accent-fg);
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-primary);
   flex-shrink: 0;
 }
-/* Спокойный вариант значка в шапке сервиса: без заливки акцентом. Бренд
-   приложения остаётся синим, а сервис внутри него — нейтральным, иначе каждая
-   шапка спорит с главной кнопкой страницы. */
 .logo-badge.logo-badge-quiet {
   width: 32px;
   height: 32px;
-  border-radius: 9px;
-  background: var(--bg-raised);
-  border: 1px solid var(--border-base);
-  color: var(--text-primary);
+  border-color: var(--border-base);
 }
 
-/* Плашка значка на плитке сервиса. */
+/* Плашка значка сервиса. */
 .service-mark {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 48px;
   height: 48px;
-  border-radius: 13px;
-  background: var(--bg-raised);
+  border-radius: var(--radius-pill);
   border: 1px solid var(--border-base);
   color: var(--text-primary);
   transition: border-color var(--dur-fast) var(--ease-out);
@@ -277,7 +368,7 @@ body {
 /* ─── Card ────────────────────────────────────────────────────── */
 .card {
   background: var(--bg-surface);
-  border: 1px solid var(--border-base);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
 }
@@ -293,13 +384,21 @@ body {
   background: var(--bg-raised);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-inner);
-  transition: background 0.15s, border-color 0.15s;
+  transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
 }
 .row-item:hover { background: var(--bg-hover); border-color: var(--border-base); }
 
 /* ─── Buttons ─────────────────────────────────────────────────── */
-/* Primary = the sole place the brand sapphire lives. Keep it rare. */
+/* Главное действие — кремовая пилюля (в светлой теме — тушь). По наведению
+   по ней проходит отблеск жидкой сцены: единственный раз, когда её цвета
+   касаются элемента интерфейса, и то на полсекунды.
+
+   Отблеск — псевдоэлемент под текстом: isolation держит слой внутри кнопки,
+   и z-index: -1 кладёт его поверх заливки, но под подпись.                 */
 .btn-primary {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -307,21 +406,51 @@ body {
   background: var(--accent);
   color: var(--accent-fg);
   border-radius: var(--radius-pill);
-  font-weight: 600;
+  font-weight: 500;
   font-size: 0.875rem;
-  letter-spacing: -0.005em;
-  padding: 0.6rem 1.35rem;
-  transition: background 0.15s, transform 0.08s;
+  letter-spacing: -0.01em;
+  padding: 0.6rem 1.4rem;
+  transition: background var(--dur-fast) var(--ease-out), transform var(--dur-instant) var(--ease-out);
   cursor: pointer;
   border: none;
   white-space: nowrap;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
+.btn-primary::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(100deg,
+    transparent 15%,
+    color-mix(in srgb, var(--iris-sage) 70%, transparent) 38%,
+    color-mix(in srgb, var(--iris-amber) 70%, transparent) 55%,
+    color-mix(in srgb, var(--iris-blood) 45%, transparent) 70%,
+    transparent 88%);
+  transform: translateX(-105%);
+  transition: transform 0s;
+  pointer-events: none;
+}
+.btn-primary:hover:not(:disabled)::before {
+  transform: translateX(105%);
+  transition: transform 1s var(--ease-out);
+}
 .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
 .btn-primary:active:not(:disabled) { transform: scale(0.97); background: var(--accent-press); }
-.btn-primary:disabled { opacity: 0.40; cursor: not-allowed; }
+/* Выключенная — поверхность и приглушённая подпись, а не крем на 38%:
+   полупрозрачный крем на чёрном давал мутный оливковый, который читался как
+   «какая-то кнопка», а не как «пока нельзя». */
+.btn-primary:disabled {
+  background: var(--bg-active);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+.btn-primary:disabled::before { display: none; }
+.btn-primary:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 3px; }
 
+/* Всё остальное — пилюля с волосяной обводкой. По наведению обводка
+   набирает цвет текста, как у GSAP: заливки нет.                          */
 .btn-ghost {
   display: inline-flex;
   align-items: center;
@@ -331,19 +460,32 @@ body {
   color: var(--text-primary);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-pill);
-  font-weight: 500;
+  font-weight: 450;
   font-size: 0.875rem;
-  letter-spacing: -0.005em;
-  padding: 0.6rem 1.25rem;
-  transition: background 0.15s, border-color 0.15s, transform 0.08s;
+  letter-spacing: -0.01em;
+  padding: 0.6rem 1.3rem;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-instant) var(--ease-out);
   cursor: pointer;
   white-space: nowrap;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
-.btn-ghost:hover:not(:disabled) { background: var(--bg-hover); border-color: var(--border-strong); }
+.btn-ghost:hover:not(:disabled) { border-color: var(--text-primary); background: var(--accent-soft); }
 .btn-ghost:active:not(:disabled) { transform: scale(0.97); }
-.btn-ghost:disabled { opacity: 0.40; cursor: not-allowed; }
+.btn-ghost:disabled { opacity: 0.38; cursor: not-allowed; }
+.btn-ghost:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 3px; }
+
+/* Маленькая пилюля для шапок. Утилиты Tailwind `px-2.5 py-1.5` на .btn-ghost
+   не работали бы: правила этого файла не в слое и бьют утилиты по каскаду. */
+.btn-sm {
+  padding: 0.4rem 0.9rem;
+  font-size: 0.8125rem;
+  min-height: 36px;
+}
 
 /* Класс `.status-dot` удалён вместе с последней точкой состояния.
    Оставлять его «на всякий случай» нельзя: готовая заготовка — первое, что
@@ -352,7 +494,7 @@ body {
    уже есть на экране: самой подписью, её весом, положением, движением.
    Цвет — только на отказе.                                                */
 
-/* ─── Variant group toggle — sapphire pill, single voice ──────── */
+/* ─── Variant group toggle ─────────────────────────────────────── */
 .variant-group-toggle {
   position: relative;
   display: inline-flex;
@@ -360,19 +502,19 @@ body {
   justify-content: center;
   align-self: flex-start;
   min-height: 44px;
-  padding: 0.7rem 1.25rem;
+  padding: 0.7rem 1.35rem;
   border: none;
   border-radius: var(--radius-pill);
   background: var(--accent);
   color: var(--accent-fg);
-  font-size: 0.8rem;
-  font-weight: 600;
-  letter-spacing: -0.005em;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
   white-space: nowrap;
   cursor: pointer;
   isolation: isolate;
   overflow: hidden;
-  transition: background 0.18s, transform 0.18s;
+  transition: background var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
 }
 .variant-group-toggle:hover { background: var(--accent-hover); transform: translateY(-1px); }
 .variant-group-toggle:active { transform: scale(0.98); background: var(--accent-press); }
@@ -384,9 +526,6 @@ body {
   border: 1px solid var(--accent-line);
   opacity: 0;
 }
-.variant-group-toggle-pulse {
-  animation: float-bob 3.2s ease-in-out infinite;
-}
 .variant-group-toggle-pulse .variant-group-toggle__pulse {
   animation: pulse-ring 2.2s ease-in-out infinite;
 }
@@ -395,7 +534,7 @@ body {
   color: var(--text-primary);
   border: 1px solid var(--border-strong);
 }
-.variant-group-toggle-return:hover { background: var(--bg-hover); }
+.variant-group-toggle-return:hover { background: var(--accent-soft); border-color: var(--text-primary); }
 .variant-group-toggle-return .variant-group-toggle__pulse { display: none; }
 
 /* ─── Input ───────────────────────────────────────────────────── */
@@ -405,24 +544,24 @@ body {
   border-radius: var(--radius-inner);
   color: var(--text-primary);
   font-size: 0.875rem;
-  padding: 0.55rem 0.85rem;
+  padding: 0.6rem 0.85rem;
   width: 100%;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
   outline: none;
 }
+.input-field:hover { border-color: var(--border-strong); }
 .input-field:focus {
-  border-color: var(--accent);
+  border-color: var(--text-primary);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .input-field::placeholder { color: var(--text-muted); }
 
 /* Выпадающий список.
-   `--input-bg` в тёмной теме — почти прозрачный (2.5% белого): на странице он
-   ложится на тёмный фон и выглядит правильно. Но список опций рисует не
-   страница, а система, и там тот же цвет накладывается на БЕЛОЕ — получался
-   белый список с почти белым текстом, то есть пустой на вид. Поэтому у select
-   и его опций фон непрозрачный, заданный явно. `color-scheme` на :root это не
-   лечит: он задаёт умолчание, а собственный фон элемента его перебивает.     */
+   `--input-bg` в тёмной теме почти прозрачный: на странице он ложится на
+   тёмный фон и выглядит правильно. Но список опций рисует не страница, а
+   система, и там тот же цвет накладывается на БЕЛОЕ — получался белый
+   список с почти белым текстом. Поэтому у select и его опций фон
+   непрозрачный, заданный явно.                                            */
 select.input-field {
   background-color: var(--bg-raised);
   /* Нативная стрелка живёт по краю и в тесных фильтрах налезает на текст. */
@@ -440,28 +579,25 @@ select.input-field optgroup {
   display: inline-flex;
   align-items: center;
   border-radius: var(--radius-pill);
-  font-size: 0.68rem;
-  font-weight: 600;
-  padding: 0.2rem 0.6rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  padding: 0.18rem 0.6rem;
   white-space: nowrap;
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
 }
-.badge-blue    { background: var(--accent-soft);                 color: var(--text-accent); }
-.badge-emerald { background: rgba(52,211,153,0.13);  color: #6ee7b7; }
-.badge-amber   { background: rgba(251,191,36,0.13);  color: #fcd34d; }
-.badge-rose    { background: rgba(251,113,133,0.13); color: #fda4af; }
-.badge-indigo  { background: var(--accent-soft);                 color: var(--text-accent); }
-.badge-slate   { background: rgba(255,255,255,0.06); color: var(--text-secondary); }
-
-:root[data-theme="light"] .badge-emerald { background: rgba(5,150,105,0.10);  color: #047857; }
-:root[data-theme="light"] .badge-amber   { background: rgba(217,119,6,0.10);  color: #92400e; }
-:root[data-theme="light"] .badge-rose    { background: rgba(225,29,72,0.10);  color: #be123c; }
-:root[data-theme="light"] .badge-slate   { background: rgba(9,9,11,0.06);     color: #52525b; }
+/* Синего больше нет: «синяя» и «индиго» плашки — нейтральная обводка. */
+.badge-blue,
+.badge-indigo  { background: transparent; color: var(--text-primary); box-shadow: inset 0 0 0 1px var(--border-strong); }
+.badge-emerald { background: color-mix(in srgb, var(--accent-emerald) 13%, transparent); color: var(--accent-emerald); }
+.badge-amber   { background: color-mix(in srgb, var(--accent-amber) 13%, transparent);   color: var(--accent-amber); }
+.badge-rose    { background: color-mix(in srgb, var(--accent-rose) 14%, transparent);    color: var(--accent-rose); }
+.badge-slate   { background: var(--accent-soft); color: var(--text-secondary); }
 
 /* ─── Tab active indicator ────────────────────────────────────── */
-.tab-active   { color: var(--text-primary); border-bottom-color: var(--accent); }
+.tab-active   { color: var(--text-primary); border-bottom-color: var(--text-primary); }
 .tab-inactive { color: var(--text-muted); border-bottom-color: transparent; }
 .tab-inactive:hover { color: var(--text-secondary); }
+
 
 /* ─── BBC Dashboard (removable module) ────────────────────────── */
 
@@ -654,7 +790,7 @@ select.input-field optgroup {
 }
 /* Единственный цветной — последний. Акцент здесь не статус, а точка, в которую
    упирается взгляд: столбцы растут слева направо и заканчиваются на нём. */
-.bbc-boot-bar[data-accent] { background: var(--accent); }
+.bbc-boot-bar[data-accent] { background: var(--iris); }
 
 @keyframes bbc-boot-rise {
   from { transform: scaleY(0); opacity: 0; }
@@ -678,7 +814,7 @@ select.input-field optgroup {
   display: inline-flex;
   align-items: center;
   gap: 0.4375rem;
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-martian), ui-monospace, monospace;
   font-size: 0.66rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -1161,34 +1297,22 @@ select.input-field optgroup {
 }
 
 /* ─── Accent banner ───────────────────────────────────────────── */
-.banner-emerald {
-  border: 1px solid rgba(52,211,153,0.22);
-  background: rgba(52,211,153,0.06);
-  color: #6ee7b7;
-  border-radius: var(--radius-inner);
-}
-.banner-amber {
-  border: 1px solid rgba(251,191,36,0.24);
-  background: rgba(251,191,36,0.07);
-  color: #fcd34d;
-  border-radius: var(--radius-inner);
-}
-.banner-rose {
-  border: 1px solid rgba(251,113,133,0.24);
-  background: rgba(251,113,133,0.07);
-  color: #fda4af;
-  border-radius: var(--radius-inner);
-}
+/* Цвет берётся из смысловых токенов, поэтому обе темы получают его сами:
+   отдельные светлые переопределения с зашитыми цветами больше не нужны.  */
+.banner-emerald,
+.banner-amber,
+.banner-rose,
 .banner-sky {
-  border: 1px solid var(--accent-line);
-  background: var(--accent-soft);
-  color: var(--text-accent);
+  border: 1px solid color-mix(in srgb, var(--banner-tone) 26%, transparent);
+  background: color-mix(in srgb, var(--banner-tone) 7%, transparent);
+  color: var(--banner-tone);
   border-radius: var(--radius-inner);
 }
-
-:root[data-theme="light"] .banner-emerald { background: rgba(5,150,105,0.06); border-color: rgba(5,150,105,0.18); color: #065f46; }
-:root[data-theme="light"] .banner-amber   { background: rgba(217,119,6,0.06); border-color: rgba(217,119,6,0.20); color: #78350f; }
-:root[data-theme="light"] .banner-rose    { background: rgba(225,29,72,0.06); border-color: rgba(225,29,72,0.18); color: #881337; }
+.banner-emerald { --banner-tone: var(--accent-emerald); }
+.banner-amber   { --banner-tone: var(--accent-amber); }
+.banner-rose    { --banner-tone: var(--accent-rose); }
+/* «Синий» баннер — справка, а не отказ: нейтральный, цветом мела. */
+.banner-sky     { --banner-tone: var(--text-secondary); }
 
 /* ─── Mobile optimisations ──────────────────────────────────────
    Брейкпоинт здесь — 639.98px, а не 640px, и это не придирка: у Tailwind
@@ -1202,10 +1326,17 @@ textarea.input-field {
   font-size: max(16px, 0.875rem);
 }
 
-/* Minimum touch target */
+/* Минимальная цель — 44px под палец и 40px под мышь. Раньше 44px стояли
+   везде, и шапки на десктопе состояли из пилюль в рост пальца.            */
 .btn-primary,
 .btn-ghost {
-  min-height: 44px;
+  min-height: 40px;
+}
+@media (pointer: coarse) {
+  .btn-primary,
+  .btn-ghost {
+    min-height: 44px;
+  }
 }
 
 /* Безопасные зоны. Вне медиа-запроса: там, где вырезов нет, env() отдаёт
@@ -1225,12 +1356,7 @@ html, body { overflow-x: clip; }
 .workbench-toast { bottom: calc(1.25rem + var(--safe-b)); }
 
 @media (max-width: 639.98px) {
-  /* Радиусы правим через токены, а не через .card напрямую: так они заодно
-     достают до .card-inner, .row-item, .input-field и баннеров.             */
   :root {
-    --radius-card:       0.875rem;
-    --radius-inner:      0.75rem;
-
     --ios-inset:         1rem;
     --ios-divider-inset: 1rem;
     --ios-row-min:       44px;
@@ -1242,8 +1368,8 @@ html, body { overflow-x: clip; }
 
   /* Эти два класса несут почти весь мелкий текст продукта — поднять их
      полезнее, чем править арбитражные размеры по одному.                   */
-  .eyebrow   { font-size: 0.72rem; letter-spacing: 0.10em; }
-  .mono-meta { font-size: 0.80rem; }
+  .eyebrow   { font-size: 0.8125rem; }
+  .mono-meta { font-size: 0.78rem; }
 
   .animate-toast-in { animation-name: toast-in-mobile; }
 
@@ -1796,226 +1922,585 @@ html, body { overflow-x: clip; }
 .bbc-pulse-shift { animation: bbc-pulse-shift var(--dur-slow) var(--ease-out) both; }
 .bbc-pulse-spike { animation: bbc-pulse-spike var(--dur-tell) var(--ease-out) both; }
 
-/* ─── Стартовый экран: четыре плитки на видеофоне ──────────────────
-   Раньше приложение открывалось сразу анализатором выписок, и три остальных
-   раздела жили кнопками в его шапке — то есть подчинёнными одному из них.
-   Разделов четыре, и они равны; стартовый экран это и показывает.
+/* ─── Тёмные сцены ─────────────────────────────────────────────────
+   Стартовый экран, афиша входа и занавес перехода тёмные всегда, какая бы
+   тема ни стояла. Это решение, а не недосмотр: на них играет жидкая сцена
+   (или ролик), и в светлой теме кремовые надписи поверх неё теряли бы и
+   фон, и себя.
 
-   Видео задаётся переменными окружения и лежит в Cloudflare. Когда его нет,
-   .home-video не рендерится вовсе, и фоном остаётся --page-bg — тот же, что
-   на остальных экранах. Пустой <video> без src в этом месте дал бы чёрный
-   прямоугольник поверх светлой темы.                                        */
-.home-stage {
-  position: relative;
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  background: var(--page-bg);
-}
-
-/* Лёгкое размытие: фон перестаёт спорить с подписями плиток за внимание, но
-   остаётся узнаваемым.
-
-   Ролик намеренно больше экрана на три радиуса размытия с каждой стороны.
-   `filter: blur()` размывает и КРАЙ элемента: у самых границ картинка
-   растворяется в прозрачность, и по периметру проступает полоса подложки.
-   Запас задан в тех же единицах, что и сам радиус, а не процентами от
-   ширины — с `scale(1.05)` на десктопе выходило 36px, а на телефоне 10px
-   при радиусе 8px, и кайма по бокам была видна ровно там, где экран меньше
-   всего. Теперь запас не зависит от ширины: поменяли --home-video-blur —
-   геометрия подстроилась сама.                                            */
-/* Стартовый экран всегда тёмный, какая бы тема ни стояла.
-   
-   Это не «забыли поддержать светлую тему», а решение: под плитками играет
-   ролик, и он один на обе темы. В светлой белые плитки на видео теряли и фон,
-   и себя — вуаль приходилось делать настолько плотной, что от ролика
-   оставалась выбеленная текстура, ради которой его не стоило и заливать.
-   
-   Токены переопределяются на самой сцене, а не на :root: светлая тема объявлена
-   через :root[data-theme="light"], и всё внутри .home-stage берёт значения
-   отсюда, включая кнопку темы. Значения — копия тёмной палитры сверху;
-   продублированы, потому что CSS не умеет сослаться на чужой блок. Меняя
-   тёмную палитру, надо пройтись и здесь.
-   
-   Переключатель темы на экране остаётся: от него зависят ОСТАЛЬНЫЕ разделы,
-   и человеку удобно выставить тему до того, как он куда-то ушёл.            */
-:root[data-theme="light"] .home-stage {
+   Токены переопределяются на самой сцене, а не на :root: всё внутри берёт
+   значения отсюда, включая переключатель темы и кнопки. Значения — копия
+   тёмной палитры сверху; CSS не умеет сослаться на чужой блок, поэтому,
+   меняя тёмную палитру, надо пройтись и здесь.                            */
+.home-stage,
+.auth-poster,
+.stage-curtain {
   color-scheme: dark;
 
-  --bg-surface:    #141416;
-  --bg-raised:     #1b1b1f;
-  --bg-hover:      #232327;
+  --bg-base:       #0e100f;
+  --bg-surface:    #141614;
+  --bg-raised:     #1a1c19;
+  --bg-hover:      #232521;
+  --bg-active:     #2c2e29;
 
-  --border-subtle: rgba(255,255,255,0.055);
-  --border-base:   rgba(255,255,255,0.10);
-  --border-strong: rgba(255,255,255,0.18);
+  --border-subtle: rgba(255, 252, 225, 0.07);
+  --border-base:   rgba(255, 252, 225, 0.12);
+  --border-strong: rgba(255, 252, 225, 0.22);
 
-  --text-primary:  #f4f4f5;
-  --text-secondary:#a1a1aa;
-  --text-muted:    #898992;
+  --text-primary:  #fffce1;
+  --text-secondary:#c9c6ae;
+  --text-muted:    #9a9988;
+  --text-accent:   #fffce1;
 
-  --accent:        #3d5afe;
-  --accent-fg:     #f6f7ff;
-  --accent-line:   rgba(61,90,254,0.40);
+  --accent:        #fffce1;
+  --accent-hover:  #f1edcf;
+  --accent-press:  #e0dbba;
+  --accent-fg:     #0e100f;
+  --accent-soft:   rgba(255, 252, 225, 0.08);
+  --accent-line:   rgba(255, 252, 225, 0.38);
 
-  --page-bg:       radial-gradient(120% 80% at 50% -20%, rgba(61,90,254,0.08) 0%, transparent 55%), #09090b;
+  --page-bg:       #0e100f;
+  --input-bg:      rgba(255, 252, 225, 0.03);
 }
 
-.home-video {
+/* ─── Жидкая сцена ─── */
+.liquid-stage { display: block; }
+/* Без WebGL — те же три цвета неподвижными пятнами. */
+.liquid-fallback {
+  background:
+    radial-gradient(55% 65% at 82% 72%, rgba(255, 172, 46, 0.42), transparent 62%),
+    radial-gradient(45% 55% at 96% 28%, rgba(160, 224, 171, 0.32), transparent 60%),
+    radial-gradient(60% 55% at 62% 104%, rgba(165, 45, 37, 0.55), transparent 66%),
+    #0e100f;
+}
+
+/* ─── Стартовый экран ──────────────────────────────────────────────
+   Указатель разделов во весь рост поверх жидкой сцены. Раньше здесь была
+   сетка из четырёх плиток со значком в углу — самая частая форма в чужих
+   продуктах; теперь название раздела само и есть кнопка.
+
+   Экран обязан помещаться в окно без прокрутки. Подвала здесь больше нет:
+   круглый знак в нём добавлял 128px, и на окнах 1366×640 и 1280×590
+   (ноутбук при масштабе 100% и 150%) экран был выше окна на 64 и 81px —
+   сверху и снизу приходилось докручивать. Кегль строк считается и от высоты
+   окна (`11vh`), поэтому четыре строки встают и на низком экране.
+   `min-height`, а не `height`: на совсем низком окне (телефон лёжа)
+   прокрутка лучше обрезанной строки.                                      */
+.home-stage {
+  position: relative;
+  isolation: isolate;
+  min-height: 100svh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  overflow-x: clip;
+  background: var(--bg-base);
+  color: var(--text-primary);
+}
+
+.home-liquid {
   position: absolute;
-  --home-video-blur: 8px;
-  --home-video-bleed: calc(3 * var(--home-video-blur));
-  inset: calc(-1 * var(--home-video-bleed));
-  width: calc(100% + 2 * var(--home-video-bleed));
-  height: calc(100% + 2 * var(--home-video-bleed));
-  /* Preflight Tailwind объявляет `video { max-width: 100% }`, и он молча
-     срезал ширину обратно до размера экрана: высота запас получала, ширина
-     нет, и размытая кромка оставалась видна слева и справа. Ровно тот же
-     сорт ловушки, что описан выше про утилиты и globals.css, — правило из
-     чужого слоя, о котором тут никто не думает.                           */
-  max-width: none;
-  object-fit: cover;
-  z-index: 0;
-  /* Ролик — фон, а не содержимое: он не должен ловить ни клик, ни фокус. */
-  pointer-events: none;
-  filter: blur(var(--home-video-blur));
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -2;
 }
 
-/* Вуаль поверх видео. Без неё подписи плиток читаются через раз: у ролика
-   свои светлые и тёмные кадры, и контраст текста менялся бы по ходу
-   воспроизведения. Плотность разная по темам — под светлую вуаль осветляет,
-   под тёмную затемняет, и в обеих текст остаётся на своём фоне.             */
+/* Вуаль держит контраст надписей — от левого края, где стоят названия. */
 .home-veil {
   position: absolute;
   inset: 0;
-  z-index: 1;
+  z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(120% 90% at 50% 40%, rgba(9, 9, 11, 0.30) 0%, rgba(9, 9, 11, 0.72) 100%);
+    linear-gradient(90deg, rgba(14, 16, 15, 0.7) 0%, rgba(14, 16, 15, 0.28) 48%, rgba(14, 16, 15, 0) 78%),
+    linear-gradient(0deg, rgba(14, 16, 15, 0.45) 0%, rgba(14, 16, 15, 0) 32%);
 }
-
-
-/* В шапке только переключатель темы, поэтому прижат вправо самой раскладкой,
-   а не `margin-left: auto` у последнего элемента: пустой левой части, за счёт
-   которой это работало бы, здесь больше нет. */
 .home-top {
-  position: relative;
-  z-index: 2;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  padding: 1rem 1.25rem;
-  padding-top: max(1rem, var(--safe-t));
+  justify-content: space-between;
+  gap: 1rem;
+  padding: max(1.25rem, var(--safe-t)) clamp(1.25rem, 4vw, 3.5rem) 0;
 }
 
-.home-grid {
-  position: relative;
-  z-index: 2;
-  flex: 1;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: clamp(0.75rem, 2.2vw, 1.5rem);
-  align-content: center;
-  width: min(62rem, 100%);
-  margin: 0 auto;
-  padding: clamp(1rem, 4vh, 3rem) clamp(1rem, 4vw, 3rem);
-  padding-bottom: max(clamp(1rem, 4vh, 3rem), var(--safe-b));
+.home-main {
+  display: flex;
+  align-items: center;
+  padding: clamp(1.25rem, 5vh, 4rem) clamp(1.25rem, 4vw, 3.5rem);
+  padding-bottom: max(clamp(1.25rem, 5vh, 4rem), var(--safe-b));
 }
+.home-main .ix { width: 100%; }
 
-.home-tile {
+/* ─── Указатель разделов ───────────────────────────────────────────
+   Номер слева, название во всю ширину, пометка в правом верхнем углу
+   строки, стрелка справа. Пометка стоит над названием, а не своей колонкой:
+   колонкой она отнимала у названия двести пикселей и на окне 1000px
+   выдавливала «Анализатор выписок» за край.                                */
+.ix {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  justify-content: flex-end;
-  min-height: clamp(9rem, 24vh, 14rem);
-  padding: clamp(1rem, 2.4vw, 1.75rem);
-  border-radius: var(--radius-card);
-  border: 1px solid var(--border-base);
-  background: color-mix(in srgb, var(--bg-surface) 72%, transparent);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+}
+
+.ix-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 4rem minmax(0, 1fr) 3.5rem;
+  align-items: center;
+  column-gap: 1.25rem;
+  width: 100%;
+  padding: clamp(0.55rem, 1.6vh, 1.1rem) 0;
+  border: 0;
+  background: none;
   color: var(--text-primary);
+  text-align: left;
   text-decoration: none;
-  transition:
-    border-color var(--dur-fast) var(--ease-out),
-    background var(--dur-fast) var(--ease-out),
-    transform var(--dur-fast) var(--ease-out);
-  /* Анимация влёта. fill both обязателен: до старта (первую секунду) плитка
-     обязана стоять в начальном кадре за краем экрана, а не мигнуть на месте
-     и уехать обратно.                                                       */
-  animation: home-fly-in var(--dur-tell) var(--ease-out) both;
+  cursor: pointer;
+  transition: opacity 600ms var(--ease-out);
+  -webkit-tap-highlight-color: transparent;
 }
 
-.home-tile:hover {
-  border-color: var(--border-strong);
-  background: color-mix(in srgb, var(--bg-surface) 88%, transparent);
-  transform: translateY(-2px);
+/* Остальные строки гаснут, пока одна под курсором или в фокусе. */
+.ix:has(.ix-row:hover) .ix-row:not(:hover),
+.ix:has(.ix-row:focus-visible) .ix-row:not(:focus-visible) { opacity: 0.3; }
+
+.ix-row:focus-visible {
+  outline: 1px solid var(--text-primary);
+  outline-offset: 6px;
+  border-radius: 4px;
 }
 
-.home-tile:active { transform: translateY(0) scale(0.995); }
-
-.home-tile:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
+.ix-num {
+  align-self: start;
+  padding-top: 0.6em;
+  font-family: var(--font-martian), ui-monospace, monospace;
+  font-variation-settings: "wdth" 87.5;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
-.home-tile-icon {
+.ix-title {
+  display: block;
+  grid-column: 2;
+  grid-row: 1;
+  font-weight: 400;
+  line-height: 0.98;
+  letter-spacing: -0.05em;
+  white-space: nowrap;
+}
+.ix[data-size="hero"] .ix-title { font-size: clamp(2.4rem, min(6.6vw, 11vh), 7.25rem); }
+.ix[data-size="section"] .ix-title {
+  font-size: clamp(1.9rem, min(4.6vw, 8.5vh), 4.5rem);
+  font-weight: 450;
+  letter-spacing: -0.04em;
+}
+
+.ix-meta {
+  grid-column: 2 / 4;
+  grid-row: 1;
+  align-self: start;
+  justify-self: end;
+  padding-top: 0.6em;
+  font-family: var(--font-martian), ui-monospace, monospace;
+  font-variation-settings: "wdth" 87.5;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.ix-arrow {
+  grid-column: 3;
+  grid-row: 1;
+  display: inline-flex;
+  justify-content: flex-end;
+  align-self: end;
+  padding-bottom: 0.35em;
+  color: var(--text-primary);
+  opacity: 0;
+}
+
+.ix-rule {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--border-base);
+  transform-origin: 0% 50%;
+  pointer-events: none;
+}
+.ix-rule-top {
+  position: relative;
+  display: block;
+}
+
+/* На стартовом экране пометка стоит над названием слева, в одну строку с
+   номером, — как метка категории у GSAP. Справа, как в разделах, она легла бы
+   на жидкую сцену: мелкий моноширинный текст на янтаре не читается.         */
+.ix[data-size="hero"] .ix-row {
+  grid-template-rows: auto auto;
+  row-gap: 0.4rem;
+}
+.ix[data-size="hero"] .ix-num { grid-row: 1; padding-top: 0; align-self: center; }
+.ix[data-size="hero"] .ix-meta {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: start;
+  align-self: center;
+  padding-top: 0;
+}
+.ix[data-size="hero"] .ix-title { grid-row: 2; }
+.ix[data-size="hero"] .ix-arrow { grid-row: 2; }
+
+/* Переключатель темы стоит над сценой: без своей подложки кремовая подпись
+   терялась, когда под неё подтекала светлая жидкость. */
+.home-top .btn-ghost {
+  background: rgba(14, 16, 15, 0.55);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+/* На сенсорном экране наведения нет: стрелка видна всегда, иначе строка не
+   говорит, что она ведёт куда-то. */
+@media (hover: none) {
+  .ix-arrow { opacity: 0.55; }
+}
+
+@media (max-width: 639.98px) {
+  .ix-row {
+    grid-template-columns: 1.75rem minmax(0, 1fr) 1.5rem;
+    column-gap: 0.75rem;
+  }
+  .ix-meta { display: none; }
+  /* На стартовом пометка над названием — ей место есть и на телефоне. */
+  .ix[data-size="hero"] .ix-meta { display: block; font-size: 0.66rem; }
+  .ix-title { white-space: normal; }
+  .ix[data-size="hero"] .ix-title { font-size: clamp(2.1rem, 10.5vw, 3rem); }
+  .ix[data-size="section"] .ix-title { font-size: clamp(1.75rem, 8.5vw, 2.4rem); }
+  .ix-num { font-size: 0.66rem; }
+}
+
+/* ─── Занавес перехода ─────────────────────────────────────────────
+   Полотно всегда тёмное, в обеих темах: переход — это сцена, а не страница.
+   По краям — тонкая полоса жидкой сцены: у поднимающегося занавеса она
+   ведёт верхний край, у уходящего — замыкает нижний.                       */
+.stage-curtain {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: flex-end;
+  padding: clamp(1.5rem, 5vw, 4rem);
+  padding-bottom: max(clamp(1.5rem, 5vw, 4rem), var(--safe-b));
+  background: var(--bg-base);
+  color: var(--text-primary);
+  /* Только невидимость, без transform: сдвиг ведёт GSAP. Заданный здесь
+     translateY(100%) GSAP читает из вычисленной матрицы как y: 900px и
+     складывает со своим yPercent — занавес приезжал на экран со смещением
+     ровно на высоту окна и оставался за его нижним краем. */
+  visibility: hidden;
+}
+.stage-curtain::before,
+.stage-curtain::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--iris);
+}
+.stage-curtain::before { top: 0; }
+.stage-curtain::after { bottom: 0; }
+
+.stage-curtain-label {
+  max-width: 100%;
+  font-size: clamp(2.5rem, 7vw, 8rem);
+  font-weight: 400;
+  line-height: 0.95;
+  letter-spacing: -0.05em;
+}
+.stage-char-mask {
+  padding-block: 0.14em;
+  margin-block: -0.14em;
+}
+
+/* ─── Экран входа: афиша и форма ───────────────────────────────── */
+.auth-stage {
+  min-height: 100svh;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  background: var(--bg-base);
+}
+
+.auth-poster {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  min-height: 100svh;
+  padding: max(clamp(1.25rem, 3vw, 2.5rem), var(--safe-t)) clamp(1.25rem, 3vw, 2.5rem) clamp(1.5rem, 4vw, 3rem);
+  background: var(--bg-base);
+  color: var(--text-primary);
+}
+.auth-liquid {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -2;
+}
+.auth-poster-veil {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    linear-gradient(0deg, rgba(14, 16, 15, 0.78) 0%, rgba(14, 16, 15, 0.12) 58%),
+    linear-gradient(90deg, rgba(14, 16, 15, 0.4) 0%, rgba(14, 16, 15, 0) 60%);
+}
+.auth-back { align-self: flex-start; }
+.auth-poster-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  margin-top: auto;
+}
+.auth-title {
+  font-size: clamp(2.6rem, 5.2vw, 5.75rem);
+  font-weight: 400;
+  line-height: 0.94;
+  letter-spacing: -0.05em;
+}
+
+.auth-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(1.5rem, 5vw, 4rem);
+  padding-bottom: max(clamp(1.5rem, 5vw, 4rem), var(--safe-b));
+  background: var(--bg-base);
+  color: var(--text-primary);
+}
+.auth-form {
+  width: min(24rem, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+.auth-heading {
+  font-size: 1.625rem;
+  font-weight: 400;
+  line-height: 1.1;
+  letter-spacing: -0.035em;
+  color: var(--text-primary);
+}
+.auth-fields { display: flex; flex-direction: column; gap: 0.9rem; }
+.auth-field { display: flex; flex-direction: column; gap: 0.4rem; }
+.auth-hint { font-size: 0.75rem; color: var(--text-muted); }
+.auth-error {
+  padding: 0.6rem 0.8rem;
+  border-radius: var(--radius-inner);
+  font-size: 0.8125rem;
+  color: var(--accent-rose);
+  background: var(--outflow-bg);
+  border: 1px solid var(--outflow-border);
+}
+.auth-note {
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+.auth-note code { font-family: var(--font-martian), ui-monospace, monospace; font-size: 0.8em; color: var(--text-primary); }
+.auth-switch { align-self: flex-start; }
+
+.auth-wait {
+  min-height: 100svh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-base);
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+.auth-wait > span { animation: fade-in var(--dur-base) var(--ease-out) 400ms both; }
+
+@media (max-width: 899.98px) {
+  .auth-stage {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+  }
+  .auth-poster { min-height: 34svh; gap: 1.25rem; }
+  .auth-title { font-size: clamp(2.25rem, 9.5vw, 3.75rem); }
+  .auth-panel { align-items: flex-start; }
+}
+
+/* ─── Каркас раздела: верхняя строка и поле ────────────────────── */
+.page-shell {
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  background: var(--page-bg);
+}
+
+.section-bar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: max(0.75rem, var(--safe-t)) clamp(1rem, 3vw, 2.5rem) 0.75rem;
+  background: var(--header-bg);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.section-bar-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.page-main {
+  flex: 1;
+  width: min(80rem, 100%);
+  margin: 0 auto;
+  padding: clamp(2rem, 7vh, 5rem) clamp(1rem, 3vw, 2.5rem) 4rem;
+}
+.page-main > .annot { margin-bottom: 1.1rem; }
+.page-lead-gap { height: clamp(1.5rem, 6vh, 4rem); }
+
+/* ─── Анализатор выписок ───────────────────────────────────────── */
+.wb-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: clamp(1.5rem, 5vh, 3.25rem) 1.5rem clamp(1rem, 3vh, 1.75rem);
+}
+@media (max-width: 639.98px) {
+  .wb-head { padding: 1.25rem 1rem 0.75rem; }
+}
+
+.wb-tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.wb-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: -1px;
+  padding: 0.75rem 0.9rem;
+  border-bottom: 1px solid transparent;
+  font-size: 0.875rem;
+  font-weight: 450;
+  white-space: nowrap;
+  transition: color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+
+/* Зона загрузки. Рамка — SVG-штрих (см. upload-panel.tsx): пока файл несут
+   над зоной, штрихи бегут по кругу и светлеют до цвета текста. Файл выбран —
+   рамка сплошная, но без зелёного: выбранный файл — не «всё хорошо», это
+   просто выбранный файл.                                                   */
+.drop {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 9.5rem;
+  padding: 1.5rem 1.25rem;
+  border-radius: var(--radius-inner);
+  background: var(--bg-raised);
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: background var(--dur-base) var(--ease-out);
+}
+.drop[data-state="file"] { min-height: 0; padding: 1rem 1.25rem; justify-content: flex-start; }
+.drop[data-state="over"] { background: var(--accent-soft); }
+.drop:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 3px; }
+
+.drop-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.drop-frame rect {
+  width: calc(100% - 1px);
+  height: calc(100% - 1px);
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-width: 1;
+  stroke-dasharray: 5 6;
+  transition: stroke var(--dur-base) var(--ease-out);
+}
+.drop:hover .drop-frame rect { stroke: var(--text-muted); }
+.drop[data-state="over"] .drop-frame rect {
+  stroke: var(--text-primary);
+  animation: drop-march 0.7s linear infinite;
+}
+.drop[data-state="file"] .drop-frame rect { stroke-dasharray: none; stroke: var(--border-base); }
+@keyframes drop-march { to { stroke-dashoffset: -22; } }
+
+.drop-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  text-align: center;
+}
+.drop-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.5rem;
-  height: 2.5rem;
-  margin-bottom: auto;
-  border-radius: var(--radius-inner);
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-raised);
-  color: var(--text-secondary);
+  width: 3rem;
+  height: 3rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-base);
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+.drop-title {
+  font-size: 1.125rem;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+.drop-file {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  width: 100%;
+}
+.drop-name {
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.home-tile-label {
-  font-size: clamp(0.95rem, 1.5vw, 1.25rem);
-  font-weight: 600;
-  letter-spacing: -0.015em;
+/* Подпись кнопки только на широком экране. Свой класс вместо `hidden
+   sm:inline`: утилита на элементе внутри .btn-ghost работала бы, но
+   держать одну механику на все случаи надёжнее. */
+@media (max-width: 639.98px) {
+  .only-desktop-inline { display: none !important; }
 }
 
-/* Откуда прилетает каждая плитка. Значения в vw/vh, а не в пикселях: плитка
-   обязана стартовать ЗА краем экрана на любой ширине, иначе на большом
-   мониторе влёт превращается в подрагивание на месте.                       */
-.home-tile[data-corner="tl"] { --home-fx: -70vw; --home-fy: -70vh; }
-.home-tile[data-corner="tr"] { --home-fx:  70vw; --home-fy: -70vh; }
-.home-tile[data-corner="bl"] { --home-fx: -70vw; --home-fy:  70vh; }
-.home-tile[data-corner="br"] { --home-fx:  70vw; --home-fy:  70vh; }
-
-/* Секунда до влёта — из задания: сначала виден фон, потом собирается
-   интерфейс. Вынесено переменной, чтобы глушилка ниже обнуляла её заодно
-   с длительностями, а не переопределяла animation-delay у каждой плитки.    */
-:root { --home-delay: 1000ms; }
-
-@keyframes home-fly-in {
-  from {
-    opacity: 0;
-    transform: translate3d(var(--home-fx, 0), var(--home-fy, 0), 0) scale(0.72);
-  }
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-}
-
-/* Телефон: четыре плитки в две колонки становятся слишком тесными для
-   подписи в две строки, поэтому подсказка убирается, а не сжимается. */
-@media (max-width: 480px) {
-  .home-tile { min-height: 7.5rem; justify-content: center; }
-  .home-tile-icon { width: 2rem; height: 2rem; }
-}
-
-/* Общая глушилка внизу файла обнуляет длительность, но не задержку: без
-   этой строки плитки при prefers-reduced-motion просто отсутствовали бы
-   первую секунду, а потом возникали рывком — ровно то, от чего человек и
-   просил избавить.                                                          */
-@media (prefers-reduced-motion: reduce) {
-  :root { --home-delay: 0ms; }
+/* Пилюля в шапке на десктопе ниже общего минимума в 44px: он для пальца, а
+   мышью в шапке 36px хватает. Селектор из двух классов — чтобы выиграть у
+   общего правила `.btn-ghost { min-height: 44px }` при любом порядке. */
+@media (min-width: 640px) {
+  .btn-ghost.btn-sm,
+  .btn-primary.btn-sm { min-height: 36px; }
 }
 
 /* ─── Раздел «Таблицы» (Web-Excel) ─────────────────────────────────
@@ -2203,7 +2688,7 @@ html, body { overflow-x: clip; }
   align-items: center;
   gap: 0.5rem;
   font-size: 0.8125rem;
-  color: #f4f4f5;
+  color: #fffce1;
   cursor: pointer;
 }
 
@@ -3171,45 +3656,47 @@ html, body { overflow-x: clip; }
    .only-mobile / .only-desktop — `hidden` и `sm:flex` на них не сработают. */
 
 :root {
-  /* Рама и плита */
-  --fin-chrome:        #181d1f;
-  --fin-chrome-text:   #ffffff;
-  --fin-chrome-muted:  rgba(255, 255, 255, 0.62);
-  --fin-plate:         #ffffff;
-  --fin-plate-radius:  20px;
-  --fin-plate-border:  rgba(9, 9, 11, 0.07);
+  /* Рама и плита. Рама — та же тёплая сцена, что у всего продукта, а не
+     холодный графит Finmap: раздел живёт внутри нашего продукта, и рама в
+     чужой гамме читалась бы как встроенный сторонний сервис.               */
+  --fin-chrome:        #0e100f;
+  --fin-chrome-text:   #fffce1;
+  --fin-chrome-muted:  rgba(255, 252, 225, 0.62);
+  --fin-plate:         #fbfaf4;
+  --fin-plate-radius:  14px;
+  --fin-plate-border:  rgba(14, 16, 15, 0.07);
 
   /* Деньги: приход и расход — смысл, а не бренд */
-  --fin-income:        #0fa968;
-  --fin-income-soft:   rgba(138, 255, 185, 0.16);
-  --fin-income-line:   rgba(15, 169, 104, 0.28);
-  --fin-expense:       #ff6333;
-  --fin-expense-soft:  rgba(255, 141, 112, 0.16);
-  --fin-expense-line:  rgba(255, 99, 51, 0.28);
-  --fin-neutral-soft:  rgba(255, 255, 255, 0.16);
+  --fin-income:        #1f7a4a;
+  --fin-income-soft:   rgba(143, 220, 160, 0.16);
+  --fin-income-line:   rgba(31, 122, 74, 0.28);
+  --fin-expense:       #c2331f;
+  --fin-expense-soft:  rgba(255, 111, 94, 0.16);
+  --fin-expense-line:  rgba(194, 51, 31, 0.28);
+  --fin-neutral-soft:  rgba(255, 252, 225, 0.12);
 
   /* Текст на плите */
-  --fin-text:          #131313;
-  --fin-text-soft:     #5b6266;
-  --fin-line:          rgba(9, 9, 11, 0.08);
+  --fin-text:          #0e100f;
+  --fin-text-soft:     #55564c;
+  --fin-line:          rgba(14, 16, 15, 0.08);
 
   --fin-rail-w:        72px;
-  --fin-rail-bg:       rgba(17, 20, 24, 0.055);
-  --fin-rail-mark-bg:  #ffffff;
+  --fin-rail-bg:       rgba(14, 16, 15, 0.045);
+  --fin-rail-mark-bg:  rgba(14, 16, 15, 0.05);
   --fin-rail-open:     288px;
 }
 
 :root[data-theme="dark"] {
-  --fin-rail-bg:       rgba(255, 255, 255, 0.055);
-  --fin-rail-mark-bg:  rgba(255, 255, 255, 0.06);
+  --fin-rail-bg:       rgba(255, 252, 225, 0.04);
+  --fin-rail-mark-bg:  rgba(255, 252, 225, 0.06);
   --fin-plate:         var(--bg-surface);
   --fin-plate-border:  var(--border-base);
   --fin-text:          var(--text-primary);
   --fin-text-soft:     var(--text-secondary);
   --fin-line:          var(--border-subtle);
-  /* На тёмной плите светлая мята читается лучше тёмной. */
-  --fin-income:        #6ee7b7;
-  --fin-expense:       #ff8d70;
+  /* На тёмной плите светлые тона читаются лучше тёмных. */
+  --fin-income:        #8fdca0;
+  --fin-expense:       #ff8a70;
 }
 
 /* ─── Рама и плита ─── */
@@ -3468,7 +3955,7 @@ html, body { overflow-x: clip; }
   background: transparent;
   color: var(--fin-text-soft);
   font-size: 0.875rem;
-  font-weight: 600;
+  font-weight: 450;
   letter-spacing: -0.01em;
   text-align: left;
   cursor: pointer;
@@ -3550,9 +4037,9 @@ html, body { overflow-x: clip; }
    моноширинным. Капслок — голос аналитики BBC, здесь он звучал бы чужим. */
 .fin-label { font-size: 0.75rem; color: var(--fin-text-soft); display: block; }
 .fin-total-value {
-  font-size: 1.625rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-size: 1.75rem;
+  font-weight: 400;
+  letter-spacing: -0.04em;
   color: var(--fin-text);
   font-variant-numeric: tabular-nums;
 }
@@ -3609,9 +4096,9 @@ html, body { overflow-x: clip; }
   gap: 0.375rem;
   flex: 0 0 auto;
   padding: 0.4rem 1rem;
-  border-radius: 20px;
+  border-radius: var(--radius-pill);
   font-size: 0.9375rem;
-  font-weight: 700;
+  font-weight: 500;
   letter-spacing: -0.01em;
   color: var(--fin-text-soft);
   background: transparent;
@@ -3640,9 +4127,10 @@ html, body { overflow-x: clip; }
   gap: 0.375rem;
   height: 40px;
   padding: 0 1.25rem;
-  border-radius: 12px;
+  border-radius: var(--radius-pill);
   font-size: 0.9375rem;
-  font-weight: 700;
+  font-weight: 500;
+  letter-spacing: -0.01em;
   cursor: pointer;
   border: none;
   background: var(--fin-neutral-soft);
@@ -3651,6 +4139,7 @@ html, body { overflow-x: clip; }
   transition: filter var(--dur-fast) var(--ease-out);
 }
 .fin-act:hover { filter: brightness(1.25); }
+.fin-act:focus-visible { outline: 2px solid var(--fin-chrome-text); outline-offset: 2px; }
 .fin-act[data-kind="income"] { background: var(--fin-income-soft); }
 .fin-act[data-kind="expense"] { background: var(--fin-expense-soft); }
 
@@ -3659,10 +4148,10 @@ html, body { overflow-x: clip; }
 .fin-section-title {
   margin: 0;
   padding: 1.35rem 0 0.95rem;
-  font-size: 1.375rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
+  font-size: 2rem;
+  font-weight: 400;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
   color: var(--fin-text);
 }
 @media (max-width: 1023.98px) {
@@ -3679,10 +4168,10 @@ html, body { overflow-x: clip; }
   width: 34px;
   height: 34px;
   flex-shrink: 0;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  color: #fff;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  border: 1px solid rgba(255, 252, 225, 0.22);
+  color: var(--fin-chrome-text);
 }
 .fin-table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; color: var(--fin-text); }
 .fin-table th {
@@ -3706,8 +4195,11 @@ html, body { overflow-x: clip; }
 }
 .fin-table tbody tr:hover td { background: rgba(127, 127, 127, 0.06); }
 .fin-table td.fin-strong { color: var(--fin-text); }
+/* Суммы — тем же шрифтом, что и текст, с табличными цифрами. Моноширинный
+   для денег здесь был наследством Finmap; у Geologica цифры табличные сами,
+   а широкий моноширинный выдавливал колонки на узком экране. */
 .fin-num {
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-geologica), ui-sans-serif, system-ui, sans-serif;
   font-variant-numeric: tabular-nums;
   text-align: right;
   white-space: nowrap;
@@ -3743,6 +4235,11 @@ html, body { overflow-x: clip; }
   cursor: pointer;
 }
 .fin-chip:hover { color: var(--fin-text); border-color: var(--fin-text-soft); }
+/* Под палец — не меньше 28px: «Править» и «Убрать» в строке журнала были по
+   20px, и на телефоне промах по соседней кнопке удалял операцию. */
+@media (pointer: coarse), (max-width: 639.98px) {
+  .fin-chip { min-height: 28px; padding: 0.3rem 0.7rem; }
+}
 
 /* ─── Отчёты ─── */
 .fin-report { width: 100%; border-collapse: collapse; font-size: 0.8125rem; color: var(--fin-text); }
@@ -3788,7 +4285,7 @@ html, body { overflow-x: clip; }
 .fin-cal-num { color: var(--fin-text-soft); font-weight: 600; }
 .fin-cal-bal {
   margin-top: auto;
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-geologica), ui-sans-serif, system-ui, sans-serif;
   font-variant-numeric: tabular-nums;
   color: var(--fin-text);
 }
@@ -3801,8 +4298,8 @@ html, body { overflow-x: clip; }
   align-items: center;
   gap: 0.5rem;
   padding: 2.25rem 1rem;
-  border: 1px dashed var(--fin-line);
-  border-radius: 16px;
+  border: 1px dashed var(--fin-text-soft);
+  border-radius: var(--radius-card);
   background: transparent;
   text-align: center;
   cursor: pointer;
@@ -3824,7 +4321,7 @@ html, body { overflow-x: clip; }
 .fin-row-issue[data-done="true"] { opacity: 0.72; }
 
 .fin-row-issue:last-child { border-bottom: none; }
-.fin-issue-line { font-family: var(--font-plex-mono), ui-monospace, monospace; color: var(--fin-text-soft); }
+.fin-issue-line { font-family: var(--font-martian), ui-monospace, monospace; color: var(--fin-text-soft); }
 .fin-issue-text { color: var(--fin-expense); }
 .fin-issue-skip { color: var(--fin-text-soft); }
 
@@ -3851,15 +4348,16 @@ html, body { overflow-x: clip; }
   flex-direction: column;
   gap: 0.25rem;
   padding: 0.8rem 0.9rem;
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   border: 1px solid var(--fin-line);
   background: transparent;
 }
 .fin-kpi-label { font-size: 0.75rem; color: var(--fin-text-soft); }
 .fin-kpi-value {
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
-  font-size: 1.125rem;
-  font-weight: 600;
+  font-family: var(--font-geologica), ui-sans-serif, system-ui, sans-serif;
+  font-size: 1.375rem;
+  font-weight: 400;
+  letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
   color: var(--fin-text);
 }
@@ -3868,13 +4366,13 @@ html, body { overflow-x: clip; }
    тонкой рамкой — иначе на плите получается матрёшка из теней. */
 .fin-card {
   border: 1px solid var(--fin-line);
-  border-radius: 16px;
+  border-radius: var(--radius-card);
   background: transparent;
   color: var(--fin-text);
 }
 
 /* Лист Univer занимает всю оставшуюся высоту; замер — use-fill-height. */
-.fin-sheet { border-radius: 14px; overflow: hidden; border: 1px solid var(--fin-line); }
+.fin-sheet { border-radius: var(--radius-card); overflow: hidden; border: 1px solid var(--fin-line); }
 
 /* ─── Лист во весь экран ─── */
 .fin-sheet-wrap { position: relative; }
@@ -3929,7 +4427,7 @@ html, body { overflow-x: clip; }
   .fin-head { flex-wrap: wrap; }
   .fin-actions { flex: 1 0 100%; }
   .fin-act { flex: 1; padding: 0 0.75rem; }
-  .fin-plate { margin: 0 0.5rem 0.5rem; border-radius: 16px; }
+  .fin-plate { margin: 0 0.5rem 0.5rem; border-radius: 12px; }
   .fin-body { padding: 0 0.75rem 1.25rem; }
 
   /* Отборы журнала — одна прокручиваемая строка, а не четыре ряда: стопкой

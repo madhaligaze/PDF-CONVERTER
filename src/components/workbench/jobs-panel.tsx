@@ -4,7 +4,7 @@ import { SectionCard } from "@/components/workbench/section-card";
 const STATUS_BADGE: Record<string, string> = {
   queued:    "badge-slate",
   running:   "badge-amber",
-  completed: "badge-emerald",
+  completed: "badge-slate",
   failed:    "badge-rose",
 };
 
@@ -51,7 +51,7 @@ export function JobsPanel({ jobs, onOpenSession }: Props) {
                   </span>
                 </div>
                 {job.error_message ? (
-                  <p className="mt-1 text-xs text-rose-400 truncate">{job.error_message}</p>
+                  <p className="mt-1 text-xs truncate" style={{ color: "var(--accent-rose)" }}>{job.error_message}</p>
                 ) : null}
               </div>
               {job.session_id ? (

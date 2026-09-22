@@ -141,7 +141,7 @@ export function OcrReviewPanel({
               {review.available_fields.map((field) => (
                 <label key={field.key} className="text-xs" style={{ color: "var(--text-secondary)" }}>
                   {field.label}
-                  {field.required ? <span className="text-rose-400 ml-0.5">*</span> : null}
+                  {field.required ? <span className="ml-0.5" style={{ color: "var(--accent-rose)" }}>*</span> : null}
                   <select
                     className="input-field mt-1"
                     value={columnMapping[field.key] ?? ""}

@@ -13,13 +13,14 @@
  * Вся связь с дашбордом — в этом файле. Снесут дашборд или «Таблицы» — править
  * придётся только его.
  */
-import Link from "next/link";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { BbcApiError, fetchMe, logout } from "@/components/bbc-dashboard/api";
 import { LoginScreen } from "@/components/bbc-dashboard/access/login-screen";
 import { SetPasswordScreen } from "@/components/bbc-dashboard/access/set-password-screen";
 import type { BbcMe } from "@/components/bbc-dashboard/types";
+import { StageLink } from "@/components/motion/stage-transition";
+import { AuthStage, AuthWait } from "@/components/stage/auth-stage";
 
 type Access =
   | { kind: "checking" }
@@ -54,14 +55,16 @@ export function TablesGate({ children }: { children: ReactNode }) {
   };
 
   if (access.kind === "checking") {
-    return <Screen title="Таблицы">Проверяем доступ…</Screen>;
+    return <AuthWait>Проверяем доступ…</AuthWait>;
   }
 
   if (access.kind === "failed") {
     return (
-      <Screen title="Таблицы">
-        <p role="alert">{access.message}</p>
-        <button type="button" className="btn-primary mt-4 px-4 py-2.5" onClick={() => void check()}>
+      <Screen heading="Не удалось проверить доступ">
+        <p className="auth-error" role="alert">
+          {access.message}
+        </p>
+        <button type="button" className="btn-primary" onClick={() => void check()}>
           Повторить
         </button>
       </Screen>
@@ -80,21 +83,24 @@ export function TablesGate({ children }: { children: ReactNode }) {
       <LoginScreen
         needsSetup={me.needs_setup}
         onSignedIn={(signedIn) => setAccess({ kind: "known", me: signedIn })}
+        title="Таблицы"
+        backHref="/"
+        backLabel="Разделы"
       />
     );
   }
 
   if (!me.is_admin || me.link_label) {
     return (
-      <Screen title="Раздел закрыт">
-        <p>«Таблицы» открыты только администраторам BBC.</p>
-        <div className="flex flex-wrap gap-2 mt-4">
-          <button type="button" className="btn-primary px-4 py-2.5" onClick={() => void signOut()}>
+      <Screen heading="Раздел закрыт">
+        <p className="auth-note">«Таблицы» открыты только администраторам BBC.</p>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="btn-primary" onClick={() => void signOut()}>
             Войти другой учётной записью
           </button>
-          <Link className="btn-ghost px-4 py-2.5" href="/">
+          <StageLink className="btn-ghost" href="/" label="Разделы">
             На главную
-          </Link>
+          </StageLink>
         </div>
       </Screen>
     );
@@ -103,23 +109,13 @@ export function TablesGate({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-function Screen({ title, children }: { title: string; children: ReactNode }) {
+function Screen({ heading, children }: { heading: string; children: ReactNode }) {
   return (
-    <div
-      className="min-h-screen min-h-[100dvh] flex items-center justify-center px-5"
-      style={{ background: "var(--page-bg)" }}
-    >
-      <div className="card w-full max-w-sm p-7" role="status" aria-live="polite">
-        <h1
-          className="text-base font-semibold mb-3"
-          style={{ color: "var(--text-primary)", letterSpacing: "-0.01em" }}
-        >
-          {title}
-        </h1>
-        <div className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }}>
-          {children}
-        </div>
+    <AuthStage owner="BBC Consulting" title="Таблицы" backHref="/" backLabel="Разделы">
+      <h2 className="auth-heading">{heading}</h2>
+      <div className="auth-fields" role="status" aria-live="polite">
+        {children}
       </div>
-    </div>
+    </AuthStage>
   );
 }

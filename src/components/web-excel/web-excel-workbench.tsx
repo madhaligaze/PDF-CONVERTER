@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ArrowLeftIcon, ClockIcon, GridIcon } from "@/components/icons";
+import { StageLink } from "@/components/motion/stage-transition";
 import { webExcelApi, type ImportStats, type SavedBook } from "./api";
 import { ImportDialog } from "./import-dialog";
 import { assembleWorkbook, type SheetList, type TabPayload } from "./assemble";
@@ -283,10 +283,10 @@ export function WebExcelWorkbench() {
   return (
     <div className="we-shell">
       <header className="we-bar">
-        <Link href="/" className="btn-ghost text-xs px-2.5 py-1.5 flex items-center gap-1.5">
+        <StageLink href="/" label="Разделы" className="btn-ghost btn-sm" title="Разделы">
           <ArrowLeftIcon size={15} />
-          <span className="hidden sm:inline">Разделы</span>
-        </Link>
+          <span className="only-desktop-inline">Разделы</span>
+        </StageLink>
 
         <input
           className="we-name"

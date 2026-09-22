@@ -19,7 +19,8 @@ type Props = {
 };
 
 function confidenceColor(c: number) {
-  if (c >= 0.9) return "badge-emerald";
+  // Уверенная строка цветом не помечается — цвет только у сомнения и отказа.
+  if (c >= 0.9) return "badge-slate";
   if (c >= 0.7) return "badge-amber";
   return "badge-rose";
 }
@@ -450,17 +451,17 @@ export function VariantPreviewPanel({ variants, diagnostics }: Props) {
                           )}
                           <span className="flex items-center gap-0.5 ml-1 opacity-50 hover:opacity-100">
                             <button type="button" title="Влево" disabled={ci === 0}
-                              className="text-[10px] px-0.5 hover:text-blue-500 disabled:opacity-20"
+                              className="text-[10px] px-0.5 hover:text-[var(--text-primary)] disabled:opacity-20"
                               onClick={() => moveColumn(ci, -1)}>←</button>
                             <button type="button" title="Вправо" disabled={ci === displayColumns.length - 1}
-                              className="text-[10px] px-0.5 hover:text-blue-500 disabled:opacity-20"
+                              className="text-[10px] px-0.5 hover:text-[var(--text-primary)] disabled:opacity-20"
                               onClick={() => moveColumn(ci, 1)}>→</button>
                             <button type="button" title="Добавить формулу"
-                              className="text-[10px] px-0.5 hover:text-emerald-500"
-                              style={{ color: columnFormulas[col.key] ? "var(--green-500,#22c55e)" : undefined }}
+                              className="text-[10px] px-0.5 hover:text-[var(--text-primary)]"
+                              style={columnFormulas[col.key] ? { color: "var(--text-primary)", fontWeight: 700 } : undefined}
                               onClick={() => setAdvisorColIdx(advisorColIdx === ci ? null : ci)}>ƒ</button>
                             <button type="button" title="Удалить столбец"
-                              className="text-[10px] px-0.5 hover:text-rose-500"
+                              className="text-[10px] px-0.5 hover:text-[var(--accent-rose)]"
                               onClick={() => deleteColumn(ci)}>✕</button>
                           </span>
                         </div>
@@ -591,7 +592,7 @@ export function VariantPreviewPanel({ variants, diagnostics }: Props) {
                     {editMode && (
                       <td className="px-2 py-2.5 text-center">
                         <button type="button" title="Удалить строку"
-                          className="text-xs opacity-30 hover:opacity-100 hover:text-rose-500"
+                          className="text-xs opacity-30 hover:opacity-100 hover:text-[var(--accent-rose)]"
                           onClick={() => deleteRow(absIdx)}>✕</button>
                       </td>
                     )}
@@ -649,7 +650,7 @@ export function VariantPreviewPanel({ variants, diagnostics }: Props) {
           <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
             Есть несохранённые изменения — <span style={{ color: "var(--text-muted)" }}>строк: {displayRows.length}, столбцов: {displayColumns.length}</span>
             {Object.keys(columnFormulas).length > 0 && (
-              <span className="ml-2" style={{ color: "var(--green-500,#22c55e)" }}>
+              <span className="ml-2" style={{ color: "var(--text-primary)" }}>
                 · формул: {Object.keys(columnFormulas).length}
               </span>
             )}
