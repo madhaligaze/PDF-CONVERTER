@@ -40,6 +40,7 @@ export function DictionariesPanel({ dictionaries, onChanged }: Props) {
   const [accountName, setAccountName] = useState("");
   const [accountKind, setAccountKind] = useState("bank");
   const [accountStart, setAccountStart] = useState("");
+  const [accountNumber, setAccountNumber] = useState("");
   const [busy, setBusy] = useState(false);
 
   const addAccount = async () => {
@@ -50,9 +51,11 @@ export function DictionariesPanel({ dictionaries, onChanged }: Props) {
         name: accountName,
         kind: accountKind,
         starting_balance: accountStart.replace(/\s/g, "").replace(",", ".") || "0",
+        number: accountNumber,
       });
       setAccountName("");
       setAccountStart("");
+      setAccountNumber("");
       onChanged();
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : "Счёт не завёлся");
@@ -76,6 +79,9 @@ export function DictionariesPanel({ dictionaries, onChanged }: Props) {
                 {KINDS.find((item) => item.value === account.kind)?.title ?? account.kind}
                 {account.excluded_from_reports ? " · вне отчётов" : ""}
               </span>
+              {account.kind === "bank" || account.kind === "card" || account.number ? (
+                <AccountNumber account={account} onSaved={onChanged} onError={setError} />
+              ) : null}
             </span>
             <StartingBalance account={account} onSaved={onChanged} onError={setError} />
           </div>
@@ -115,6 +121,16 @@ export function DictionariesPanel({ dictionaries, onChanged }: Props) {
               value={accountStart}
               onChange={(event) => setAccountStart(event.target.value)}
               placeholder="0"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="fin-label">Номер счёта (IBAN)</span>
+            <input
+              className="input-field fin-num"
+              style={{ width: "15rem", textAlign: "left" }}
+              value={accountNumber}
+              onChange={(event) => setAccountNumber(event.target.value)}
+              placeholder="KZ…"
             />
           </label>
           <button type="button" className="btn-primary" disabled={busy || !accountName.trim()} onClick={addAccount}>
@@ -337,6 +353,83 @@ function EntryList({
   );
 }
 
+
+/**
+ * Номер счёта в банке — щелчком, как начальный остаток.
+ *
+ * По номеру выписка сама находит свой счёт, а перевод на свой депозит
+ * отличается от расхода. Номер записывается и сам — при первой заводке
+ * выписки на счёт без номера; здесь его видно и можно поправить.
+ */
+function AccountNumber({
+  account,
+  onSaved,
+  onError,
+}: {
+  account: Dictionaries["accounts"][number];
+  onSaved: () => void;
+  onError: (text: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      await financeApi.setAccountNumber(account.id, value.trim());
+      setEditing(false);
+      onError("");
+      onSaved();
+    } catch (exc) {
+      onError(exc instanceof Error ? exc.message : "Номер не записался");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        className="fin-num text-xs"
+        style={{
+          display: "block",
+          color: "var(--text-muted)",
+          textDecoration: "underline dotted",
+          textUnderlineOffset: 3,
+        }}
+        onClick={() => {
+          setValue(account.number ?? "");
+          setEditing(true);
+        }}
+        title="Номер счёта в банке"
+      >
+        {account.number || "номер счёта не указан"}
+      </button>
+    );
+  }
+  return (
+    <span className="flex items-center gap-1 pt-1">
+      <input
+        className="input-field fin-num"
+        style={{ width: "15rem" }}
+        value={value}
+        autoFocus
+        placeholder="KZ…"
+        onChange={(event) => setValue(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") void save();
+          if (event.key === "Escape") setEditing(false);
+        }}
+        aria-label={`Номер счёта «${account.name}»`}
+      />
+      <button type="button" className="btn-ghost text-xs" disabled={busy} onClick={() => void save()}>
+        Сохранить
+      </button>
+    </span>
+  );
+}
 
 /**
  * Начальный остаток — щелчком по цифре.

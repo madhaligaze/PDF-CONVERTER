@@ -4,8 +4,10 @@ import { useState } from "react";
 
 import {
   type Account,
+  type ImportAnswer,
   type ImportPreview,
   type ImportRow,
+  type SuggestedAccount,
   financeApi,
   formatDate,
   formatMoney,
@@ -44,7 +46,7 @@ export function PreviewView({
   setPreview: (next: ImportPreview) => void;
   accounts: Account[];
   /** Перечитать источник с ответом на вопрос раздела. */
-  reload: (answer: { date_order?: string; default_account?: string }) => Promise<ImportPreview>;
+  reload: (answer: ImportAnswer) => Promise<ImportPreview>;
   onApplied: () => void;
   onReset: () => void;
   resetLabel: string;
@@ -66,13 +68,41 @@ export function PreviewView({
   /** Счёт для разом всех отложенных строк, которым его не хватает. */
   const [bulkAccount, setBulkAccount] = useState("");
 
-  const answer = async (patch: { date_order?: string; default_account?: string }) => {
+  const answer = async (patch: ImportAnswer) => {
     setBusy(true);
     setError("");
     try {
       setPreview(await reload(patch));
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : "Не прочиталось");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * Завести счёт с номером из выписки и перечитать источник.
+   *
+   * `pick` — сделать новый счёт счётом выписки (ответ на вопрос «на какой
+   * счёт»). Без него это второй свой счёт из переводов: депозит, на который
+   * уходили деньги, — перечитывание превращает отложенные строки в переводы.
+   */
+  const createAccount = async (entry: { name: string; number: string; currency?: string }, pick: boolean) => {
+    const name = entry.name.trim();
+    if (!name) return;
+    setBusy(true);
+    setError("");
+    try {
+      await financeApi.createAccount({
+        name,
+        kind: "bank",
+        number: entry.number,
+        ...(entry.currency ? { currency: entry.currency } : {}),
+      });
+      onApplied();
+      setPreview(await reload(pick ? { default_account: name } : {}));
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "Счёт не завёлся");
     } finally {
       setBusy(false);
     }
@@ -87,7 +117,10 @@ export function PreviewView({
         `Завели ${done.imported} ${plural(done.imported, "операцию", "операции", "операций")}` +
           (done.failed ? `, отложено ${done.failed}` : "") +
           (done.duplicate ? `, повторов ${done.duplicate}` : "") +
-          (done.skipped ? `, пропущено ${done.skipped}` : ""),
+          (done.skipped ? `, пропущено ${done.skipped}` : "") +
+          // Номер записан счёту сам — это решение раздела, и оно должно быть
+          // видно: иначе следующая выписка «сама» ляжет на счёт без объяснений.
+          (done.remembered ? ` · счёту «${done.remembered.account}» записан номер ${done.remembered.number}` : ""),
       );
       const fresh = await financeApi.importBatch(preview.batch_id);
       setPreview({ ...preview, rows: fresh.rows as ImportRow[] });
@@ -135,8 +168,7 @@ export function PreviewView({
     try {
       const lines = needAccount.map((row) => row.line);
       for (const row of needAccount) {
-        const field = row.values.kind === "income" ? "account_to" : "account_from";
-        await financeApi.fixImportRow(preview.batch_id, row.line, { [field]: name });
+        await financeApi.fixImportRow(preview.batch_id, row.line, { [accountField(row)]: name });
       }
       const fresh = await financeApi.importBatch(preview.batch_id);
       setPreview({ ...preview, rows: fresh.rows as ImportRow[] });
@@ -219,6 +251,15 @@ export function PreviewView({
               </button>
             ))}
           </div>
+          {preview.question.kind === "account" && preview.question.create ? (
+            <NewAccount
+              key={preview.question.create.number || "new"}
+              suggestion={preview.question.create}
+              busy={busy}
+              label="Завести и загрузить"
+              onCreate={(entry) => void createAccount(entry, true)}
+            />
+          ) : null}
         </div>
       ) : null}
 
@@ -327,6 +368,15 @@ export function PreviewView({
         />
       ) : null}
 
+      {preview.accounts_suggested?.length ? (
+        <div className="fin-card p-3 flex flex-col gap-2">
+          <p className="fin-issue-text">Переводы на свои счета, которых нет в справочнике</p>
+          {preview.accounts_suggested.map((entry) => (
+            <SuggestedRow key={entry.number} entry={entry} busy={busy} onCreate={(next) => void createAccount(next, false)} />
+          ))}
+        </div>
+      ) : null}
+
       {preview.accounts_missing.length ? (
         <div className="fin-card p-3 flex flex-col gap-2">
           <p className="fin-issue-text">Счетов нет в справочнике: {preview.accounts_missing.join(", ")}</p>
@@ -403,7 +453,7 @@ export function PreviewView({
       {skipped.length ? (
         <details className="fin-card p-3">
           <summary className="text-xs cursor-pointer" style={{ color: "var(--text-secondary)" }}>
-            Пропущенные строки — {skipped.length} (итоги, пустые, повторы)
+            Пропущенные строки — {skipped.length} (итоги, пустые, служебные, повторы)
           </summary>
           <div className="pt-2">
             {skipped.slice(0, 40).map((row) => (
@@ -452,7 +502,11 @@ export function PreviewView({
                           ? "списание"
                           : "перевод"}
                     </td>
-                    <td>{values.account_to || values.account_from || "—"}</td>
+                    <td>
+                      {values.kind === "transfer"
+                        ? `${values.account_from || "—"} → ${values.account_to || "—"}`
+                        : values.account_to || values.account_from || "—"}
+                    </td>
                     <td>{values.category || "—"}</td>
                     <td>{values.counterparty || "—"}</td>
                     <td style={{ whiteSpace: "normal", maxWidth: "16rem" }}>{values.comment || ""}</td>
@@ -555,11 +609,7 @@ function FailedRow({
               className="input-field"
               style={{ width: "auto" }}
               defaultValue=""
-              onChange={(event) =>
-                onFix(row.line, {
-                  [values.kind === "income" ? "account_to" : "account_from"]: event.target.value,
-                })
-              }
+              onChange={(event) => onFix(row.line, { [accountField(row)]: event.target.value })}
             >
               <option value="">выберите счёт</option>
               {accounts.map((account) => (
@@ -571,6 +621,79 @@ function FailedRow({
           ) : null}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Какое поле счёта дописать в отложенной строке — то, на которое указывает
+ * замечание.
+ *
+ * Раньше поле выводилось из вида операции: поступлению — «на счёт», остальному
+ * — «со счёта». У перевода на свой депозит не хватает счёта «куда», и выбор
+ * счёта в строке записывался не в то поле: строка так и оставалась отложенной.
+ */
+function accountField(row: ImportRow): "account_from" | "account_to" {
+  const problem = row.problems.find((item) => item.field === "account_from" || item.field === "account_to");
+  if (problem) return problem.field as "account_from" | "account_to";
+  return row.values.kind === "income" ? "account_to" : "account_from";
+}
+
+/** Новый счёт с номером из выписки: имя — подсказка, его можно переписать. */
+function NewAccount({
+  suggestion,
+  busy,
+  label,
+  onCreate,
+}: {
+  suggestion: { name: string; number: string; currency: string };
+  busy: boolean;
+  label: string;
+  onCreate: (entry: { name: string; number: string; currency: string }) => void;
+}) {
+  const [name, setName] = useState(suggestion.name);
+  return (
+    <div className="flex flex-wrap items-center gap-2 pt-1">
+      <input
+        className="input-field"
+        style={{ width: "14rem" }}
+        value={name}
+        placeholder="Название нового счёта"
+        aria-label="Название нового счёта"
+        onChange={(event) => setName(event.target.value)}
+      />
+      {suggestion.number ? (
+        <span className="fin-num text-xs" style={{ color: "var(--text-muted)" }}>
+          {suggestion.number}
+        </span>
+      ) : null}
+      <button
+        type="button"
+        className="btn-ghost text-xs"
+        disabled={busy || !name.trim()}
+        onClick={() => onCreate({ ...suggestion, name })}
+      >
+        {label}
+      </button>
+    </div>
+  );
+}
+
+function SuggestedRow({
+  entry,
+  busy,
+  onCreate,
+}: {
+  entry: SuggestedAccount;
+  busy: boolean;
+  onCreate: (entry: { name: string; number: string; currency: string }) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-2">
+      <span className="fin-num text-xs pt-1" style={{ color: "var(--text-secondary)" }}>
+        {entry.rows} {plural(entry.rows, "строка", "строки", "строк")}
+      </span>
+      <NewAccount suggestion={entry} busy={busy} label="Завести счёт" onCreate={onCreate} />
     </div>
   );
 }
@@ -617,11 +740,18 @@ function BankCard({
     check.ledger_opening !== null && check.opening_balance !== null && !check.can_set_start
       ? Number(check.ledger_opening) - Number(check.opening_balance)
       : null;
-  const who = [check.card_number, check.account_number].filter(Boolean).join(" · ");
+  const who = [check.bank_name, check.card_number, check.account_number, check.owner].filter(Boolean).join(" · ");
 
   return (
     <div className="fin-card p-4 flex flex-col gap-1">
       <p className="fin-label mb-1">Сверка с банком{who ? ` · ${who}` : ""}</p>
+      {/* Решение раздела видно, а не подразумевается: счёт выбран не человеком,
+          а по номеру из выписки. Ошибись справочник — это место, где видно. */}
+      {check.account && check.account_by === "number" ? (
+        <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+          счёт «{check.account}» узнан по номеру
+        </span>
+      ) : null}
       {check.opening_balance !== null ? (
         <div className="fin-acc-row">
           <span className="fin-acc-name">Банк на {start}</span>

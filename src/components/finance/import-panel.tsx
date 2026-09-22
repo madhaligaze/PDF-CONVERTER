@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   type Account,
+  type ImportAnswer,
   type ImportBatch,
   type ImportPreview,
   type ImportRow,
@@ -32,6 +33,14 @@ export function ImportPanel({ accounts, onChanged, onNext }: Props) {
   const [error, setError] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  /**
+   * Ответы на вопросы разбора по этому файлу — все сразу.
+   *
+   * Вопросов бывает два подряд: сначала порядок дат, потом счёт. Раньше второй
+   * ответ уходил без первого, разбор снова не знал порядка дат и снова
+   * спрашивал про даты — по кругу.
+   */
+  const answersRef = useRef<ImportAnswer>({});
 
   const loadBatches = useCallback(async () => {
     try {
@@ -92,11 +101,12 @@ export function ImportPanel({ accounts, onChanged, onNext }: Props) {
     }
   };
 
-  const send = async (next: File, answer?: { date_order?: string; default_account?: string }) => {
+  const send = async (next: File) => {
     setBusy(true);
     setError("");
+    answersRef.current = {};
     try {
-      const parsed = await financeApi.importPreview(next, answer ?? {});
+      const parsed = await financeApi.importPreview(next, {});
       setPreview(parsed);
       setFile(next);
     } catch (exc) {
@@ -131,12 +141,12 @@ export function ImportPanel({ accounts, onChanged, onNext }: Props) {
               {busy ? "Читаем файл…" : "Перетащите выписку или книгу"}
             </span>
             <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-              PDF · XLSX · CSV
+              PDF · XLSX · XLS · CSV · 1С
             </span>
             <input
               ref={inputRef}
               type="file"
-              accept=".pdf,.xlsx,.xlsm,.csv,.txt,.tsv"
+              accept=".pdf,.xlsx,.xlsm,.xls,.csv,.txt,.tsv,.htm,.html,.xml"
               className="hidden"
               onChange={(event) => {
                 const picked = event.target.files?.[0];
@@ -195,16 +205,18 @@ export function ImportPanel({ accounts, onChanged, onNext }: Props) {
           preview={preview}
           setPreview={setPreview}
           accounts={accounts}
-          reload={(answer) =>
-            file
-              ? financeApi.importPreview(file, answer)
-              : // Партия, открытая из истории: файла на руках нет, и перечитывать
-                // нечего — отдаём то, что уже разобрано и сохранено.
-                financeApi.importBatch(preview.batch_id).then((saved) => ({
-                  ...preview,
-                  rows: saved.rows as ImportRow[],
-                }))
-          }
+          reload={(answer) => {
+            if (!file) {
+              // Партия, открытая из истории: файла на руках нет, и перечитывать
+              // нечего — отдаём то, что уже разобрано и сохранено.
+              return financeApi.importBatch(preview.batch_id).then((saved) => ({
+                ...preview,
+                rows: saved.rows as ImportRow[],
+              }));
+            }
+            answersRef.current = { ...answersRef.current, ...answer };
+            return financeApi.importPreview(file, answersRef.current);
+          }}
           onApplied={() => {
             onChanged();
             void loadBatches();

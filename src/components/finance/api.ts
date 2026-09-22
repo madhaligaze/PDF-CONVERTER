@@ -20,6 +20,8 @@ export type Account = {
   currency: string;
   starting_balance: Money;
   excluded_from_reports: boolean;
+  /** Номер счёта в банке (IBAN). По нему выписка находит свой счёт. */
+  number?: string;
 };
 
 export type AccountBalance = Account & {
@@ -313,7 +315,15 @@ export type ImportQuestion = {
   text: string;
   samples: string[];
   options: { value: string; label: string; example: string }[];
+  /** Для вопроса о счёте: какой счёт завести, если нужного ещё нет. */
+  create?: { name: string; number: string; currency: string };
 };
+
+/** Свой счёт из переводов выписки, которого нет в справочнике. */
+export type SuggestedAccount = { name: string; number: string; currency: string; rows: number };
+
+/** Ответ на вопросы разбора — копится, пока вопросов не останется. */
+export type ImportAnswer = { date_order?: string; default_account?: string };
 
 /** Книга Google, открытая сервисному аккаунту программы. */
 export type SheetBook = { id: string; name: string; modified?: string };
@@ -321,7 +331,8 @@ export type SheetTab = { title: string; sheet_id: number; rows: number; cols: nu
 
 /**
  * Сверка выписки с банком: что банк напечатал и что получилось из строк.
- * Есть только у PDF-выписок, где банк печатает остатки на начало и конец.
+ * Есть у выписок любого формата, где банк печатает реквизиты и остатки —
+ * PDF, Excel, выгрузка 1С.
  */
 export type BankCheck = {
   period_start: string | null;
@@ -331,6 +342,10 @@ export type BankCheck = {
   account_number: string;
   card_number: string;
   account: string | null;
+  /** Как выбран счёт: «number» — узнан по номеру, «human» — выбран человеком. */
+  account_by?: string;
+  owner?: string;
+  bank_name?: string;
   file_net: Money;
   expected_closing: Money | null;
   gap: Money | null;
@@ -355,6 +370,7 @@ export type ImportPreview = {
   mapping: { columns: Record<string, { index: number; header: string; how: string }>; width: number };
   unused_columns: string[];
   accounts_missing: string[];
+  accounts_suggested?: SuggestedAccount[];
   rows: ImportRow[];
 };
 
@@ -689,6 +705,11 @@ export const financeApi = {
     request<DictEntry>(`/dictionaries/${kind}`, { method: "POST", body: JSON.stringify(body) }),
   createAccount: (body: unknown) =>
     request<DictEntry>("/accounts", { method: "POST", body: JSON.stringify(body) }),
+  setAccountNumber: (accountId: string, number: string) =>
+    request<{ id: string; name: string; number: string }>(`/accounts/${accountId}/number`, {
+      method: "PUT",
+      body: JSON.stringify({ number }),
+    }),
   archiveEntry: (kind: string, id: string) =>
     request<{ ok: boolean }>(`/dictionaries/${kind}/${id}`, { method: "DELETE" }),
 
@@ -737,7 +758,15 @@ export const financeApi = {
       `/import/batches/${id}`,
     ),
   applyBatch: (id: string, body: { lines?: number[]; create_dictionaries?: boolean } = {}) =>
-    request<{ imported: number; failed: number; skipped: number; duplicate: number; total: number }>(
+    request<{
+      imported: number;
+      failed: number;
+      skipped: number;
+      duplicate: number;
+      total: number;
+      /** Номер счёта из выписки, записанный счёту при заводке. */
+      remembered?: { account: string; number: string } | null;
+    }>(
       `/import/batches/${id}/apply`,
       { method: "POST", body: JSON.stringify(body) },
     ),

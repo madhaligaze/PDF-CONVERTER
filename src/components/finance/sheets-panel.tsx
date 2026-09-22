@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   type Account,
+  type ImportAnswer,
   type ImportPreview,
   type SheetBook,
   type SheetTab,
@@ -64,14 +65,23 @@ export function SheetsPanel({ accounts, onChanged }: { accounts: Account[]; onCh
     }
   };
 
-  const read = async (title: string, answer: { date_order?: string; default_account?: string } = {}) => {
+  /**
+   * Прочитать вкладку с ответами на вопросы разбора.
+   *
+   * Ответы копятся (см. `ImportPanel`): второй вопрос не должен стирать ответ
+   * на первый, иначе разбор спрашивает про даты по кругу.
+   */
+  const answersRef = useRef<ImportAnswer>({});
+  const read = async (title: string, answer: ImportAnswer = {}) => {
     if (!book) throw new Error("Книга не выбрана");
-    return financeApi.sheetPreview({ book_id: book.id, tab: title, ...answer });
+    answersRef.current = { ...answersRef.current, ...answer };
+    return financeApi.sheetPreview({ book_id: book.id, tab: title, ...answersRef.current });
   };
 
   const openTab = async (title: string) => {
     setBusy(true);
     setError("");
+    answersRef.current = {};
     try {
       const next = await read(title);
       setTab(title);
