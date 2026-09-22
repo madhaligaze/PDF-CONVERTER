@@ -5,7 +5,7 @@ import { useMemo, useRef, useState } from "react";
 import { useWorkbench } from "@/components/workbench/context";
 import { DiffAnalysisPanel } from "@/components/workbench/diff-analysis-panel";
 import { SaveTemplateModal } from "@/components/workbench/save-template-modal";
-import type { ColumnRecommendation, PreviewColumn, PreviewVariant, RowDiagnostic } from "@/components/workbench/types";
+import type { ColumnRecommendation, PreviewColumn, PreviewResponse, PreviewVariant, RowDiagnostic } from "@/components/workbench/types";
 import { formatValue } from "@/components/workbench/utils";
 
 const PAGE_SIZE = 50;
@@ -32,6 +32,17 @@ function variantGroupKey(v: PreviewVariant) {
 function isWideTextColumn(key: string, kind: string) {
   if (kind === "currency") return false;
   return ["detail", "comment", "details_operation"].includes(key);
+}
+
+function ReadingContext({ document }: { document: PreviewResponse["document"] }) {
+  const period = [document.period_start, document.period_end].filter(Boolean).join(" — ");
+  const bits = [document.account_holder, document.account_number, document.currency, period].filter(Boolean);
+  if (bits.length === 0) return null;
+  return (
+    <p className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
+      {bits.join(" · ")}
+    </p>
+  );
 }
 
 function emptyRow(columns: PreviewColumn[]): EditableRow {
@@ -362,6 +373,21 @@ export function VariantPreviewPanel({ variants, diagnostics }: Props) {
           </button>
         </div>
       </div>
+
+      {deferredPreview?.document.reading_note && (
+        <div
+          className="mb-4 rounded-lg px-3 py-2.5"
+          style={{ background: "var(--bg-hover)", border: "1px solid var(--border-base)" }}
+        >
+          <p className="text-[10px] uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>
+            Как посчитано
+          </p>
+          <p className="mt-1 text-sm leading-relaxed" style={{ color: "var(--text-primary)" }}>
+            {deferredPreview.document.reading_note}
+          </p>
+          <ReadingContext document={deferredPreview.document} />
+        </div>
+      )}
 
       {/* ── variant switcher ── */}
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start">

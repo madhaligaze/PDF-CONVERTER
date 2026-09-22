@@ -19,6 +19,7 @@ function cleanLabel(label: string) {
     .replace(/\bStatement\b/gi, "")
     .replace(/\bScanned\b/gi, "Сканы")
     .replace(/\bGeneric Bank\b/gi, "Другие банки")
+    .replace(/\bAdaptive Bank\b/gi, "Любая таблица")
     .replace(/\s{2,}/g, " ")
     .trim();
 }

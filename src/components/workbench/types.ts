@@ -190,6 +190,7 @@ export type PreviewResponse = {
     opening_balance?: number | null;
     closing_balance?: number | null;
     transaction_count: number;
+    reading_note?: string | null;
     totals: {
       income_total: number;
       expense_total: number;
