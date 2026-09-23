@@ -8,8 +8,7 @@
  * would work.
  *
  * Оформление — общая афиша входа (`AuthStage`): она ничего не знает о дашборде,
- * дашборд передаёт ей надписи и форму. Экран переиспользуют «Таблицы», поэтому
- * заголовок афиши и выход назад — параметры.
+ * дашборд передаёт ей надписи и форму.
  */
 import { useState, type FormEvent } from "react";
 
@@ -24,20 +23,9 @@ type Props = {
   linkExpired?: boolean;
   /** Получает ответ входа, чтобы оболочка убрала экран без второго запроса. */
   onSignedIn: (me: BbcMe) => void;
-  /** Надпись на афише — куда человек входит. */
-  title?: string;
-  backHref?: string;
-  backLabel?: string;
 };
 
-export function LoginScreen({
-  needsSetup,
-  linkExpired = false,
-  onSignedIn,
-  title = "Управленческий отчёт",
-  backHref = "/services",
-  backLabel = "Сервисы",
-}: Props) {
+export function LoginScreen({ needsSetup, linkExpired = false, onSignedIn }: Props) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +49,7 @@ export function LoginScreen({
   }
 
   return (
-    <AuthStage owner="BBC Consulting" title={title} backHref={backHref} backLabel={backLabel}>
+    <AuthStage owner="BBC Consulting" title="Управленческий отчёт" backHref="/services" backLabel="Сервисы">
       <h2 className="auth-heading">Вход</h2>
 
       {linkExpired ? (

@@ -9,7 +9,7 @@ import { ThemeToggle } from "@/components/stage/theme-toggle";
 const ENTRIES: IndexEntry[] = [
   { key: "analyzer", title: "Анализатор выписок", meta: "PDF · Excel · фото", href: "/analyzer" },
   { key: "services", title: "Сервисы", meta: "Autocall · BBC · Финансы", href: "/services" },
-  { key: "tables", title: "Таблицы", meta: "Google Sheets", href: "/web-excel" },
+  { key: "tables", title: "Таблицы", meta: "Полка · Google Sheets", href: "/web-excel" },
   { key: "history", title: "История", meta: "Прошлые разборы", href: "/history" },
 ];
 

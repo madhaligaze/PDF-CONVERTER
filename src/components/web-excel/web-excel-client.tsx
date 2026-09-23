@@ -2,19 +2,17 @@
 
 import dynamic from "next/dynamic";
 
-import { TablesGate } from "./tables-gate";
-
 // Univer references window/canvas at import time — keep it fully client-side.
-// Грузится только за шлюзом: до входа раздел не тянет ни кода листа, ни данных.
 const WebExcelWorkbench = dynamic(
   () => import("./web-excel-workbench").then((m) => m.WebExcelWorkbench),
-  { ssr: false, loading: () => <div style={{ padding: 24 }}>Загрузка таблиц…</div> },
+  { ssr: false, loading: () => <p className="we-grid-wait">Загружаем таблицы…</p> },
 );
 
+/**
+ * «Таблицы» открыты без входа: это место для своих таблиц, а не зеркало чужих
+ * книг. Раньше раздел стоял за входом дашборда BBC, потому что показывал его
+ * «Журнал» и реестр продаж; теперь чужих книг здесь нет вовсе.
+ */
 export function WebExcelClient() {
-  return (
-    <TablesGate>
-      <WebExcelWorkbench />
-    </TablesGate>
-  );
+  return <WebExcelWorkbench />;
 }

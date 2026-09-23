@@ -1,58 +1,48 @@
-import type { TabPayload } from "./assemble";
+import type { WorkbookSnapshot } from "@/components/univer/sheet";
+
+import type { SheetInfo } from "./workbook";
 
 const API = "/api/backend/api/v1/web-excel";
 
-export type SourceBook = { id: string; name: string; modified: string };
-export type SourceTab = {
-  sheet_id: number;
-  title: string;
-  index: number;
-  hidden: boolean;
-  rows: number;
-  cols: number;
-};
-export type SourceMeta = { id: string; title: string; tabs: SourceTab[] };
+export type TableSource = "blank" | "google" | "file";
 
-export type ImportStats = {
-  name: string;
-  rows: number;
-  cols: number;
-  styles: number;
-  merges: number;
-  truncated: boolean;
-  source_rows: number;
-  source_cols: number;
-};
-
-export type SavedBook = {
+export type ShelfItem = {
   id: number;
   name: string;
-  kind: string;
-  origin_spreadsheet_id: string;
-  origin_title: string;
-  origin_tabs: string[];
-  note: string;
+  source: TableSource;
+  source_ref: string;
+  sheets: SheetInfo[];
+  size_bytes: number;
   created_at: string | null;
   updated_at: string | null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  snapshot?: Record<string, any>;
+};
+
+export type ShelfTable = ShelfItem & { snapshot: WorkbookSnapshot };
+
+export type SavePayload = {
+  name?: string;
+  source?: TableSource;
+  source_ref?: string;
+  sheets?: SheetInfo[];
+  snapshot?: WorkbookSnapshot;
 };
 
 /**
- * Ошибка бэкенда разворачивается в текст до того, как попадёт наверх.
- *
- * FastAPI кладёт человеческую формулировку в `detail`, и именно её просили
- * показывать («у сервисного аккаунта нет доступа», «Google ограничил чтение»).
- * Без этого на экран попадало бы «HTTP 502» — фраза, по которой нельзя понять
- * ни что случилось, ни пройдёт ли оно само.
+ * Ошибка сервера — его же фразой из `detail` («Таблица весит 23 МБ — на полку
+ * помещается до 20 МБ»), а не «HTTP 413», по которой не понять, что делать.
  */
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API}${path}`, {
-    ...init,
-    headers: init?.body ? { "Content-Type": "application/json", ...init?.headers } : init?.headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API}${path}`, {
+      ...init,
+      headers: init?.body ? { "Content-Type": "application/json", ...init?.headers } : init?.headers,
+    });
+  } catch {
+    throw new Error("Сервер не отвечает — проверьте сеть");
+  }
   if (!response.ok) {
-    let detail = `HTTP ${response.status}`;
+    let detail = `Сервер ответил ${response.status}`;
     try {
       const body = await response.json();
       if (typeof body?.detail === "string") detail = body.detail;
@@ -64,34 +54,30 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-export const webExcelApi = {
-  sources: () => request<{ books: SourceBook[] }>("/sources"),
-  sourceMeta: (id: string) => request<SourceMeta>(`/sources/${id}`),
-  /** Одна вкладка. Книга собирается из них на клиенте — см. `assemble.ts`. */
-  importTab: (spreadsheetId: string, title: string) =>
-    request<TabPayload & { stats: ImportStats }>(
-      `/sources/${spreadsheetId}/tab?title=${encodeURIComponent(title)}`,
-    ),
-  refreshSources: () => request<{ ok: boolean }>("/sources/refresh", { method: "POST" }),
-  importBook: (spreadsheetId: string, tabs: string[]) =>
-    request<{
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      workbook: Record<string, any>;
-      stats: ImportStats[];
-      fonts: string[];
-      tabs: string[];
-      title: string;
-    }>("/import", {
-      method: "POST",
-      body: JSON.stringify({ spreadsheet_id: spreadsheetId, tabs }),
-    }),
-  listBooks: () => request<{ books: SavedBook[] }>("/books"),
-  getBook: (id: number) => request<SavedBook>(`/books/${id}`),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  createBook: (payload: Record<string, any>) =>
-    request<SavedBook>("/books", { method: "POST", body: JSON.stringify(payload) }),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  updateBook: (id: number, payload: Record<string, any>) =>
-    request<SavedBook>(`/books/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
-  deleteBook: (id: number) => request<{ ok: boolean }>(`/books/${id}`, { method: "DELETE" }),
+/**
+ * Снимок уходит на сервер строкой и строкой же возвращается: сервер его не
+ * разбирает (разбор таблицы на 20 МБ стоил бы ему 200 МБ памяти).
+ */
+function body(payload: SavePayload): string {
+  const { snapshot, ...rest } = payload;
+  return JSON.stringify(snapshot === undefined ? rest : { ...rest, snapshot: JSON.stringify(snapshot) });
+}
+
+export const shelfApi = {
+  list: () => request<{ tables: ShelfItem[] }>("/shelf").then((data) => data.tables),
+  open: async (id: number): Promise<ShelfTable> => {
+    const table = await request<ShelfItem & { snapshot: string }>(`/shelf/${id}`);
+    let snapshot: WorkbookSnapshot;
+    try {
+      snapshot = JSON.parse(table.snapshot);
+    } catch {
+      throw new Error("Снимок таблицы повреждён");
+    }
+    return { ...table, snapshot };
+  },
+  create: (payload: SavePayload) => request<ShelfItem>("/shelf", { method: "POST", body: body(payload) }),
+  save: (id: number, payload: SavePayload) =>
+    request<ShelfItem>(`/shelf/${id}`, { method: "PUT", body: body(payload) }),
+  copy: (id: number) => request<ShelfItem>(`/shelf/${id}/copy`, { method: "POST" }),
+  remove: (id: number) => request<{ ok: boolean }>(`/shelf/${id}`, { method: "DELETE" }),
 };

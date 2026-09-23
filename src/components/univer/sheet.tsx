@@ -18,6 +18,10 @@ import { UniverSheetsHyperLinkPreset } from "@univerjs/preset-sheets-hyper-link"
 import UniverPresetSheetsHyperLinkRuRU from "@univerjs/preset-sheets-hyper-link/locales/ru-RU";
 import { UniverSheetsTablePreset } from "@univerjs/preset-sheets-table";
 import UniverPresetSheetsTableRuRU from "@univerjs/preset-sheets-table/locales/ru-RU";
+import { UniverSheetsThreadCommentPreset } from "@univerjs/preset-sheets-thread-comment";
+import UniverPresetSheetsThreadCommentRuRU from "@univerjs/preset-sheets-thread-comment/locales/ru-RU";
+import { UniverSheetsDrawingPreset } from "@univerjs/presets/preset-sheets-drawing";
+import UniverPresetSheetsDrawingRuRU from "@univerjs/presets/preset-sheets-drawing/locales/ru-RU";
 import { createUniver, LocaleType, mergeLocales } from "@univerjs/presets";
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 
@@ -32,6 +36,8 @@ import "@univerjs/preset-sheets-find-replace/lib/index.css";
 import "@univerjs/preset-sheets-note/lib/index.css";
 import "@univerjs/preset-sheets-hyper-link/lib/index.css";
 import "@univerjs/preset-sheets-table/lib/index.css";
+import "@univerjs/preset-sheets-thread-comment/lib/index.css";
+import "@univerjs/presets/lib/styles/preset-sheets-drawing.css";
 
 /** Снимок книги в формате Univer (`IWorkbookData`). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -57,6 +63,14 @@ type Props = {
    * в раздел получит их вдвое.
    */
   onReady?: (api: UniverApi) => void | (() => void);
+  /**
+   * Комментарии к ячейкам и картинки на листе.
+   *
+   * Только там, где книга хранится снимком целиком («Таблицы»): и то и другое
+   * Univer держит в ресурсах снимка. В «Финансах» и «Книгах» строки живут в
+   * базе, снимка нет — комментарий, оставленный там, пропал бы при перезагрузке.
+   */
+  extras?: boolean;
 };
 
 /**
@@ -84,7 +98,7 @@ export function blankWorkbook(name = "Новая таблица"): WorkbookSnaps
 }
 
 export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverSheet(
-  { data, onReady },
+  { data, onReady, extras = false },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -129,6 +143,7 @@ export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverS
           UniverPresetSheetsNoteRuRU,
           UniverPresetSheetsHyperLinkRuRU,
           UniverPresetSheetsTableRuRU,
+          ...(extras ? [UniverPresetSheetsThreadCommentRuRU, UniverPresetSheetsDrawingRuRU] : []),
         ),
       },
       presets: [
@@ -141,6 +156,7 @@ export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverS
         UniverSheetsNotePreset(),
         UniverSheetsHyperLinkPreset(),
         UniverSheetsTablePreset(),
+        ...(extras ? [UniverSheetsThreadCommentPreset(), UniverSheetsDrawingPreset()] : []),
       ],
     });
     apiRef.current = univerAPI;

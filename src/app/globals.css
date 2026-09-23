@@ -2503,12 +2503,14 @@ html, body { overflow-x: clip; }
   .btn-primary.btn-sm { min-height: 36px; }
 }
 
-/* ─── Раздел «Таблицы» (Web-Excel) ─────────────────────────────────
+/* ─── Раздел «Таблицы» ──────────────────────────────────────────────
    Полотно Univer рисует себя само и живёт в собственной светлой гамме — это
-   не недосмотр, а требование: книга должна выглядеть ровно так, как она
-   выглядит в Google Sheets, иначе «перенесли цвет в цвет» перестаёт быть
-   правдой при первом же переключении темы. Наши токены применяются к рамке
-   вокруг полотна — шапке, диалогам, — но не внутрь него.                    */
+   не недосмотр, а требование: таблица, пришедшая из Google, должна выглядеть
+   так же, как там. Наши токены применяются к рамке вокруг полотна — шапке,
+   полке, диалогам, — но не внутрь него.
+
+   Состояние («Не сохранено», открытая таблица на полке) — подписью и весом,
+   не цветом. Цвет — только отказ.                                          */
 .we-shell {
   display: flex;
   flex-direction: column;
@@ -2517,6 +2519,8 @@ html, body { overflow-x: clip; }
   color: var(--text-primary);
   overflow: hidden;
 }
+
+.we-num { font-variant-numeric: tabular-nums; }
 
 .we-bar {
   display: flex;
@@ -2529,14 +2533,9 @@ html, body { overflow-x: clip; }
   background: var(--bg-surface);
 }
 
-/* Шапка раздела: три группы, каждая со своим правом на место.
-   
-   «Разделы» не сжимается никогда — это выход с экрана. Название книги ужимается
-   до читаемого минимума. Список вкладок отдаёт место первым и обрезается
-   многоточием. Без этого при длинном названии («Осн.Общая сводка BBC 2026» плюс
-   23 вкладки) flex дожимал кнопку ниже её содержимого, и подписи наезжали друг
-   на друга: элементы не перекрываются, но текст с white-space: nowrap вылезает
-   за свою коробку.                                                          */
+/* Шапка: у каждой группы своё право на место. «Разделы» не сжимается никогда —
+   это выход с экрана. Название ужимается до читаемого минимума. Происхождение
+   таблицы отдаёт место первым. */
 .we-bar > .btn-ghost:first-child { flex: 0 0 auto; }
 
 .we-name {
@@ -2561,12 +2560,29 @@ html, body { overflow-x: clip; }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
 }
 
-/* На узком экране список вкладок уходит целиком: он подсказка, а название
-   книги и кнопки — работа. */
+.we-origin a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.we-origin a:hover { color: var(--text-secondary); }
+
+.we-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  padding-left: 0.5rem;
+  margin-left: 0.25rem;
+  border-left: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+/* Уже 960px кнопки вставки уходят: те же правила есть в меню Univer «Данные»,
+   а шапка без них помещается целиком. На 800px с ними она вылезала на 116px. */
+@media (max-width: 959.98px) {
+  .we-tools { display: none; }
+}
+
 @media (max-width: 1100px) {
   .we-origin { display: none; }
 }
@@ -2579,6 +2595,28 @@ html, body { overflow-x: clip; }
   flex-shrink: 0;
 }
 
+.we-bar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+/* Место под подпись держим, текст пишем только по делу: в покое строка молчит. */
+.we-status {
+  min-width: 6.5rem;
+  text-align: right;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.we-status[data-dirty="true"] { color: var(--text-secondary); font-weight: 600; }
+
+@media (max-width: 639.98px) {
+  .we-status { min-width: 0; }
+  .we-status:empty { display: none; }
+}
+
 .we-primary {
   padding: 0.4rem 0.85rem;
   border-radius: var(--radius-pill);
@@ -2587,12 +2625,43 @@ html, body { overflow-x: clip; }
   color: var(--accent-fg);
   font-size: 0.75rem;
   font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease-out);
 }
 
 .we-primary:hover:not(:disabled) { background: var(--accent-hover); }
 .we-primary:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.we-danger {
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--accent-rose);
+  background: transparent;
+  color: var(--accent-rose);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.we-danger:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.we-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.we-icon-btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--text-primary); }
+.we-icon-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .we-note {
   flex-shrink: 0;
@@ -2604,7 +2673,6 @@ html, body { overflow-x: clip; }
 }
 
 .we-note[data-error="true"] { color: var(--accent-rose); }
-.we-note-extra { color: var(--text-muted); }
 
 .we-grid {
   position: relative;
@@ -2612,91 +2680,166 @@ html, body { overflow-x: clip; }
   min-height: 0;
 }
 
-/* Ворота выбора затемняют и размывают НАСТОЯЩУЮ таблицу, а не подложку:
-   человек видит, куда его приведёт ответ. pointer-events снимается вместе с
-   размытием — иначе по размытой таблице можно было бы кликать вслепую.      */
-.we-grid[data-blurred="true"] {
-  filter: blur(6px) saturate(0.7);
-  pointer-events: none;
-  user-select: none;
+.we-grid-wait {
+  padding: 1.5rem;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
 }
 
-.we-gate {
+/* ─── Полка ────────────────────────────────────────────────────────── */
+.we-shelf-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 60;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1.25rem;
-  padding: 1.5rem;
-  background: rgba(9, 9, 11, 0.62);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
-}
-
-:root[data-theme="light"] .we-gate { background: rgba(24, 24, 27, 0.42); }
-
-.we-gate-cards {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
-  width: min(46rem, 100%);
-}
-
-.we-gate-card {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  align-items: flex-start;
-  text-align: left;
-  padding: 1.5rem;
-  min-height: 11rem;
-  border-radius: var(--radius-card);
-  border: 1px solid var(--border-base);
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  cursor: pointer;
-  transition:
-    border-color var(--dur-fast) var(--ease-out),
-    transform var(--dur-fast) var(--ease-out);
+  z-index: 64;
+  background: rgba(9, 9, 11, 0.32);
   animation: fade-in var(--dur-base) var(--ease-out) both;
 }
 
-.we-gate-card:hover { border-color: var(--accent-line); transform: translateY(-2px); }
-.we-gate-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-
-.we-gate-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.5rem;
-  height: 2.5rem;
-  margin-bottom: auto;
-  border-radius: var(--radius-inner);
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-raised);
-  color: var(--text-secondary);
+.we-shelf {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 65;
+  display: flex;
+  flex-direction: column;
+  width: min(26rem, 100%);
+  padding-top: var(--safe-t);
+  border-left: 1px solid var(--border-base);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-float);
+  animation: fade-in var(--dur-base) var(--ease-out) both;
 }
 
-.we-gate-title { font-size: 1rem; font-weight: 600; letter-spacing: -0.015em; }
-.we-gate-hint { font-size: 0.75rem; line-height: 1.45; color: var(--text-secondary); }
-
-.we-gate-remember {
+.we-shelf-head {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-size: 0.8125rem;
-  color: #fffce1;
+  padding: 0.75rem 0.75rem 0.5rem 1rem;
+  flex-shrink: 0;
+}
+
+.we-shelf-title {
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.we-shelf-count {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.we-shelf-head .we-icon-btn { margin-left: auto; }
+
+.we-shelf-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  padding: 0 1rem 0.75rem;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.we-shelf-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.5rem;
+}
+
+.we-shelf-empty { padding: 0.75rem 0.5rem; }
+
+.we-shelf-item {
+  border-radius: var(--radius-inner);
+  border: 1px solid transparent;
+}
+
+.we-shelf-item[data-open="true"] {
+  border-color: var(--border-subtle);
+  background: var(--bg-raised);
+}
+
+.we-shelf-line {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.we-shelf-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  flex: 1;
+  min-width: 0;
+  padding: 0.5rem 0.625rem;
+  border-radius: var(--radius-inner);
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
   cursor: pointer;
 }
 
-.we-gate-remember input { width: 1rem; height: 1rem; accent-color: var(--accent); }
+.we-shelf-main:hover { background: var(--bg-hover); }
 
-@media (max-width: 640px) {
-  .we-gate-cards { grid-template-columns: minmax(0, 1fr); }
-  .we-gate-card { min-height: 0; padding: 1.125rem; }
+.we-shelf-name {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.we-shelf-item[data-current="true"] .we-shelf-name { font-weight: 700; }
+
+.we-shelf-meta {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.we-shelf-toggle svg { transition: transform var(--dur-fast) var(--ease-out); }
+.we-shelf-item[data-open="true"] .we-shelf-toggle svg { transform: rotate(90deg); }
+
+.we-shelf-more {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.25rem 0.625rem 0.625rem;
+}
+
+.we-shelf-sheets {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.we-shelf-sheets li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.125rem 0;
+  font-size: 0.75rem;
+}
+
+.we-shelf-buttons,
+.we-shelf-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.we-shelf-confirm span {
+  flex: 1 1 100%;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
 }
 
 /* ─── Диалоги раздела ──────────────────────────────────────────── */
@@ -2724,6 +2867,8 @@ html, body { overflow-x: clip; }
   animation: fade-in var(--dur-base) var(--ease-out) both;
 }
 
+.we-confirm { width: min(30rem, 100%); }
+
 .we-modal-head {
   display: flex;
   align-items: center;
@@ -2743,9 +2888,6 @@ html, body { overflow-x: clip; }
   white-space: nowrap;
 }
 
-.we-modal-search { padding: 0.625rem 0.875rem 0; flex-shrink: 0; }
-.we-modal-search .input-field { width: 100%; }
-
 .we-modal-body {
   flex: 1;
   min-height: 0;
@@ -2759,7 +2901,9 @@ html, body { overflow-x: clip; }
 .we-modal-foot {
   display: flex;
   align-items: center;
-  gap: 0.625rem;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.5rem;
   padding: 0.75rem 0.875rem;
   border-top: 1px solid var(--border-subtle);
   flex-shrink: 0;
@@ -2780,24 +2924,12 @@ html, body { overflow-x: clip; }
   line-height: 1.45;
 }
 
-.we-source-row,
-.we-tab-row {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  width: 100%;
-  padding: 0.5rem 0.625rem;
-  border-radius: var(--radius-inner);
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text-primary);
-  text-align: left;
-  font-size: 0.8125rem;
-  cursor: pointer;
+.we-append {
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-
-.we-source-row:hover,
-.we-tab-row:hover { background: var(--bg-hover); border-color: var(--border-subtle); }
 
 .we-source-name {
   flex: 1;
@@ -2813,12 +2945,22 @@ html, body { overflow-x: clip; }
   flex-shrink: 0;
 }
 
+.we-tab-row {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  width: 100%;
+  padding: 0.5rem 0.625rem;
+  border-radius: var(--radius-inner);
+  border: 1px solid transparent;
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.we-tab-row:hover { background: var(--bg-hover); border-color: var(--border-subtle); }
 .we-tab-row input { width: 0.95rem; height: 0.95rem; accent-color: var(--accent); }
 
-/* Полоса над списком вкладок: счётчик и «отметить все». Своя строка, а не
-   место в подвале рядом с «Импортировать» — переключатель меняет список, а не
-   запускает импорт, и путать эти две кнопки дорого: на книге с 23 вкладками
-   промах стоит всей проставленной галочками работы. */
 .we-tabs-bar {
   display: flex;
   align-items: center;
@@ -2828,6 +2970,61 @@ html, body { overflow-x: clip; }
 }
 
 .we-tabs-bar .we-modal-note { margin-right: auto; }
+
+/* Импорт: ссылка или файл. Файл можно бросить прямо на окно. */
+.we-import[data-dragging="true"] { border-color: var(--accent-line); }
+
+.we-import-source {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  padding: 1rem 0.875rem;
+}
+
+.we-link-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.we-link-row .input-field { flex: 1; min-width: 0; }
+
+.we-or {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.we-or::before,
+.we-or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border-subtle);
+}
+
+.we-file-drop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 5.5rem;
+  border-radius: var(--radius-card);
+  border: 1px dashed var(--border-base);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.we-file-drop:hover:not(:disabled) { border-color: var(--accent-line); color: var(--text-primary); }
+.we-file-drop:disabled { opacity: 0.45; cursor: not-allowed; }
+
+@media (max-width: 639.98px) {
+  .we-modal-backdrop { padding: 0.75rem; align-items: flex-end; }
+  .we-modal { max-height: 88svh; }
+}
 
 /* ── Раздел «Книги» ──────────────────────────────────────────────────────────
  *

@@ -2,406 +2,569 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { ArrowLeftIcon, ClockIcon, GridIcon } from "@/components/icons";
-import { StageLink } from "@/components/motion/stage-transition";
-import { webExcelApi, type ImportStats, type SavedBook } from "./api";
-import { ImportDialog } from "./import-dialog";
-import { assembleWorkbook, type SheetList, type TabPayload } from "./assemble";
-import { ensureSheetFonts } from "./sheet-fonts";
-import { forgetSavedChoice, readSavedChoice, StartGate, type GateChoice } from "./start-gate";
-import { blankWorkbook, UniverSheet, type UniverApi, type UniverSheetHandle, type WorkbookSnapshot } from "@/components/univer/sheet";
+import { ArrowLeftIcon, BookIcon, UploadIcon } from "@/components/icons";
+import { StageLink, useStageNavigate } from "@/components/motion/stage-transition";
+import { UniverSheet, type UniverApi, type UniverSheetHandle, type WorkbookSnapshot } from "@/components/univer/sheet";
 
-type Origin = { spreadsheetId: string; title: string; tabs: string[] } | null;
+import { shelfApi, type ShelfItem, type TableSource } from "./api";
+import { ImportPanel, type ImportResult } from "./import-panel";
+import { ShelfPanel } from "./shelf-panel";
+import { ensureSheetFonts } from "./sheet-fonts";
+import { appendFromBook, appendImported, bookFromImport, fontsOf, sheetsOf, type PendingLists } from "./workbook";
+
+/** Какая таблица была открыта последней — удобство одного браузера, не данные. */
+const LAST_KEY = "tables.last-open";
+
+type Doc = { id: number | null; name: string; source: TableSource; sourceRef: string };
+
+const BLANK_DOC: Doc = { id: null, name: "Новая таблица", source: "blank", sourceRef: "" };
+
+// Univer: CommandType.MUTATION и DataValidationRenderMode / ErrorStyle — числами.
+const MUTATION = 2;
+const RENDER_ARROW = 1;
+const RENDER_CHIP = 2;
+const ERROR_STOP = 1;
+const ERROR_WARNING = 2;
 
 /**
- * Шрифты сохранённой книги — из её же реестра стилей.
- *
- * Отдельно списком они не хранятся намеренно: снимок и так самодостаточен, а
- * второй список рядом рано или поздно разошёлся бы с первым.
+ * Мутации, которые Univer делает сам, без человека: пересчёт формул, подгон
+ * высоты строк и `doc.mutation.*` — собственный документ редактора ячейки. Его
+ * Univer заводит при открытии книги и меняет на каждую букву, пока значение ещё
+ * не принято; сама правка листа приходит отдельной `sheet.*` после Enter.
+ * Отметь мы их правкой — только что открытая таблица сразу говорила бы «не
+ * сохранено» (так и было на первом прогоне).
  */
-function fontsOfSnapshot(snapshot: WorkbookSnapshot | null | undefined): string[] {
-  const styles = snapshot?.styles;
-  if (!styles || typeof styles !== "object") return [];
-  const found = new Set<string>();
-  for (const style of Object.values(styles as Record<string, { ff?: string }>)) {
-    if (style?.ff) found.add(style.ff);
+const SELF_MUTATIONS = /^doc\.|formula|auto-height|numfmt/i;
+
+function readLast(): number | null {
+  try {
+    const value = Number(window.localStorage.getItem(LAST_KEY));
+    return Number.isInteger(value) && value > 0 ? value : null;
+  } catch {
+    return null;
   }
-  return [...found];
+}
+
+function writeLast(id: number | null) {
+  try {
+    if (id) window.localStorage.setItem(LAST_KEY, String(id));
+    else window.localStorage.removeItem(LAST_KEY);
+  } catch {
+    /* приватный режим — просто не помним */
+  }
+}
+
+function message(exc: unknown, fallback: string): string {
+  return exc instanceof Error && exc.message ? exc.message : fallback;
 }
 
 export function WebExcelWorkbench() {
-  // `null` — ещё не решили, что показывать (первый кадр читает сохранённый
-  // выбор). Пока решение не принято, ворота закрыты.
-  const [choice, setChoice] = useState<GateChoice | null>(null);
-  const [gateOpen, setGateOpen] = useState(true);
-  const [importOpen, setImportOpen] = useState(false);
-
   const [workbook, setWorkbook] = useState<WorkbookSnapshot | null>(null);
   const [workbookKey, setWorkbookKey] = useState(0);
-  const [name, setName] = useState("Новая таблица");
-  const [origin, setOrigin] = useState<Origin>(null);
-  const [bookId, setBookId] = useState<number | null>(null);
-
-  const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState<string | null>(null);
+  const [doc, setDoc] = useState<Doc>(BLANK_DOC);
+  const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
-  const [stats, setStats] = useState<ImportStats[]>([]);
-  const [saved, setSaved] = useState<SavedBook[]>([]);
-  const [savedOpen, setSavedOpen] = useState(false);
+  const [ready, setReady] = useState(false);
+
+  const [shelf, setShelf] = useState<ShelfItem[] | null>(null);
+  const [shelfError, setShelfError] = useState<string | null>(null);
+  const [shelfOpen, setShelfOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  /** Действие, которое ждёт решения о несохранённых правках. */
+  const [pending, setPending] = useState<{ run: () => void } | null>(null);
 
   const sheetRef = useRef<UniverSheetHandle>(null);
-  /**
-   * Списки книги, ожидающие постановки на лист.
-   *
-   * В ref, а не в состоянии: они нужны один раз, в момент готовности Univer, и
-   * перерисовывать из-за них компонент незачем.
-   */
-  const pendingLists = useRef<Record<string, SheetList[]>>({});
+  const apiRef = useRef<UniverApi>(null);
+  const listsRef = useRef<PendingLists>({});
+  const dirtyRef = useRef(false);
+  const savedTimer = useRef<number | undefined>(undefined);
+  const stageNavigate = useStageNavigate();
 
-  // Сохранённый выбор применяется в эффекте, а не при инициализации состояния:
-  // localStorage на сервере нет, и чтение при рендере разошлось бы с разметкой,
-  // которую Next отдал с сервера.
+  const markDirty = useCallback((value: boolean) => {
+    dirtyRef.current = value;
+    setDirty(value);
+    if (value) setSaved(false);
+  }, []);
+
+  const refreshShelf = useCallback(async () => {
+    try {
+      setShelf(await shelfApi.list());
+      setShelfError(null);
+    } catch (exc) {
+      setShelfError(message(exc, "Полка не загрузилась"));
+      setShelf((current) => current ?? []);
+    }
+  }, []);
+
+  /** Показать книгу: Univer пересоздаётся ключом, списки встанут в `onReady`. */
+  const show = useCallback(
+    (book: WorkbookSnapshot | null, next: Doc, lists: PendingLists = {}, isDirty = false) => {
+      listsRef.current = lists;
+      setWorkbook(book);
+      setWorkbookKey((key) => key + 1);
+      setDoc(next);
+      markDirty(isDirty);
+      setError(null);
+    },
+    [markDirty],
+  );
+
+  const openTable = useCallback(
+    async (id: number) => {
+      setNote("Открываем…");
+      setError(null);
+      try {
+        const table = await shelfApi.open(id);
+        // Шрифты — до того, как книга попадёт в Univer: он меряет ширины текста
+        // при первой отрисовке, и опоздавший шрифт уже ничего не исправит.
+        await ensureSheetFonts(fontsOf(table.snapshot));
+        show(table.snapshot, { id: table.id, name: table.name, source: table.source, sourceRef: table.source_ref });
+        writeLast(table.id);
+        setShelfOpen(false);
+        setNote(null);
+      } catch (exc) {
+        setNote(null);
+        setError(message(exc, "Таблица не открылась"));
+        if (readLast() === id) writeLast(null);
+      }
+    },
+    [show],
+  );
+
+  // Первый заход: полка и последняя открытая таблица. Univer до этого не
+  // монтируется, чтобы не собирать пустую книгу, которую тут же заменят.
   useEffect(() => {
-    const stored = readSavedChoice();
-    if (!stored) return;
-    setChoice(stored);
-    setGateOpen(false);
-    if (stored === "import") setImportOpen(true);
-  }, []);
-
-  const refreshSaved = useCallback(() => {
-    webExcelApi
-      .listBooks()
-      .then((data) => setSaved(data.books))
-      .catch(() => {
-        /* список сохранённых книг — вспомогательный, его отказ не ломает экран */
-      });
-  }, []);
-
-  useEffect(refreshSaved, [refreshSaved]);
-
-  const onChoose = (next: GateChoice) => {
-    setChoice(next);
-    setGateOpen(false);
-    if (next === "import") setImportOpen(true);
-  };
-
-  /**
-   * Импорт идёт вкладка за вкладкой, а не одним запросом на всю книгу.
-   *
-   * Одна вкладка «Журнала» читается у Google восемь секунд, у «Осн.Общей
-   * сводки» вкладок 23, а прокси Next рвёт запрос на 180 секундах — то есть
-   * «отметить все» на большой книге гарантированно упиралось бы в таймаут,
-   * причём именно там, где эта кнопка нужнее всего. Заодно человек видит, что
-   * происходит, вместо пустого экрана на три минуты.
-   *
-   * Последовательно, а не параллельно: квота Google — 60 чтений в минуту на
-   * весь сервисный аккаунт, и этот же аккаунт обслуживает дашборд.
-   */
-  /**
-   * Поставить на лист выпадающие списки книги.
-   *
-   * В книгах, которые ведут руками, у колонок стоят списки — в «Журнале ГК BBC»
-   * это статьи, счета и подкатегории. Без них зеркало отличается от книги в
-   * самом рабочем месте: там выбирают, здесь печатают, и первая же опечатка
-   * заводит вторую статью.
-   *
-   * Ставятся через API, а не через ресурс книги: состав списка Univer хранит
-   * одной строкой через запятую, и «Аренда, коммуналка», собранная нами,
-   * разъехалась бы на два пункта — молча.
-   */
-  const applyLists = useCallback((api: UniverApi) => {
-    const lists = pendingLists.current;
-    pendingLists.current = {};
-    if (!Object.keys(lists).length) return;
-
+    let cancelled = false;
     void (async () => {
-      const book = api.getActiveWorkbook?.();
-      const sheets = book?.getSheets?.() ?? [];
-      const byId = new Map<string, UniverApi>(
-        sheets.map((sheet: UniverApi) => [String(sheet.getSheetId?.() ?? ""), sheet]),
-      );
-      let applied = 0;
-      for (const [sheetId, rules] of Object.entries(lists)) {
-        const sheet = byId.get(sheetId);
-        if (!sheet || typeof api.newDataValidation !== "function") continue;
-        for (const rule of rules) {
-          try {
-            const built = api
-              .newDataValidation()
-              .requireValueInList(rule.values, false, true)
-              .setOptions({ allowBlank: true, showErrorMessage: false })
-              .build();
-            for (const range of rule.ranges) {
-              await sheet
-                .getRange(
-                  range.startRow,
-                  range.startColumn,
-                  range.endRow - range.startRow + 1,
-                  range.endColumn - range.startColumn + 1,
-                )
-                .setDataValidation(built);
-              applied += 1;
-            }
-          } catch {
-            // Список — удобство, а не условие открытия книги.
-          }
+      let items: ShelfItem[] = [];
+      try {
+        items = await shelfApi.list();
+        if (!cancelled) setShelf(items);
+      } catch (exc) {
+        if (!cancelled) {
+          setShelfError(message(exc, "Полка не загрузилась"));
+          setShelf([]);
         }
       }
-      if (!applied) {
-        // Молчаливое «списков нет» — худший исход: книга выглядит целой, а в
-        // самом рабочем месте отличается от оригинала. Пусть будет видно.
-        console.warn("Выпадающие списки книги не встали на лист");
-      }
+      if (cancelled) return;
+      const last = readLast();
+      if (last && items.some((item) => item.id === last)) await openTable(last);
+      else if (items.length) setShelfOpen(true);
+      if (!cancelled) setReady(true);
     })();
+    return () => {
+      cancelled = true;
+    };
+  }, [openTable]);
+
+  /** Сделать, но сначала спросить про несохранённые правки. */
+  const guarded = useCallback((run: () => void) => {
+    if (dirtyRef.current) setPending({ run });
+    else run();
   }, []);
 
-  const doImport = async (spreadsheetId: string, tabs: string[], title: string) => {
-    setBusy(true);
-    setError(null);
-    setStatus(null);
-    setProgress(null);
-    try {
-      const loaded: TabPayload[] = [];
-      const collected: ImportStats[] = [];
-      for (const [index, tab] of tabs.entries()) {
-        setProgress(`«${tab}» — ${index + 1} из ${tabs.length}`);
-        const payload = await webExcelApi.importTab(spreadsheetId, tab);
-        loaded.push(payload);
-        collected.push(payload.stats);
-      }
-
-      const { workbook: assembled, fonts, lists } = assembleWorkbook(spreadsheetId, title, loaded);
-      pendingLists.current = lists;
-      // Шрифты — до того, как книга попадёт в Univer: он меряет ширины текста
-      // в момент первой отрисовки, и опоздавший шрифт уже ничего не исправит.
-      setProgress("Загружаем шрифты книги…");
-      await ensureSheetFonts(fonts);
-
-      setWorkbook(assembled);
-      setWorkbookKey((key) => key + 1);
-      setName(title);
-      setOrigin({ spreadsheetId, title, tabs });
-      setBookId(null);
-      setStats(collected);
-      setImportOpen(false);
-      setStatus(
-        tabs.length === 1
-          ? "Импортировано из Google Sheets."
-          : `Импортировано из Google Sheets — ${tabs.length} вкладок.`,
-      );
-    } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Не удалось импортировать книгу");
-    } finally {
-      setBusy(false);
-      setProgress(null);
-    }
-  };
-
-  const openSaved = async (id: number) => {
-    setBusy(true);
-    setError(null);
-    try {
-      const book = await webExcelApi.getBook(id);
-      await ensureSheetFonts(fontsOfSnapshot(book.snapshot));
-      setWorkbook(book.snapshot ?? blankWorkbook(book.name));
-      setWorkbookKey((key) => key + 1);
-      setName(book.name);
-      setBookId(book.id);
-      setOrigin(
-        book.origin_spreadsheet_id
-          ? {
-              spreadsheetId: book.origin_spreadsheet_id,
-              title: book.origin_title,
-              tabs: book.origin_tabs,
-            }
-          : null,
-      );
-      setStats([]);
-      setSavedOpen(false);
-      setGateOpen(false);
-    } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Не удалось открыть книгу");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const save = async () => {
+  const save = useCallback(async (): Promise<boolean> => {
     const snapshot = sheetRef.current?.snapshot();
     if (!snapshot) {
-      setError("Таблица ещё не готова — попробуйте через секунду.");
-      return;
+      setError("Таблица ещё не готова — попробуйте через секунду");
+      return false;
     }
+    const name = doc.name.trim() || "Без названия";
+    snapshot.name = name;
     setSaving(true);
     setError(null);
-    setStatus(null);
     try {
-      const payload = {
-        name: name.trim() || "Без названия",
-        kind: origin ? "google" : "blank",
-        origin_spreadsheet_id: origin?.spreadsheetId ?? "",
-        origin_title: origin?.title ?? "",
-        origin_tabs: origin?.tabs ?? [],
-        snapshot,
-      };
-      const book = bookId
-        ? await webExcelApi.updateBook(bookId, payload)
-        : await webExcelApi.createBook(payload);
-      setBookId(book.id);
-      setStatus("Сохранено.");
-      refreshSaved();
+      const payload = { name, sheets: sheetsOf(snapshot), snapshot };
+      const stored = doc.id
+        ? await shelfApi.save(doc.id, payload)
+        : await shelfApi.create({ ...payload, source: doc.source, source_ref: doc.sourceRef });
+      setDoc((current) => ({ ...current, id: stored.id, name: stored.name }));
+      markDirty(false);
+      writeLast(stored.id);
+      setSaved(true);
+      window.clearTimeout(savedTimer.current);
+      // «Сохранено» — след действия, а не вечная надпись: в покое строка молчит.
+      savedTimer.current = window.setTimeout(() => setSaved(false), 3000);
+      void refreshShelf();
+      return true;
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Не удалось сохранить книгу");
+      setError(message(exc, "Не удалось сохранить"));
+      return false;
     } finally {
       setSaving(false);
     }
+  }, [doc, markDirty, refreshShelf]);
+
+  // Ctrl/Cmd+S — как в любом редакторе. По коду клавиши: на русской раскладке это «ы».
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.code === "KeyS") {
+        event.preventDefault();
+        if (!saving) void save();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [save, saving]);
+
+  useEffect(() => {
+    const onLeave = (event: BeforeUnloadEvent) => {
+      if (!dirtyRef.current) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onLeave);
+    return () => window.removeEventListener("beforeunload", onLeave);
+  }, []);
+
+  useEffect(() => () => window.clearTimeout(savedTimer.current), []);
+
+  /** Univer готов: поставить списки импорта и начать замечать правки. */
+  const onReady = useCallback(
+    (api: UniverApi) => {
+      apiRef.current = api;
+
+      const lists = listsRef.current;
+      listsRef.current = {};
+      const sheets = api.getActiveWorkbook?.()?.getSheets?.() ?? [];
+      const byId = new Map<string, UniverApi>(sheets.map((sheet: UniverApi) => [String(sheet.getSheetId?.() ?? ""), sheet]));
+      // Списки ставятся через API, а не ресурсом снимка: состав списка Univer
+      // хранит одной строкой через запятую, и «Аренда, коммуналка», собранная
+      // руками, молча разъехалась бы на два пункта.
+      void (async () => {
+        for (const [sheetId, rules] of Object.entries(lists)) {
+          const sheet = byId.get(sheetId);
+          if (!sheet || typeof api.newDataValidation !== "function") continue;
+          for (const rule of rules) {
+            try {
+              const options: Record<string, unknown> = {
+                allowBlank: true,
+                showErrorMessage: true,
+                errorStyle: rule.strict ? ERROR_STOP : ERROR_WARNING,
+                renderMode: RENDER_ARROW,
+              };
+              if (rule.prompt) Object.assign(options, { prompt: rule.prompt, showInputMessage: true });
+              const built = api.newDataValidation().requireValueInList(rule.values, false, true).setOptions(options).build();
+              for (const range of rule.ranges) {
+                await sheet
+                  .getRange(
+                    range.startRow,
+                    range.startColumn,
+                    range.endRow - range.startRow + 1,
+                    range.endColumn - range.startColumn + 1,
+                  )
+                  .setDataValidation(built);
+              }
+            } catch {
+              // Список — удобство, а не условие открытия книги.
+            }
+          }
+        }
+      })();
+
+      const listener = api.onCommandExecuted?.(
+        (command: { id: string; type?: number }, options?: { onlyLocal?: boolean }) => {
+          if (command.type !== MUTATION || options?.onlyLocal || SELF_MUTATIONS.test(command.id)) return;
+          if (!dirtyRef.current) markDirty(true);
+        },
+      );
+      return () => {
+        listener?.dispose?.();
+        apiRef.current = null;
+      };
+    },
+    [markDirty],
+  );
+
+  // ── Вставка: список и флажок на выделение ─────────────────────────────────
+
+  const selection = () => {
+    const api = apiRef.current;
+    const range = api?.getActiveWorkbook?.()?.getActiveSheet?.()?.getActiveRange?.();
+    return api && range ? { api, range } : null;
   };
 
-  const startBlank = () => {
-    setWorkbook(null);
-    setWorkbookKey((key) => key + 1);
-    setName("Новая таблица");
-    setOrigin(null);
-    setBookId(null);
-    setStats([]);
-    setStatus(null);
-    setGateOpen(false);
+  const insertList = async () => {
+    const target = selection();
+    if (!target) return;
+    try {
+      const built = target.api
+        .newDataValidation()
+        .requireValueInList(["Вариант 1", "Вариант 2"], false, true)
+        .setOptions({ allowBlank: true, showErrorMessage: true, errorStyle: ERROR_WARNING, renderMode: RENDER_CHIP })
+        .build();
+      await target.range.setDataValidation(built);
+      // Сразу панель правила — там пункты, цвета, стиль показа и запрет ввода.
+      await target.api.executeCommand("data-validation.operation.open-validation-panel", {
+        ruleId: built.rule?.uid,
+        isAdd: true,
+      });
+    } catch (exc) {
+      setError(message(exc, "Список не встал на выделение"));
+    }
   };
 
-  const reopenGate = () => {
-    forgetSavedChoice();
-    setChoice(null);
-    setGateOpen(true);
-    setImportOpen(false);
+  const insertCheckbox = async () => {
+    const target = selection();
+    if (!target) return;
+    try {
+      await target.range.setDataValidation(target.api.newDataValidation().requireCheckbox().build());
+    } catch (exc) {
+      setError(message(exc, "Флажки не встали на выделение"));
+    }
   };
 
-  const truncated = stats.find((item) => item.truncated);
+  const openRules = () => {
+    void apiRef.current?.executeCommand?.("data-validation.operation.open-validation-panel", {});
+  };
+
+  // ── Полка и импорт ────────────────────────────────────────────────────────
+
+  const currentSnapshot = (): WorkbookSnapshot | null => sheetRef.current?.snapshot() ?? null;
+
+  const onImportDone = async (result: ImportResult, target: "new" | "append") => {
+    const fonts = new Set(result.sheets.flatMap((sheet) => sheet.fonts));
+    await ensureSheetFonts([...fonts]);
+    const frozen = result.sheets.reduce((sum, sheet) => sum + sheet.stats.frozenFormulas, 0);
+    const cut = result.sheets.find((sheet) => sheet.stats.truncated);
+
+    const apply = () => {
+      if (target === "new") {
+        const assembled = bookFromImport(result.title, result.sheets);
+        show(assembled.workbook, { id: null, name: result.title, source: result.source, sourceRef: result.sourceRef }, assembled.lists, true);
+        writeLast(null);
+      } else {
+        const current = currentSnapshot();
+        if (!current) return;
+        const assembled = appendImported(current, result.sheets);
+        show(assembled.workbook, doc, assembled.lists, true);
+      }
+      setImportOpen(false);
+      setShelfOpen(false);
+      const parts = [`Листов перенесено: ${result.sheets.length}`];
+      if (frozen) parts.push(`формул заменено значением: ${frozen}`);
+      if (cut) parts.push(`«${cut.sheet.name}» обрезан до ${cut.stats.rows.toLocaleString("ru-RU")} строк`);
+      setNote(parts.join(" · "));
+    };
+    if (target === "new") guarded(apply);
+    else apply();
+  };
+
+  const onAddSheets = async (id: number, indexes: number[]) => {
+    const source = await shelfApi.open(id);
+    const order: string[] = source.snapshot.sheetOrder ?? Object.keys(source.snapshot.sheets ?? {});
+    const ids = indexes.map((index) => order[index]).filter(Boolean);
+    const current = currentSnapshot();
+    if (!current || !ids.length) throw new Error("Лист не нашёлся в таблице");
+    await ensureSheetFonts(fontsOf(source.snapshot));
+    show(appendFromBook(current, source.snapshot, ids), doc, {}, true);
+  };
+
+  const onRename = async (id: number, name: string) => {
+    const stored = await shelfApi.save(id, { name });
+    if (id === doc.id) setDoc((current) => ({ ...current, name: stored.name }));
+    await refreshShelf();
+  };
+
+  const onCopy = async (id: number) => {
+    await shelfApi.copy(id);
+    await refreshShelf();
+  };
+
+  const onDelete = async (id: number) => {
+    await shelfApi.remove(id);
+    if (id === doc.id) {
+      // Открытая таблица осталась на экране, но на полке её больше нет:
+      // следующее сохранение положит её заново, а не в пустоту.
+      setDoc((current) => ({ ...current, id: null }));
+      markDirty(true);
+    }
+    if (readLast() === id) writeLast(null);
+    await refreshShelf();
+  };
+
+  const newTable = () =>
+    guarded(() => {
+      show(null, BLANK_DOC);
+      writeLast(null);
+      setShelfOpen(false);
+      setNote(null);
+    });
+
+  const status = saving ? "Сохраняется…" : dirty ? "Не сохранено" : saved ? "Сохранено" : "";
 
   return (
     <div className="we-shell">
       <header className="we-bar">
-        <StageLink href="/" label="Разделы" className="btn-ghost btn-sm" title="Разделы">
+        <StageLink
+          href="/"
+          label="Разделы"
+          className="btn-ghost btn-sm"
+          title="Разделы"
+          onClick={(event) => {
+            if (!dirtyRef.current) return;
+            event.preventDefault();
+            setPending({ run: () => stageNavigate("/", "Разделы") });
+          }}
+        >
           <ArrowLeftIcon size={15} />
           <span className="only-desktop-inline">Разделы</span>
         </StageLink>
 
         <input
           className="we-name"
-          value={name}
-          onChange={(event) => setName(event.target.value)}
+          value={doc.name}
+          onChange={(event) => {
+            setDoc((current) => ({ ...current, name: event.target.value }));
+            markDirty(true);
+          }}
           placeholder="Название таблицы"
           aria-label="Название таблицы"
+          maxLength={200}
         />
 
-        {/* Только вкладки: название книги стоит слева в поле имени, и
-            повторять его здесь значит занимать место тем, что уже написано. */}
-        {origin && (
-          <span
-            className="we-origin"
-            title={`Импортировано из «${origin.title}»: ${origin.tabs.join(", ")}`}
-          >
-            {origin.tabs.length === 1
-              ? origin.tabs[0]
-              : `${origin.tabs.length} вкладок: ${origin.tabs.join(", ")}`}
+        {doc.source !== "blank" && doc.sourceRef && (
+          <span className="we-origin only-desktop" title={doc.sourceRef}>
+            {doc.source === "google" ? (
+              <a href={doc.sourceRef} target="_blank" rel="noreferrer">
+                из Google
+              </a>
+            ) : (
+              `из ${doc.sourceRef}`
+            )}
           </span>
         )}
 
+        <div className="we-tools only-desktop" role="group" aria-label="Вставка">
+          <button type="button" className="btn-ghost btn-sm" onClick={() => void insertList()} title="Выпадающий список на выделенные ячейки">
+            Список
+          </button>
+          <button type="button" className="btn-ghost btn-sm" onClick={() => void insertCheckbox()} title="Флажки на выделенные ячейки">
+            Флажок
+          </button>
+          <button type="button" className="btn-ghost btn-sm" onClick={openRules} title="Все правила проверки данных листа">
+            Правила
+          </button>
+        </div>
+
         <div className="we-bar-right">
-          <button type="button" className="btn-ghost text-xs px-2.5 py-1.5" onClick={startBlank}>
-            Новая
-          </button>
+          <span className="we-status" role="status" aria-live="polite" data-dirty={dirty ? "true" : undefined}>
+            {status}
+          </span>
+          {/* На телефоне импорт — из полки («Из Google или файла»): в шапке не
+              хватает места под всё, а «Сохранить» и «Полка» важнее. */}
           <button
             type="button"
-            className="btn-ghost text-xs px-2.5 py-1.5 flex items-center gap-1.5"
+            className="btn-ghost btn-sm we-bar-btn only-desktop"
             onClick={() => setImportOpen(true)}
+            title="Листы из Google или файла .xlsx"
           >
-            <GridIcon size={15} />
-            <span className="hidden sm:inline">Из Google</span>
+            <UploadIcon size={15} />
+            <span className="only-desktop-inline">Импорт</span>
           </button>
           <button
             type="button"
-            className="btn-ghost text-xs px-2.5 py-1.5 flex items-center gap-1.5"
+            className="btn-ghost btn-sm we-bar-btn"
             onClick={() => {
-              refreshSaved();
-              setSavedOpen((open) => !open);
+              void refreshShelf();
+              setShelfOpen((open) => !open);
             }}
+            aria-expanded={shelfOpen}
           >
-            <ClockIcon size={15} />
-            <span className="hidden sm:inline">Мои книги</span>
+            <BookIcon size={15} />
+            <span>Полка</span>
+            {shelf && shelf.length > 0 && <span className="we-shelf-count we-num">{shelf.length}</span>}
           </button>
-          <button type="button" className="we-primary" disabled={saving} onClick={() => void save()}>
-            {saving ? "Сохранение…" : bookId ? "Сохранить" : "Сохранить книгу"}
+          <button type="button" className="we-primary" disabled={saving || !ready} onClick={() => void save()}>
+            Сохранить
           </button>
         </div>
       </header>
 
-      {/* Отказ — красным. Успех — обычным текстом: зелёная плашка «всё хорошо»
-          на каждое сохранение превращается в шум, который перестают замечать
-          ровно к тому моменту, когда он должен был напугать. */}
-      {(error || status || truncated) && (
-        <div className="we-note" data-error={error ? "true" : undefined}>
-          {error ?? status}
-          {!error && truncated && (
-            <span className="we-note-extra">
-              {" "}
-              Показаны первые {truncated.rows} строк из {truncated.source_rows} — остальное
-              осталось в Google.
-            </span>
-          )}
+      {(error || note) && (
+        <div className="we-note" data-error={error ? "true" : undefined} role={error ? "alert" : "status"}>
+          {error ?? note}
         </div>
       )}
 
-      <div className="we-grid" data-blurred={gateOpen ? "true" : undefined}>
-        <UniverSheet key={workbookKey} ref={sheetRef} data={workbook} onReady={applyLists} />
+      <div className="we-grid">
+        {ready ? (
+          <UniverSheet key={workbookKey} ref={sheetRef} data={workbook} onReady={onReady} extras />
+        ) : (
+          <p className="we-grid-wait">Загружаем полку…</p>
+        )}
       </div>
 
-      {gateOpen && <StartGate onChoose={onChoose} />}
-
-      {importOpen && (
-        <ImportDialog
-          busy={busy}
-          progress={progress}
-          onClose={() => {
-            setImportOpen(false);
-            // Отказ от импорта при закрытых воротах и пустом выборе вернул бы
-            // человека в пустоту — поэтому ворота открываются заново.
-            if (!workbook && choice === "import") setGateOpen(true);
+      {shelfOpen && (
+        <ShelfPanel
+          items={shelf}
+          error={shelfError}
+          currentId={doc.id}
+          openName={doc.name}
+          onClose={() => setShelfOpen(false)}
+          onOpen={(id) => {
+            if (id === doc.id) setShelfOpen(false);
+            else guarded(() => void openTable(id));
           }}
-          onImport={(id, tabs, title) => void doImport(id, tabs, title)}
+          onNew={newTable}
+          onImport={() => setImportOpen(true)}
+          onRename={onRename}
+          onCopy={onCopy}
+          onDelete={onDelete}
+          onAddSheets={onAddSheets}
         />
       )}
 
-      {savedOpen && (
-        <div className="we-modal-backdrop" onClick={() => setSavedOpen(false)}>
-          <div className="we-modal" onClick={(event) => event.stopPropagation()}>
+      {importOpen && (
+        <ImportPanel
+          openName={doc.name}
+          onClose={() => setImportOpen(false)}
+          onDone={(result, target) => void onImportDone(result, target)}
+        />
+      )}
+
+      {pending && (
+        <div className="we-modal-backdrop" onClick={() => setPending(null)}>
+          <div className="we-modal we-confirm" role="alertdialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
             <header className="we-modal-head">
-              <span className="we-modal-title">Мои книги</span>
-              <button type="button" className="btn-ghost text-xs px-2 py-1.5" onClick={reopenGate}>
-                Спрашивать при входе
-              </button>
+              <span className="we-modal-title">В «{doc.name}» есть несохранённые правки</span>
             </header>
-            <div className="we-modal-body">
-              {saved.length === 0 && (
-                <p className="we-modal-note">Пока ничего не сохранено.</p>
-              )}
-              {saved.map((book) => (
-                <button
-                  key={book.id}
-                  type="button"
-                  className="we-source-row"
-                  onClick={() => void openSaved(book.id)}
-                >
-                  <span className="we-source-name">{book.name}</span>
-                  <span className="we-source-meta">
-                    {book.origin_title || "своя"} ·{" "}
-                    {book.updated_at ? new Date(book.updated_at).toLocaleString("ru-RU") : ""}
-                  </span>
-                </button>
-              ))}
-            </div>
+            <footer className="we-modal-foot">
+              <button type="button" className="btn-ghost btn-sm" onClick={() => setPending(null)}>
+                Отмена
+              </button>
+              <button
+                type="button"
+                className="btn-ghost btn-sm"
+                onClick={() => {
+                  const { run } = pending;
+                  setPending(null);
+                  markDirty(false);
+                  run();
+                }}
+              >
+                Не сохранять
+              </button>
+              <button
+                type="button"
+                className="we-primary"
+                disabled={saving}
+                onClick={() =>
+                  void (async () => {
+                    const { run } = pending;
+                    if (await save()) {
+                      setPending(null);
+                      run();
+                    }
+                  })()
+                }
+              >
+                Сохранить
+              </button>
+            </footer>
           </div>
         </div>
       )}
