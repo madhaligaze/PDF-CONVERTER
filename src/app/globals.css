@@ -1276,7 +1276,7 @@ select.input-field optgroup {
 .animate-spin-slow { animation: spin-slow 1.4s linear infinite; }
 .animate-variant-swap { animation: variant-swap var(--dur-slow) var(--ease-out) both; }
 
-/* ─── Row quality colours ─────────────────────────────────────── */
+/* ─── Row direction colours (приход / расход) ─────────────────── */
 .row-inflow  { background: var(--inflow-bg); }
 .row-outflow { background: var(--outflow-bg); }
 

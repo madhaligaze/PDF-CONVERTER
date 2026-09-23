@@ -5,7 +5,7 @@ import { useMemo, useRef, useState } from "react";
 import { useWorkbench } from "@/components/workbench/context";
 import { DiffAnalysisPanel } from "@/components/workbench/diff-analysis-panel";
 import { SaveTemplateModal } from "@/components/workbench/save-template-modal";
-import type { ColumnRecommendation, PreviewColumn, PreviewResponse, PreviewVariant, RowDiagnostic } from "@/components/workbench/types";
+import type { ColumnRecommendation, PreviewColumn, PreviewResponse, PreviewVariant } from "@/components/workbench/types";
 import { formatValue } from "@/components/workbench/utils";
 
 const PAGE_SIZE = 50;
@@ -15,15 +15,7 @@ type EditableRow = Record<string, string | number | null>;
 
 type Props = {
   variants: PreviewVariant[];
-  diagnostics: RowDiagnostic[];
 };
-
-function confidenceColor(c: number) {
-  // Уверенная строка цветом не помечается — цвет только у сомнения и отказа.
-  if (c >= 0.9) return "badge-slate";
-  if (c >= 0.7) return "badge-amber";
-  return "badge-rose";
-}
 
 function variantGroupKey(v: PreviewVariant) {
   return v.group ?? PRIMARY_GROUP;
@@ -34,9 +26,13 @@ function isWideTextColumn(key: string, kind: string) {
   return ["detail", "comment", "details_operation"].includes(key);
 }
 
+const HOLDER_KIND_LABEL: Record<string, string> = { legal: "юрлицо", personal: "физлицо" };
+
 function ReadingContext({ document }: { document: PreviewResponse["document"] }) {
   const period = [document.period_start, document.period_end].filter(Boolean).join(" — ");
-  const bits = [document.account_holder, document.account_number, document.currency, period].filter(Boolean);
+  // Словом, а не цветом: по нему видно, почему открылся вид «Юр счёт».
+  const kind = document.holder_kind ? HOLDER_KIND_LABEL[document.holder_kind] : null;
+  const bits = [document.account_holder, kind, document.account_number, document.currency, period].filter(Boolean);
   if (bits.length === 0) return null;
   return (
     <p className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
@@ -51,7 +47,7 @@ function emptyRow(columns: PreviewColumn[]): EditableRow {
   return r;
 }
 
-export function VariantPreviewPanel({ variants, diagnostics }: Props) {
+export function VariantPreviewPanel({ variants }: Props) {
   const {
     selectedVariantKey,
     setSelectedVariantKey,
@@ -338,7 +334,6 @@ export function VariantPreviewPanel({ variants, diagnostics }: Props) {
 
   // ── render data ────────────────────────────────────────────
   const displayColumns = editMode ? editColumns : selectedVariant.columns;
-  const diagnosticsMap = new Map(diagnostics.map((d) => [d.row_number, d]));
   const displayRows: EditableRow[] = editMode ? editRows : (selectedVariant.rows as EditableRow[]);
   const totalPages = Math.ceil(displayRows.length / PAGE_SIZE);
   const pageRows = displayRows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -555,9 +550,6 @@ export function VariantPreviewPanel({ variants, diagnostics }: Props) {
                       onClick={addColumn}>+</button>
                   </th>
                 )}
-                {!editMode && (
-                  <th className="w-12 px-3 py-2.5 text-left text-xs font-medium" style={{ color: "var(--text-muted)" }}>Увер.</th>
-                )}
               </tr>
             </thead>
 
@@ -566,7 +558,6 @@ export function VariantPreviewPanel({ variants, diagnostics }: Props) {
               {pageRows.map((row, localIdx) => {
                 const absIdx = pageOffset + localIdx;
                 const rowNumber = absIdx + 1;
-                const diagnostic = diagnosticsMap.get(rowNumber);
                 const direction = row.direction as string | undefined;
                 const rowClass = direction === "inflow" ? "row-inflow" : direction === "outflow" ? "row-outflow" : "";
 
@@ -620,17 +611,6 @@ export function VariantPreviewPanel({ variants, diagnostics }: Props) {
                         <button type="button" title="Удалить строку"
                           className="text-xs opacity-30 hover:opacity-100 hover:text-[var(--accent-rose)]"
                           onClick={() => deleteRow(absIdx)}>✕</button>
-                      </td>
-                    )}
-                    {!editMode && (
-                      <td className="px-3 py-2.5">
-                        {diagnostic ? (
-                          <span className={`badge text-[0.65rem] ${confidenceColor(diagnostic.confidence)}`}>
-                            {Math.round(diagnostic.confidence * 100)}%
-                          </span>
-                        ) : (
-                          <span className="badge badge-slate text-[0.65rem]">-</span>
-                        )}
                       </td>
                     )}
                   </tr>

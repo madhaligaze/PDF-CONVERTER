@@ -6,19 +6,17 @@ import { WorkbenchProvider, useWorkbench } from "@/components/workbench/context"
 import { ToastContainer } from "@/components/workbench/toast";
 import { UploadPanel } from "@/components/workbench/upload-panel";
 import { HistoryPanel } from "@/components/workbench/history-panel";
-import { QualityPanel } from "@/components/workbench/quality-panel";
 import { VariantPreviewPanel } from "@/components/workbench/variant-preview-panel";
 import { OcrReviewPanel } from "@/components/workbench/ocr-review-panel";
-import { TableIcon, AlertIcon, ScanIcon, CloseIcon } from "@/components/icons";
+import { TableIcon, ScanIcon, CloseIcon } from "@/components/icons";
 import { SplitReveal } from "@/components/motion/split-reveal";
 import { SectionBar } from "@/components/stage/section-bar";
 import { ThemeToggle } from "@/components/stage/theme-toggle";
 
-type Tab = "table" | "quality" | "ocr";
+type Tab = "table" | "ocr";
 
 const TABS: { key: Tab; label: string; shortLabel: string; Icon: typeof TableIcon }[] = [
   { key: "table", label: "Транзакции", shortLabel: "Список", Icon: TableIcon },
-  { key: "quality", label: "Качество", shortLabel: "Качество", Icon: AlertIcon },
   { key: "ocr", label: "Распознавание", shortLabel: "Скан", Icon: ScanIcon },
 ];
 
@@ -56,18 +54,20 @@ function WorkbenchInner({ openHistory = false }: { openHistory?: boolean }) {
   const heading = hasPreview ? "Разбор выписки" : "Загрузите выписку";
 
   const visibleTabs = TABS.filter((item) => {
-    if (item.key === "quality" && !hasPreview) return false;
     if (item.key === "ocr" && !hasOcrReview) return false;
     return true;
   });
 
   const tabBadge = (key: Tab): string | null => {
-    if (key === "quality" && deferredPreview?.quality_summary.high_risk_count) {
-      return String(deferredPreview.quality_summary.high_risk_count);
-    }
     if (key === "ocr" && hasOcrReview) return "!";
     return null;
   };
+  // Вкладка одна («Транзакции») — полоса вкладок и нижний таб-бар ничего не
+  // переключают. Вторая появляется только у скана, которому нужна разметка.
+  const showTabs = visibleTabs.length > 1;
+  // Выбранная вкладка могла пропасть (скан размечен) — без полосы вкладок
+  // вернуться с неё было бы нечем.
+  const activeTab: Tab = visibleTabs.some((item) => item.key === tab) ? tab : "table";
 
   // svh, а не dvh: снизу закреплён таб-бар, а при dvh высота раскладки едет
   // вместе с исчезающей адресной строкой Safari.
@@ -91,6 +91,7 @@ function WorkbenchInner({ openHistory = false }: { openHistory?: boolean }) {
         </SplitReveal>
       </div>
 
+      {showTabs && (
       <div className="hidden sm:block max-w-6xl w-full mx-auto px-6">
         <nav className="wb-tabs">
           {visibleTabs.map((item) => {
@@ -98,7 +99,7 @@ function WorkbenchInner({ openHistory = false }: { openHistory?: boolean }) {
             return (
               <button
                 key={item.key}
-                className={`wb-tab ${tab === item.key ? "tab-active" : "tab-inactive"}`}
+                className={`wb-tab ${activeTab === item.key ? "tab-active" : "tab-inactive"}`}
                 onClick={() => setTab(item.key)}
                 type="button"
               >
@@ -110,6 +111,7 @@ function WorkbenchInner({ openHistory = false }: { openHistory?: boolean }) {
           })}
         </nav>
       </div>
+      )}
 
       <div className="px-4 pt-4 pb-2 max-w-6xl w-full mx-auto">
         <UploadPanel file={localFile} parsers={parsers} onFileChange={setLocalFile} />
@@ -121,20 +123,14 @@ function WorkbenchInner({ openHistory = false }: { openHistory?: boolean }) {
         </div>
       )}
 
-      <main className="flex-1 px-4 sm:px-6 py-4 sm:py-5 max-w-6xl w-full mx-auto space-y-4 pb-24 sm:pb-8">
-        {tab === "table" && hasPreview && (
+      <main className={`flex-1 px-4 sm:px-6 py-4 sm:py-5 max-w-6xl w-full mx-auto space-y-4 ${showTabs ? "pb-24" : "pb-8"} sm:pb-8`}>
+        {activeTab === "table" && hasPreview && (
           <div className="animate-fade-in">
-            <VariantPreviewPanel variants={allVariants} diagnostics={deferredPreview?.row_diagnostics ?? []} />
+            <VariantPreviewPanel variants={allVariants} />
           </div>
         )}
 
-        {tab === "quality" && hasPreview && (
-          <div className="animate-fade-in">
-            <QualityPanel summary={deferredPreview?.quality_summary ?? null} diagnostics={deferredPreview?.row_diagnostics ?? []} />
-          </div>
-        )}
-
-        {tab === "ocr" && (
+        {activeTab === "ocr" && (
           <div className="animate-fade-in">
             {hasOcrReview ? (
               <OcrReviewPanel
@@ -204,6 +200,7 @@ function WorkbenchInner({ openHistory = false }: { openHistory?: boolean }) {
         </>
       )}
 
+      {showTabs && (
       <nav
         className="sm:hidden fixed bottom-0 inset-x-0 z-50 flex border-t"
         style={{
@@ -215,7 +212,7 @@ function WorkbenchInner({ openHistory = false }: { openHistory?: boolean }) {
       >
         {visibleTabs.map((item) => {
           const badge = tabBadge(item.key);
-          const active = tab === item.key;
+          const active = activeTab === item.key;
           return (
             <button
               key={item.key}
@@ -241,6 +238,7 @@ function WorkbenchInner({ openHistory = false }: { openHistory?: boolean }) {
           );
         })}
       </nav>
+      )}
 
       <ToastContainer />
     </div>

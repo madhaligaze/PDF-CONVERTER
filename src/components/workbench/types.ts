@@ -70,37 +70,6 @@ export type ParserMatch = {
   matched: boolean;
 };
 
-export type QualityFlag = {
-  code: string;
-  severity: "low" | "medium" | "high" | string;
-  message: string;
-};
-
-export type RowDiagnostic = {
-  row_number: number;
-  date: string;
-  operation: string;
-  detail: string;
-  amount: number;
-  confidence: number;
-  source: string;
-  corrected: boolean;
-  flags: QualityFlag[];
-};
-
-export type QualitySummary = {
-  overall_confidence: number;
-  anomaly_score: number;
-  review_required_count: number;
-  high_risk_count: number;
-  medium_risk_count: number;
-  low_risk_count: number;
-  clean_count: number;
-  corrected_count: number;
-  totals_mismatch: boolean;
-  recommendations: string[];
-};
-
 export type VisionStatus = {
   available: boolean;
   backend: string;
@@ -191,6 +160,8 @@ export type PreviewResponse = {
     closing_balance?: number | null;
     transaction_count: number;
     reading_note?: string | null;
+    /** Чей счёт: "legal" — ТОО, АО, ИП; "personal" — физлицо; null — не определилось. */
+    holder_kind?: "legal" | "personal" | null;
     totals: {
       income_total: number;
       expense_total: number;
@@ -202,8 +173,6 @@ export type PreviewResponse = {
   };
   parser_matches: ParserMatch[];
   applied_rule?: AppliedRuleInfo | null;
-  quality_summary: QualitySummary;
-  row_diagnostics: RowDiagnostic[];
   ocr_review?: OCRReviewPayload | null;
   variants: PreviewVariant[];
   saved_variants: PreviewVariant[];

@@ -35,20 +35,6 @@ export type WorkbenchCtx = {
   parsers: ParserDescriptor[];
   selectedVariantKey: string | null;
   setSelectedVariantKey: (k: string) => void;
-  selectedDiagnosticRow: number | null;
-  setSelectedDiagnosticRow: (n: number | null) => void;
-  rowEditorDate: string;
-  setRowEditorDate: (v: string) => void;
-  rowEditorAmount: string;
-  setRowEditorAmount: (v: string) => void;
-  rowEditorOperation: string;
-  setRowEditorOperation: (v: string) => void;
-  rowEditorDetail: string;
-  setRowEditorDetail: (v: string) => void;
-  rowEditorDirection: "inflow" | "outflow";
-  setRowEditorDirection: (v: "inflow" | "outflow") => void;
-  rowEditorNote: string;
-  setRowEditorNote: (v: string) => void;
   selectedReviewTableIndex: number;
   setSelectedReviewTableIndex: (i: number) => void;
   selectedReviewHeaderRow: number;
@@ -68,7 +54,6 @@ export type WorkbenchCtx = {
   customExportRows: Array<Record<string, unknown>> | null;
   setCustomExportRows: (rows: Array<Record<string, unknown>> | null) => void;
   isPending: boolean;
-  isSavingRowCorrection: boolean;
   isMaterializingReview: boolean;
   isExporting: boolean;
   isExportingCsv: boolean;
@@ -79,7 +64,6 @@ export type WorkbenchCtx = {
   handlePreviewNow: (file: File) => void;
   handleExport: () => void;
   handleExportCsv: () => void;
-  handleSaveRowCorrection: () => void;
   handleMaterializeReview: () => void;
   handleCompareRule: (_templateId: string) => Promise<OCRRuleVersionDiff | null>;
   handleCreateTemplate: (name: string, parserKey: string, variantKey: string, columns: Array<{key: string; label: string; kind: string; formula?: string | null; ai_description?: string | null}>) => Promise<string | null>;
@@ -174,13 +158,6 @@ export function WorkbenchProvider({ children, apiBaseUrl }: WorkbenchProviderPro
   const [history, setHistory] = useState<SessionSummary[]>([]);
   const [parsers, setParsers] = useState<ParserDescriptor[]>([]);
   const [selectedVariantKey, setSelectedVariantKey] = useState<string | null>(null);
-  const [selectedDiagnosticRow, setSelectedDiagnosticRow] = useState<number | null>(null);
-  const [rowEditorDate, setRowEditorDate] = useState("");
-  const [rowEditorAmount, setRowEditorAmount] = useState("");
-  const [rowEditorOperation, setRowEditorOperation] = useState("");
-  const [rowEditorDetail, setRowEditorDetail] = useState("");
-  const [rowEditorDirection, setRowEditorDirection] = useState<"inflow" | "outflow">("outflow");
-  const [rowEditorNote, setRowEditorNote] = useState("");
   const [selectedReviewTableIndex, setSelectedReviewTableIndex] = useState(0);
   const [selectedReviewHeaderRow, setSelectedReviewHeaderRow] = useState(0);
   const [reviewTitle, setReviewTitle] = useState("");
@@ -188,7 +165,6 @@ export function WorkbenchProvider({ children, apiBaseUrl }: WorkbenchProviderPro
   const [reviewTemplateName, setReviewTemplateName] = useState("");
   const [reviewColumnMapping, setReviewColumnMapping] = useState<Record<string, string>>({});
   const [isPending, startUpload] = useTransition();
-  const [isSavingRowCorrection, setIsSavingRowCorrection] = useState(false);
   const [isMaterializingReview, setIsMaterializingReview] = useState(false);
   const [excludedExportRows, setExcludedExportRows] = useState<number[]>([]);
   const [customExportColumns, setCustomExportColumns] = useState<Array<{key: string; label: string; kind: string}> | null>(null);
@@ -262,7 +238,11 @@ export function WorkbenchProvider({ children, apiBaseUrl }: WorkbenchProviderPro
       const savedTemplateId = localStorage.getItem(`template_id_${parserKey}`);
       if (savedTemplateId) {
         const templateKey = `template::${savedTemplateId}`;
-        if (allVariants.some((v) => v.key === templateKey)) {
+        // Шаблон помнится по шаблону разбора, а общий разбор один на физлиц
+        // и юрлиц: вид физлица не должен открываться поверх «Юр счёта».
+        const groupOf = (key: string | null) =>
+          allVariants.find((v) => v.key === key)?.group ?? "primary";
+        if (allVariants.some((v) => v.key === templateKey) && groupOf(templateKey) === groupOf(next)) {
           next = templateKey;
         }
       }
@@ -271,18 +251,6 @@ export function WorkbenchProvider({ children, apiBaseUrl }: WorkbenchProviderPro
     }
     setSelectedVariantKey(next);
   }, [allVariants, deferredPreview]);
-
-  useEffect(() => {
-    if (!selectedDiagnosticRow || !deferredPreview) return;
-    const row = deferredPreview.row_diagnostics.find((item) => item.row_number === selectedDiagnosticRow);
-    if (!row) return;
-    setRowEditorDate(row.date);
-    setRowEditorAmount(String(Math.abs(row.amount)));
-    setRowEditorOperation(row.operation);
-    setRowEditorDetail(row.detail);
-    setRowEditorDirection(row.amount >= 0 ? "inflow" : "outflow");
-    setRowEditorNote("");
-  }, [selectedDiagnosticRow, deferredPreview]);
 
   useEffect(() => {
     const review = deferredPreview?.ocr_review;
@@ -383,36 +351,6 @@ export function WorkbenchProvider({ children, apiBaseUrl }: WorkbenchProviderPro
       setIsExportingCsv(false);
     }
   }, [api, preview, selectedVariantKey]);
-
-  const handleSaveRowCorrection = useCallback(async () => {
-    if (!preview || !selectedDiagnosticRow) return;
-    setIsSavingRowCorrection(true);
-    setError(null);
-    try {
-      const res = await fetch(
-        `${api}/api/v1/transforms/sessions/${preview.session_id}/rows/${selectedDiagnosticRow}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            date: rowEditorDate,
-            amount: Number(rowEditorAmount),
-            operation: rowEditorOperation,
-            detail: rowEditorDetail,
-            direction: rowEditorDirection,
-            note: rowEditorNote || null,
-          }),
-        },
-      );
-      if (!res.ok) throw new Error(await readErrorMessage(res));
-      setPreview((await res.json()) as PreviewResponse);
-      setSelectedDiagnosticRow(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Ошибка сохранения исправления.");
-    } finally {
-      setIsSavingRowCorrection(false);
-    }
-  }, [api, preview, selectedDiagnosticRow, rowEditorDate, rowEditorAmount, rowEditorOperation, rowEditorDetail, rowEditorDirection, rowEditorNote]);
 
   const handleMaterializeReview = useCallback(async () => {
     const review = preview?.ocr_review;
@@ -686,20 +624,6 @@ export function WorkbenchProvider({ children, apiBaseUrl }: WorkbenchProviderPro
     parsers,
     selectedVariantKey,
     setSelectedVariantKey,
-    selectedDiagnosticRow,
-    setSelectedDiagnosticRow,
-    rowEditorDate,
-    setRowEditorDate,
-    rowEditorAmount,
-    setRowEditorAmount,
-    rowEditorOperation,
-    setRowEditorOperation,
-    rowEditorDetail,
-    setRowEditorDetail,
-    rowEditorDirection,
-    setRowEditorDirection,
-    rowEditorNote,
-    setRowEditorNote,
     selectedReviewTableIndex,
     setSelectedReviewTableIndex,
     selectedReviewHeaderRow,
@@ -719,7 +643,6 @@ export function WorkbenchProvider({ children, apiBaseUrl }: WorkbenchProviderPro
     customExportRows,
     setCustomExportRows,
     isPending,
-    isSavingRowCorrection,
     isMaterializingReview,
     isExporting,
     isExportingCsv,
@@ -730,7 +653,6 @@ export function WorkbenchProvider({ children, apiBaseUrl }: WorkbenchProviderPro
     handlePreviewNow,
     handleExport,
     handleExportCsv,
-    handleSaveRowCorrection,
     handleMaterializeReview,
     handleCompareRule,
     handleCreateTemplate,

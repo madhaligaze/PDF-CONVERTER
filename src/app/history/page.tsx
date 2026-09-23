@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
  *
  * Отдельного экрана у истории нет намеренно: она нужна ровно для того, чтобы
  * открыть разобранную выписку, а открывается выписка в мастерской. Свой экран
- * означал бы вторую копию таблицы вариантов и панели качества.
+ * означал бы вторую копию таблицы вариантов.
  */
 export default function HistoryPage() {
   return <StatementWorkbench apiBaseUrl="/api/backend" openHistory />;
