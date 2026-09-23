@@ -390,9 +390,13 @@ export type ImportBatch = {
 
 export class FinanceApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  /** Тело ответа. Реестр договоров кладёт туда смысл отказа: 422
+   *  `mode_required` со списком полей, 409 `conflict` со свежим договором. */
+  body: unknown;
+  constructor(message: string, status: number, body?: unknown) {
     super(message);
     this.status = status;
+    this.body = body;
   }
 }
 
@@ -404,8 +408,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!response.ok) {
     let message = `Сервер ответил ${response.status}`;
+    let payload: unknown;
     try {
       const body = await response.json();
+      payload = body;
       // `detail` у FastAPI бывает и строкой, и списком ошибок валидации.
       if (typeof body?.detail === "string") message = body.detail;
       else if (Array.isArray(body?.detail)) {
@@ -414,7 +420,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       /* тело не JSON — оставляем код состояния */
     }
-    throw new FinanceApiError(message, response.status);
+    throw new FinanceApiError(message, response.status, payload);
   }
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
@@ -867,3 +873,291 @@ export function todayIso(): string {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
+
+// ── Реестр договоров ─────────────────────────────────────────────────────────
+//
+// Контракт — раздел «Контракт API для экранов» плана. Экраны не зовут fetch и
+// не держат копий договоров: всё через `contractsApi` и хранилище
+// `finance/contracts/store.ts`.
+
+export type FieldType =
+  | "text" | "number" | "money" | "date" | "bool" | "list" | "multi_list"
+  | "url" | "person" | "party" | "department" | "choice";
+
+export type RegistryField = {
+  key: string;
+  type: FieldType;
+  title: string;
+  system: boolean;
+  /** Сервер уже урезал поля по правам: скрытых здесь нет, у видимых — можно ли править. */
+  editable: boolean;
+  required: boolean;
+  hidden: boolean;
+  position: number;
+  choices?: { value: string; label: string }[];
+};
+
+export type ListValue = {
+  id: string;
+  value: string;
+  meaning: {
+    phase?: string;
+    handover?: string;
+    billing?: string;
+    economic_role?: string;
+    system?: string;
+    roles?: { executor?: string; customer?: string };
+    kind?: string;
+  };
+  position: number;
+};
+
+export type FilterCondition = { field: string; op: string; value: unknown };
+export type ViewFilter = { any: { all: FilterCondition[] }[] };
+
+export type ViewBlock = {
+  title: string;
+  filter: ViewFilter;
+  roles: { executor?: string; customer?: string; order?: ("executor" | "customer")[] };
+  columns: { key: string; label: string; width?: number | null }[];
+  defaults: Record<string, string>;
+};
+
+export type RegistryView = {
+  id: string;
+  key: string;
+  title: string;
+  main: boolean;
+  position: number;
+  blocks: ViewBlock[];
+  sort: unknown[];
+};
+
+export type OwnEntity = {
+  id: string;
+  code: string;
+  name: string;
+  full_name: string;
+  bin: string;
+  vat_payer: boolean;
+  accounts: { id: string; name: string; number: string }[];
+};
+
+export type RegistrySchema = {
+  schema_rev: number;
+  fields: RegistryField[];
+  lists: Record<string, ListValue[]>;
+  departments: { id: string; code: string; title: string; position: number }[];
+  views: RegistryView[];
+  own_entities: OwnEntity[];
+  mode_fields: string[];
+  virtual_fields: Record<string, string>;
+  billing_kinds: string[];
+  economic_roles: string[];
+  status_phases: string[];
+  today: string;
+  access: { edit: boolean; setup: boolean };
+};
+
+export type ContractIssue = { code: string; field: string; text: string; ref: string; acknowledged: boolean };
+
+export type Contract = {
+  id: string;
+  seq: number;
+  /** Значения по ключу поля. Пустые сервер не отдаёт: нет ключа — пусто. */
+  values: Record<string, unknown>;
+  provenance: Record<string, string>;
+  issues: ContractIssue[];
+  views: { view: string; block: number }[];
+  roles?: { executor?: string; customer?: string };
+  file_snapshot: { paid?: string; remaining?: string; as_of?: string; file?: string };
+  position: number;
+  source: string;
+  created_by: string | null;
+  created_at: string | null;
+  updated_by: { id: string; short_name: string } | null;
+  updated_at: string | null;
+  deleted: boolean;
+};
+
+export type Party = { id: string; name: string; own: boolean; code: string; bin: string };
+export type PersonRef = { id: string; name: string; department_id: string | null };
+
+export type ContractsAll = {
+  contracts: Contract[];
+  parties: Record<string, Party>;
+  people: Record<string, PersonRef>;
+  seq: number;
+  schema_rev: number;
+};
+
+export type ChangesBatch = ContractsAll & { removed: string[] };
+
+export type ChangeMode =
+  | { kind: "fix" }
+  | { kind: "from_date"; effective_from: string; number?: string; signed_at?: string; summary?: string };
+
+export type OneContract = {
+  contract: Contract;
+  parties: Record<string, Party>;
+  people: Record<string, PersonRef>;
+};
+
+export type Amendment = {
+  id: string;
+  number: string;
+  signed_at: string | null;
+  summary: string;
+  effect: string;
+  effective_from: string | null;
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+  before_label: string;
+  after_label: string;
+  origin: "change" | "parsed";
+  piece: string;
+  ahead: boolean;
+  applied_at: string | null;
+};
+
+export type ParsedPiece = {
+  index: number;
+  text: string;
+  start: number;
+  end: number;
+  number: string;
+  signed_at: string | null;
+  summary: string;
+  summary_start: number | null;
+  summary_end: number | null;
+  effect: string;
+  effective_from: string | null;
+  value_hint: string;
+  confirmed: string[] | null;
+};
+
+export type HistoryItem = {
+  id: string;
+  at: string | null;
+  actor: string;
+  kind: string;
+  title: string;
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+};
+
+export type ContractImportSection = {
+  key: string;
+  title: string;
+  blocking: boolean;
+  done: boolean;
+  summary: string;
+  items: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+  [extra: string]: unknown;
+};
+
+export type ContractImportBatch = {
+  id: string;
+  status: "preview" | "applied" | "cancelled";
+  file_name: string;
+  decisions: Record<string, unknown>;
+  report: {
+    file: string;
+    main_sheet: string;
+    sheets: string[];
+    sections: ContractImportSection[];
+    blocking: string[];
+    totals: { create: number; update: number; main_rows: number };
+    result?: { created: number; failed: { ref: string; error: string }[] };
+  };
+};
+
+const C = "/contracts";
+
+export const contractsApi = {
+  schema: () => request<RegistrySchema>(`${C}/schema`),
+  all: () => request<ContractsAll>(C),
+  changes: (since: number) => request<ChangesBatch>(`${C}/changes${qs({ since })}`),
+  one: (id: string) => request<OneContract>(`${C}/${id}`),
+  create: (values: Record<string, unknown>, ctx?: { view?: string; block?: number; source?: string }) =>
+    request<OneContract>(C, {
+      method: "POST",
+      body: JSON.stringify({ values, view: ctx?.view, block: ctx?.block, source: ctx?.source ?? "app" }),
+    }),
+  patch: (id: string, values: Record<string, unknown>, knownSeq: number | null, mode?: ChangeMode | null) =>
+    request<OneContract>(`${C}/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ values, known_seq: knownSeq, mode: mode ?? null }),
+    }),
+  remove: (id: string) => request<{ ok: boolean }>(`${C}/${id}`, { method: "DELETE" }),
+  acknowledge: (id: string, code: string, on: boolean) =>
+    request<OneContract>(`${C}/${id}/acknowledge`, { method: "POST", body: JSON.stringify({ code, on }) }),
+  history: (id: string, before?: string) =>
+    request<{ items: HistoryItem[] }>(`${C}/${id}/history${qs({ before })}`),
+  amendments: {
+    list: (id: string) => request<{ items: Amendment[] }>(`${C}/${id}/amendments`),
+    parse: (id: string) => request<{ pieces: ParsedPiece[] }>(`${C}/${id}/amendments/parse`, { method: "POST" }),
+    confirm: (id: string, piece: Record<string, unknown>) =>
+      request<OneContract>(`${C}/${id}/amendments/confirm`, { method: "POST", body: JSON.stringify({ piece }) }),
+    remove: (id: string, amendmentId: string) =>
+      request<{ ok: boolean }>(`${C}/${id}/amendments/${amendmentId}`, { method: "DELETE" }),
+  },
+  parties: {
+    search: (q: string, limit = 20) =>
+      request<{ parties: Party[] }>(`${C}/parties${qs({ q, limit })}`),
+    similar: (name: string, bin = "") =>
+      request<{ parties: Party[] }>(`${C}/parties/similar${qs({ name, bin })}`),
+  },
+  people: () => request<{ people: PersonRef[] }>(`${C}/people`),
+  exportUrl: (views?: string[]) => `${API}${C}/export.xlsx${qs({ views: views?.join(",") })}`,
+  imports: {
+    upload: (file: File) => {
+      const form = new FormData();
+      form.append("file", file);
+      return request<ContractImportBatch>(`${C}/imports`, { method: "POST", body: form });
+    },
+    get: (id: string) => request<ContractImportBatch>(`${C}/imports/${id}`),
+    decide: (id: string, decisions: Record<string, unknown>) =>
+      request<ContractImportBatch>(`${C}/imports/${id}/decide`, { method: "POST", body: JSON.stringify({ decisions }) }),
+    apply: (id: string) =>
+      request<{ result: { created: number; failed: { ref: string; error: string }[] } }>(
+        `${C}/imports/${id}/apply`,
+        { method: "POST" },
+      ),
+    cancel: (id: string) => request<{ ok: boolean }>(`${C}/imports/${id}/cancel`, { method: "POST" }),
+  },
+  setup: {
+    addField: (title: string, type: string, after?: string | null) =>
+      request<{ key: string }>(`${C}/setup/fields`, { method: "POST", body: JSON.stringify({ title, type, after }) }),
+    updateField: (key: string, data: Record<string, unknown>) =>
+      request<{ key: string }>(`${C}/setup/fields/${encodeURIComponent(key)}`, { method: "PATCH", body: JSON.stringify(data) }),
+    addValue: (field: string, value: string, meaning?: ListValue["meaning"]) =>
+      request<{ id: string }>(`${C}/setup/lists/${encodeURIComponent(field)}`, {
+        method: "POST",
+        body: JSON.stringify({ value, meaning }),
+      }),
+    updateValue: (id: string, data: Record<string, unknown>) =>
+      request<{ id: string }>(`${C}/setup/values/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    mergeValues: (keep: string, drop: string) =>
+      request<{ ok: boolean }>(`${C}/setup/values/merge`, { method: "POST", body: JSON.stringify({ keep, drop }) }),
+    addEntity: (data: Record<string, unknown>) =>
+      request<{ id: string }>(`${C}/setup/entities`, { method: "POST", body: JSON.stringify(data) }),
+    updateEntity: (id: string, data: Record<string, unknown>) =>
+      request<{ id: string }>(`${C}/setup/entities/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    mergeParties: (keep: string, drop: string) =>
+      request<{ ok: boolean }>(`${C}/setup/parties/merge`, { method: "POST", body: JSON.stringify({ keep, drop }) }),
+    addDepartment: (data: Record<string, unknown>) =>
+      request<{ id: string }>(`${C}/setup/departments`, { method: "POST", body: JSON.stringify(data) }),
+    updateDepartment: (id: string, data: Record<string, unknown>) =>
+      request<{ id: string }>(`${C}/setup/departments/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    addView: (data: Record<string, unknown>) =>
+      request<RegistryView>(`${C}/setup/views`, { method: "POST", body: JSON.stringify(data) }),
+    updateView: (id: string, data: Record<string, unknown>) =>
+      request<RegistryView>(`${C}/setup/views/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    preview: (filter: ViewFilter) =>
+      request<{ count: number; sample: string[] }>(`${C}/setup/views/preview`, {
+        method: "POST",
+        body: JSON.stringify({ filter }),
+      }),
+  },
+};

@@ -306,3 +306,59 @@ export function RefreshIcon(props: IconProps) {
     </Svg>
   );
 }
+
+/** «Реестр» — лист с загнутым углом и росчерком подписи. */
+export function ContractIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M7 3h7l4 4v14H7z" />
+      <path d="M14 3v4h4M9.5 11h6M9.5 14h4" />
+      <path d="M9 18.5c1-1.2 1.8-1.2 2.3 0s1.3 1.2 2.2-.2c.5-.8 1.2-.8 1.8.2" />
+    </Svg>
+  );
+}
+
+/** «Реестр · таблица» — рамка листа и росчерк: отличается от «Таблицы» журнала. */
+export function ContractGridIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3.5" y="3.5" width="17" height="12.5" rx="1.5" />
+      <path d="M3.5 8h17M9 8v8" />
+      <path d="M8 20c1-1.2 1.8-1.2 2.3 0s1.3 1.2 2.2-.2c.5-.8 1.2-.8 1.8.2" />
+    </Svg>
+  );
+}
+
+export function SearchIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="11" cy="11" r="6" />
+      <path d="m20 20-4.2-4.2" />
+    </Svg>
+  );
+}
+
+/** Меню действий «⋯». */
+export function MoreIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M6 12h.01M12 12h.01M18 12h.01" strokeWidth={2.4} />
+    </Svg>
+  );
+}
+
+export function ArrowUpIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M12 19V5M6 11l6-6 6 6" />
+    </Svg>
+  );
+}
+
+export function ArrowDownIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M12 5v14M6 13l6 6 6-6" />
+    </Svg>
+  );
+}

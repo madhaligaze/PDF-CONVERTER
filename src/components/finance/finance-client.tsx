@@ -19,6 +19,8 @@ import {
   ChevronRightIcon,
   ClockIcon,
   CloseIcon,
+  ContractGridIcon,
+  ContractIcon,
   FileTextIcon,
   FolderIcon,
   GaugeIcon,
@@ -68,6 +70,8 @@ import { CashFlowReport, DebtsReport, ProfitReport, ProjectsReport } from "@/com
 import { CalendarView } from "@/components/finance/calendar-view";
 import { PlanActualReport } from "@/components/finance/plan-actual";
 import { DictionariesPanel } from "@/components/finance/dictionaries-panel";
+import { Registry } from "@/components/finance/contracts/registry-cards";
+import { readParam, writeParams } from "@/components/finance/address";
 
 /**
  * Табличный вид грузится только по требованию: Univer тянет за собой канвас и
@@ -80,6 +84,10 @@ const TableView = dynamic(() => import("./table-view").then((m) => m.TableView),
 });
 
 type Section =
+  | "contracts"
+  | "contracts-sheet"
+  | "contracts-import"
+  | "contracts-setup"
   | "journal"
   | "table"
   | "calendar"
@@ -121,6 +129,15 @@ type SectionItem = { key: Section; title: string; icon: (props: { size?: number 
  */
 const GROUPS: { title: string; items: SectionItem[] }[] = [
   {
+    // Договоры — первыми: колонка идёт в порядке цепочки учёта, от договора к
+    // деньгам и отчётам (план, «Картина целиком»).
+    title: "Договоры",
+    items: [
+      { key: "contracts", title: "Реестр", icon: ContractIcon },
+      { key: "contracts-sheet", title: "Реестр · таблица", icon: ContractGridIcon },
+    ],
+  },
+  {
     title: "Учёт",
     items: [
       { key: "journal", title: "Журнал", icon: ListIcon },
@@ -157,7 +174,19 @@ const GROUPS: { title: string; items: SectionItem[] }[] = [
   },
 ];
 
+/** Экраны без пункта в колонке: редкие действия внутри «Реестра» (меню ⋯). */
+const HIDDEN_SECTIONS: SectionItem[] = [
+  { key: "contracts-import", title: "Загрузка реестра", icon: UploadIcon },
+  { key: "contracts-setup", title: "Настроить реестр", icon: BookIcon },
+];
+
 const SECTIONS: SectionItem[] = GROUPS.flatMap((group) => group.items);
+const ALL_SECTIONS: SectionItem[] = [...SECTIONS, ...HIDDEN_SECTIONS];
+
+function sectionFromAddress(): Section {
+  const wanted = readParam("s");
+  return (ALL_SECTIONS.find((item) => item.key === wanted)?.key as Section | undefined) ?? "journal";
+}
 
 /**
  * Закреплена ли колонка разделов — выбор человека, переживающий перезагрузку.
@@ -201,7 +230,25 @@ function subscribeRail(listener: () => void): () => void {
 export function FinanceClient() {
   // Раздел сам решает, кто вошёл: своя учётка, свой вход, своя компания.
   const { me, setMe, loading } = useMe();
-  const [section, setSection] = useState<Section>("journal");
+  const [section, setSectionState] = useState<Section>("journal");
+  /**
+   * Раздел живёт в адресе: ссылку на реестр или договор можно переслать.
+   * Первый раздел читается после монтирования, а не в начальном состоянии —
+   * иначе серверная отрисовка и первая клиентская разошлись бы.
+   */
+  useEffect(() => {
+    setSectionState(sectionFromAddress());
+    const onPop = () => setSectionState(sectionFromAddress());
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+  const setSection = useCallback((next: Section | string) => {
+    const key = (ALL_SECTIONS.find((item) => item.key === next)?.key ?? "journal") as Section;
+    setSectionState(key);
+    // Запись открытого договора и лист принадлежат реестру — при смене
+    // раздела они уходят из адреса.
+    writeParams({ s: key === "journal" ? null : key, id: null, v: null }, true);
+  }, []);
   /**
    * Колонка разделов: свёрнута в полосу значков и раскрывается наведением.
    *
@@ -287,6 +334,12 @@ export function FinanceClient() {
   const content = useMemo(() => {
     if (!dictionaries) return null;
     switch (section) {
+      case "contracts":
+        return me ? <Registry me={me} onGo={setSection} /> : null;
+      case "contracts-sheet":
+      case "contracts-import":
+      case "contracts-setup":
+        return <p className="creg-empty">Экран собирается — будет в этой сборке.</p>;
       case "journal":
         return <Journal dictionaries={dictionaries} revision={revision} onChanged={reload} />;
       case "table":
@@ -337,7 +390,7 @@ export function FinanceClient() {
       default:
         return null;
     }
-  }, [section, dictionaries, revision, reload, me, sheetRefresh]);
+  }, [section, dictionaries, revision, reload, me, sheetRefresh, setSection]);
 
   if (loading) return <AuthLoading />;
   if (!me) return <AuthGate onReady={(next) => setMe(next)} />;
@@ -581,7 +634,7 @@ export function FinanceClient() {
               у соседей разные: одинаковые (оба `section`) React в сборке не
               различал, и старые заголовки не удалялись — копились над новыми. */}
           <SplitReveal key={`title-${section}`} as="h1" className="fin-section-title" duration={0.9}>
-            {SECTIONS.find((item) => item.key === section)?.title ?? ""}
+            {ALL_SECTIONS.find((item) => item.key === section)?.title ?? ""}
           </SplitReveal>
           {/* На телефоне колонка не работает — там разделы остаются лентой. */}
           <nav className="fin-tabs" aria-label="Разделы финансов">
