@@ -684,10 +684,22 @@ export function pendingRules(pending: string[], decisions: Decisions): string[] 
   return pending.filter((block) => ruleChoice(decisions, block) === null);
 }
 
-/** Написания из файла для фразы правила: виды, статусы, отделы — из пункта 04, предметы — из правил. */
-function valueOptions(items: RuleItem[], statuses: StatusItem[]): Record<string, ValueOption[]> {
+/**
+ * Написания из файла для фразы правила: виды, статусы, отделы — из пункта 04,
+ * предметы — полным списком из того же пункта (`subjects`); у старого отчёта
+ * без него — из правил и примеров строк.
+ */
+function valueOptions(
+  items: RuleItem[],
+  statuses: StatusItem[],
+  listed: { value: string; count: number }[],
+): Record<string, ValueOption[]> {
   const out: Record<string, ValueOption[]> = { type: [], subject: [], department: [], status: [] };
   for (const item of statuses) out[item.field]?.push({ value: item.value, count: item.count });
+  if (listed.length) {
+    out.subject = listed.map((item) => ({ value: item.value, count: item.count }));
+    return out;
+  }
   const subjects = new Set<string>();
   for (const rule of items) {
     for (const group of rule.filter.any ?? [])
@@ -702,17 +714,19 @@ function valueOptions(items: RuleItem[], statuses: StatusItem[]): Record<string,
 export function RulesStep({
   items,
   statuses,
+  subjects = [],
   decisions,
   decide,
 }: {
   items: RuleItem[];
   statuses: StatusItem[];
+  subjects?: { value: string; count: number }[];
   decisions: Decisions;
   decide: Decide;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
   if (!items.length) return <p className="fin-soft">Других листов нет</p>;
-  const options = valueOptions(items, statuses);
+  const options = valueOptions(items, statuses, subjects);
 
   return (
     <div className={styles.stack}>

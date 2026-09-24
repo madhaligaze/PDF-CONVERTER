@@ -267,6 +267,7 @@ function Protocol({
   const entities = items<EntityItem>("entities");
   const similar = (sectionOf(report, "entities")?.similar ?? []) as SimilarGroup[];
   const statuses = items<StatusItem>("statuses");
+  const subjects = (sectionOf(report, "statuses")?.subjects ?? []) as { value: string; count: number }[];
   const endDates = items<EndDateItem>("end_dates");
   const endCounts = (sectionOf(report, "end_dates")?.counts ?? {}) as Record<string, number>;
   const numbers = items<NumberItem>("numbers");
@@ -422,7 +423,7 @@ function Protocol({
       />
     ),
     diffs: <DiffsStep items={diffs} mainSheet={mainSheet} decisions={decisions} decide={decide} />,
-    rules: <RulesStep items={rules} statuses={statuses} decisions={decisions} decide={decide} />,
+    rules: <RulesStep items={rules} statuses={statuses} subjects={subjects} decisions={decisions} decide={decide} />,
   };
 
   const elapsed = Math.max(0, Math.round((now - startedAt) / 1000));
