@@ -276,3 +276,20 @@
   .chev, .mapRow, .mapNode, .edge { transition: none; }
   .phase { animation-delay: 0s; animation-duration: 0s; }
 }
+
+/* ─── Полоса записи: почему «Завести» ждёт ─── */
+.barReason { display: block; margin-top: 0.2rem; font-size: 0.8125rem; color: var(--fin-text-soft); }
+.barReason:global(.fin-fail) { color: var(--fin-fail); margin: 0 0 0.2rem; }
+
+/* ─── Правило блока: правка фразой ─── */
+.ruleEditor { display: grid; gap: 0.75rem; padding: 0.75rem 0 0.25rem; border-top: 1px solid var(--fin-line); min-width: 0; }
+.ruleGroup { display: grid; gap: 0.5rem; min-width: 0; }
+.ruleLead { margin: 0; font-size: 0.875rem; }
+.ruleCond { display: grid; gap: 0.375rem; padding-left: 1rem; min-width: 0; }
+.ruleValues { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 1rem; min-width: 0; }
+.ruleValue { display: inline-flex; align-items: baseline; gap: 0.35rem; font-size: 0.8125rem; cursor: pointer; overflow-wrap: anywhere; }
+.ruleValue input { accent-color: var(--fin-text); }
+@media (max-width: 639px) {
+  .ruleCond { padding-left: 0; }
+  .ruleValue { min-height: 2.75rem; align-items: center; }
+}

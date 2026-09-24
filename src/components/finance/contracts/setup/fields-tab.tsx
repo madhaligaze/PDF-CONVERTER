@@ -8,9 +8,10 @@
  * сервера схема перечитывается, и лист перестраивается сам.
  *
  * Системное поле можно переименовать и спрятать, но не убрать: на нём держатся
- * начисления, долги и отборы листов. Кнопка «Убрать» у него есть — и одной
- * строкой объясняет, почему нельзя, ровно тогда, когда человек попробовал:
- * заранее написанное объяснение у каждой строки читали бы один раз.
+ * начисления, долги и отборы листов. Кнопка «Убрать» у него есть: запрос уходит
+ * на сервер, и его отказ одной строкой встаёт под полем ровно тогда, когда
+ * человек попробовал. Заранее написанное объяснение у каждой строки читали бы
+ * один раз, а свой текст на клиенте однажды разошёлся бы с правилом сервера.
  */
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 
@@ -39,7 +40,6 @@ export function FieldsTab() {
   const byId = useRegistry((s) => s.byId);
   const action = useSetupAction();
   const [ask, setAsk] = useState<Ask | null>(null);
-  const [note, setNote] = useState<{ key: string; text: string } | null>(null);
   const [focusKey, setFocusKey] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [type, setType] = useState<FieldType>("text");
@@ -78,7 +78,6 @@ export function FieldsTab() {
     if (!field || target < 0 || target >= fields.length) return;
     // Сервер ставит поле «после такого-то»; `null` — в самое начало.
     const after = dir === -1 ? (index >= 2 ? fields[index - 2].key : null) : fields[index + 1].key;
-    setNote(null);
     void action.run(`move:${field.key}`, () => contractsApi.setup.updateField(field.key, { after }));
   };
 
@@ -91,7 +90,6 @@ export function FieldsTab() {
   };
 
   const patch = (field: RegistryField, data: Record<string, unknown>, slot: string) => {
-    setNote(null);
     void action.run(`${slot}:${field.key}`, () => contractsApi.setup.updateField(field.key, data));
   };
 
@@ -220,21 +218,21 @@ export function FieldsTab() {
                   className="fin-link-btn setup-quiet"
                   disabled={action.busy(`archive:${field.key}`)}
                   onClick={() => {
+                                    // Системное поле сервер не убирает — спрашиваем его сразу,
+                    // без диалога: отказ приходит его словами под строкой, и
+                    // правило живёт в одном месте, а не в двух текстах.
                     if (field.system) {
-                      setNote({
-                        key: field.key,
-                        text: "Системное поле можно спрятать, но не убрать: на нём держатся начисления и листы.",
-                      });
+                      void action.run(`archive:${field.key}`, () =>
+                        contractsApi.setup.updateField(field.key, { archived: true }),
+                      );
                       return;
                     }
-                    setNote(null);
                     setAsk({ kind: "archive", field, count });
                   }}
                 >
                   Убрать
                 </button>
               </span>
-              {note?.key === field.key ? <span className="setup-field-note">{note.text}</span> : null}
               {errors.length ? (
                 <span className="setup-field-note setup-error" role="alert">
                   {errors[0]}

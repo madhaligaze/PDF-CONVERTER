@@ -4,7 +4,10 @@
  * «Листы»: листы-отборы и их блоки.
  *
  * Лист ничего не хранит — он показывает договоры, подходящие под правило
- * одного из своих блоков (`views.py`). Правило, подписи сторон, колонки и
+ * одного из своих блоков (`views.py`). Блок без условий у обычного листа не
+ * отбирает ничего — новый лист и новый блок пусты, пока не задано условие; у
+ * главного листа такой блок держит всё, что не подошло другим блокам
+ * (`views.place`), поэтому фраза пустого правила у них разная. Правило, подписи сторон, колонки и
  * подстановки новой строки — у блока; у листа без блоков один блок без
  * названия, и настройка выглядит так же.
  *
@@ -413,8 +416,13 @@ function BlockEditor({ view, index, block, action, saveBlocks, onRemove }: Block
     void saveBlocks(replace({ defaults }), slot(`default-${key}`));
   };
 
+  // Подстановка, поставленная до того, как значение ушло в архив, читается
+  // его словом с пометкой, а не «—»: иначе казалось бы, что её нет.
   const listOptions = (key: string): PopOption[] => [
     ...(schema?.lists[key] ?? []).map((item) => ({ value: item.id, label: item.value })),
+    ...(schema?.archived_values?.[key] ?? [])
+      .filter((item) => item.id === block.defaults?.[key])
+      .map((item) => ({ value: item.id, label: `${item.value} (в архиве)` })),
     { value: "", label: "—" },
   ];
   const fieldTitle = (key: string) =>
@@ -478,9 +486,24 @@ function BlockEditor({ view, index, block, action, saveBlocks, onRemove }: Block
       <div className="setup-brow">
         <span className="setup-blabel">Правило</span>
         <span className="setup-bvalue">
-          <FilterSentence value={draft} onChange={setDraft} />
+          <FilterSentence
+            value={draft}
+            onChange={setDraft}
+            {...(view.main
+              ? {
+                  emptyText:
+                    view.blocks.length === 1
+                      ? "Показывать все договоры"
+                      : "Показывать договоры, которые не подошли другим блокам",
+                  emptyAdd: "+ условие",
+                }
+              : {})}
+          />
           <span className="setup-rule-foot">
-            <RuleCount filter={draft} />
+            {/* У пустого правила счётчик не нужен: фраза уже говорит, что в
+                блоке — ни одного договора или (у главного листа) все. Сервер
+                на пустое правило отвечает нулём и у главного листа ошибся бы. */}
+            {draft.any.length ? <RuleCount filter={draft} /> : null}
             {dirty ? (
               <>
                 <button

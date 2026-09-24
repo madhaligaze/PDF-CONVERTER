@@ -11,9 +11,11 @@
  * набран розой: у договоров с ним горит замечание «статус без смысла», и это
  * отказ, а не оформление.
  *
- * Значение, которое стоит в договорах, в архив не уходит: схема не отдаёт
- * архивные значения, и договоры остались бы с пустой ячейкой вместо подписи.
- * Такое значение сводится с другим — тогда договоры получают то, что осталось.
+ * Что можно убрать, решает сервер, а экран показывает его отказ у действия:
+ * значение системного списка, стоящее в договорах, в архив не уходит (его
+ * сводят с другим); базовые четыре смысла не убираются, не меняют смысл и не
+ * сводятся в другое. Значение своего списка уходит в архив свободно — подпись
+ * в договорах держится `archived_values` схемы.
  */
 import { useMemo, useState } from "react";
 
@@ -87,7 +89,7 @@ export function ListsTab() {
 
 type Ask =
   | { kind: "merge"; keep: ListValue; drop: ListValue; count: number }
-  | { kind: "archive"; value: ListValue };
+  | { kind: "archive"; value: ListValue; count: number };
 
 function ValuesPane({ field }: { field: RegistryField }) {
   const schema = useRegistry((s) => s.schema);
@@ -95,18 +97,21 @@ function ValuesPane({ field }: { field: RegistryField }) {
   const action = useSetupAction();
   const [picked, setPicked] = useState<string[]>([]);
   const [ask, setAsk] = useState<Ask | null>(null);
-  const [note, setNote] = useState<{ id: string; text: string } | null>(null);
   const [draft, setDraft] = useState("");
   const [draftSystem, setDraftSystem] = useState("");
   const [addError, setAddError] = useState("");
 
   const shape = shapeOf(field.key);
+  const systemList = SYSTEM_LISTS.includes(field.key);
   const values = useMemo(() => schema?.lists[field.key] ?? [], [schema, field.key]);
   const counts = useMemo(() => countByValue(byId.values(), field.key), [byId, field.key]);
   const slots = slotTitles(schema);
 
-  // Четыре системных значения хозяйственного смысла не убираются: первое
-  // значение с каждым системным смыслом — то, что подставляет сервер.
+  // Четыре базовых значения хозяйственного смысла сервер не даёт убрать,
+  // перевести на другой смысл или свести в другое (`setup._base_economic`:
+  // первое по порядку значение с каждым системным смыслом). Здесь это знание
+  // нужно только чтобы не открывать диалог «В архив?» ради заведомого отказа —
+  // сам отказ и его текст приходят с сервера.
   const protectedIds = useMemo(() => {
     if (shape !== "economic") return new Set<string>();
     const seen = new Set<string>();
@@ -124,7 +129,6 @@ function ValuesPane({ field }: { field: RegistryField }) {
   const pickedValues = picked.map((id) => values.find((item) => item.id === id)).filter((item): item is ListValue => !!item);
 
   const setMeaning = (value: ListValue, meaning: ListValue["meaning"], slot: string) => {
-    setNote(null);
     void action.run(`${slot}:${value.id}`, () => contractsApi.setup.updateValue(value.id, { meaning }));
   };
 
@@ -294,7 +298,7 @@ function ValuesPane({ field }: { field: RegistryField }) {
                   label={`Системный смысл «${value.value}»`}
                   fail={!value.meaning.system}
                   empty="не назначен"
-                  disabled={action.busy(`meaning:${value.id}`) || protectedIds.has(value.id)}
+                  disabled={action.busy(`meaning:${value.id}`)}
                   onPick={(next) => setMeaning(value, { ...value.meaning, system: next }, "meaning")}
                 />
               </span>
@@ -307,23 +311,21 @@ function ValuesPane({ field }: { field: RegistryField }) {
                 className="fin-link-btn setup-quiet"
                 disabled={action.busy(`archive:${value.id}`)}
                 onClick={() => {
-                  if (protectedIds.has(value.id)) {
-                    setNote({ id: value.id, text: "Системный смысл не убирается: по нему считаются выручка и расходы." });
-                  } else if (count > 0) {
-                    setNote({
-                      id: value.id,
-                      text: `Значение стоит в ${contractsWord(count)} — сведите его с другим, тогда оно уйдёт из списка.`,
-                    });
+                  // Заведомый отказ (базовый смысл, используемое значение
+                  // системного списка) — без диалога: запрос сразу, и под
+                  // строкой встаёт объяснение сервера.
+                  if (protectedIds.has(value.id) || (systemList && count > 0)) {
+                    void action.run(`archive:${value.id}`, () =>
+                      contractsApi.setup.updateValue(value.id, { archived: true }),
+                    );
                   } else {
-                    setNote(null);
-                    setAsk({ kind: "archive", value });
+                    setAsk({ kind: "archive", value, count });
                   }
                 }}
               >
                 В архив
               </button>
             </span>
-            {note?.id === value.id ? <span className="setup-vnote">{note.text}</span> : null}
             {errors.length ? (
               <span className="setup-vnote setup-error" role="alert">
                 {errors[0]}
@@ -412,7 +414,11 @@ function ValuesPane({ field }: { field: RegistryField }) {
       <ConfirmDialog
         open={ask?.kind === "archive"}
         title={ask?.kind === "archive" ? `Убрать «${ask.value.value}» в архив?` : ""}
-        text="Значение ни в одном договоре не стоит и пропадёт из списка для выбора."
+        text={
+          ask?.kind === "archive" && ask.count > 0
+            ? `Значение стоит в ${contractsWord(ask.count)}: там его подпись останется, а для выбора его больше не будет.`
+            : "Значение ни в одном договоре не стоит и пропадёт из списка для выбора."
+        }
         confirm="В архив"
         onCancel={() => setAsk(null)}
         onConfirm={() => {

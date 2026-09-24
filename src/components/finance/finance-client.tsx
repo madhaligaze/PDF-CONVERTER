@@ -467,7 +467,6 @@ export function FinanceClient() {
               setSection("contracts");
             }}
             onCancel={() => setSection("contracts")}
-            onEditRule={() => setSection("contracts-setup")}
           />
         );
       case "contracts-setup":

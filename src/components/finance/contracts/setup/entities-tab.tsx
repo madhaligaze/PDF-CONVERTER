@@ -15,7 +15,6 @@ import { useEffect, useMemo, useState } from "react";
 
 import { type Account, type OwnEntity, contractsApi, financeApi } from "@/components/finance/api";
 import { useRegistry } from "@/components/finance/contracts/store";
-import { plural } from "@/components/finance/format";
 import { ConfirmDialog } from "@/components/finance/ui/confirm-dialog";
 import { InlineText } from "@/components/finance/contracts/setup/inline-text";
 import { MultiPop } from "@/components/finance/contracts/setup/popover";
@@ -30,7 +29,6 @@ export function EntitiesTab() {
   const [accountsError, setAccountsError] = useState("");
   const [optimistic, setOptimistic] = useState<Record<string, string[]>>({});
   const [binError, setBinError] = useState<Record<string, string>>({});
-  const [note, setNote] = useState<{ id: string; text: string } | null>(null);
   const [ask, setAsk] = useState<OwnEntity | null>(null);
   const [name, setName] = useState("");
 
@@ -213,21 +211,20 @@ export function EntitiesTab() {
                 className="fin-link-btn setup-quiet"
                 disabled={action.busy(`archive:${entity.id}`)}
                 onClick={() => {
+                  // Юрлицо с договорами сервер не убирает — без диалога ради
+                  // заведомого отказа: запрос сразу, его текст — под строкой.
                   if (count > 0) {
-                    setNote({
-                      id: entity.id,
-                      text: `За юрлицом ${count} ${plural(count, "договор", "договора", "договоров")} — из наших оно не убирается.`,
-                    });
+                    void action.run(`archive:${entity.id}`, () =>
+                      contractsApi.setup.updateEntity(entity.id, { archived: true }),
+                    );
                     return;
                   }
-                  setNote(null);
                   setAsk(entity);
                 }}
               >
                 В архив
               </button>
             </span>
-            {note?.id === entity.id ? <span className="setup-enote">{note.text}</span> : null}
             {errors.length ? (
               <span className="setup-enote setup-error" role="alert">
                 {errors[0]}

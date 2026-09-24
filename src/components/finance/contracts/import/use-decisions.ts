@@ -14,7 +14,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { contractsApi, type ContractImportBatch } from "@/components/finance/api";
+import { FinanceApiError, contractsApi, type ContractImportBatch } from "@/components/finance/api";
 
 import { mergeDecisions, type Decisions } from "./types";
 
@@ -31,7 +31,8 @@ export function useDecisions(initial: ContractImportBatch) {
   const [batch, setBatch] = useState(initial);
   const [queued, setQueued] = useState<Decisions>({});
   const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  /** Отказ: `retry` — сеть или сервер лёг, повтор поможет; иначе решение отвергнуто. */
+  const [error, setError] = useState<{ text: string; retry: boolean } | null>(null);
 
   const batchRef = useRef(initial);
   const pending = useRef<Decisions>({});
@@ -68,12 +69,20 @@ export function useDecisions(initial: ContractImportBatch) {
         // Что пришло, пока запрос был в полёте, остаётся поверх нового отчёта.
         setQueued({ ...pending.current });
       } catch (caught) {
-        // Раньше отправленное — вниз, пришедшее после — поверх: порядок решений не меняется.
-        pending.current = mergeDecisions(payload, pending.current);
         inflight.current = null;
         setSending(false);
         const failure = caught instanceof Error ? caught : new Error("Решение не сохранилось");
-        setError(failure.message);
+        if (caught instanceof FinanceApiError && (caught.status === 400 || caught.status === 422)) {
+          // Сервер решение отверг (правило не из тех полей, что он умеет
+          // проверить). Повтор дал бы тот же отказ и запер бы очередь навсегда,
+          // поэтому отвергнутое снимается с экрана, а отказ назван словами.
+          setQueued({ ...pending.current });
+          setError({ text: failure.message, retry: false });
+        } else {
+          // Раньше отправленное — вниз, пришедшее после — поверх: порядок решений не меняется.
+          pending.current = mergeDecisions(payload, pending.current);
+          setError({ text: failure.message, retry: true });
+        }
         settle(failure);
         return;
       }

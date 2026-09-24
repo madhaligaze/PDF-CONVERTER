@@ -34,6 +34,7 @@ import {
   OrphansStep,
   RulesStep,
   diffsSummary,
+  pendingRules,
   orphansSummary,
   rulesSummary,
   statusesSummary,
@@ -41,6 +42,7 @@ import {
 } from "./steps";
 import {
   SECTION_KEYS,
+  blockLabel,
   dictOf,
   isReversed,
   sectionOf,
@@ -71,11 +73,15 @@ type Stage =
 type Props = {
   onDone: (result: { created: number }) => void;
   onCancel: () => void;
-  /** «Поправить в настройке листа» у правила блока. Пока настройки нет — ничего. */
+  /**
+   * Правило блока теперь правится прямо в протоколе (п. 09), и в настройку
+   * листа отсюда не уходят: листов до «Завести» ещё нет. Проп остаётся ради
+   * совместимости с местом подключения и не вызывается.
+   */
   onEditRule?: (block: string) => void;
 };
 
-export function RegistryImport({ onDone, onCancel, onEditRule }: Props) {
+export function RegistryImport({ onDone, onCancel }: Props) {
   const [stage, setStage] = useState<Stage>(() => {
     const id = readParam("batch");
     return id ? { kind: "resume", id } : { kind: "pick", error: null };
@@ -171,7 +177,6 @@ export function RegistryImport({ onDone, onCancel, onEditRule }: Props) {
         <Protocol
           key={stage.batch.id}
           initial={stage.batch}
-          onEditRule={onEditRule}
           onApplied={(result, report) => {
             writeParams({ batch: null });
             setStage({ kind: "done", result, report });
@@ -202,13 +207,11 @@ function Protocol({
   onApplied,
   onAnotherFile,
   onCancelled,
-  onEditRule,
 }: {
   initial: ContractImportBatch;
   onApplied: (result: ApplyResult, report: Report) => void;
   onAnotherFile: () => void;
   onCancelled: () => void;
-  onEditRule?: (block: string) => void;
 }) {
   const { batch, decisions, decide, flush, retry, error, dirty } = useDecisions(initial);
   const report = batch.report;
@@ -269,6 +272,8 @@ function Protocol({
   const numbers = items<NumberItem>("numbers");
   const orphans = items<OrphanItem>("orphans");
   const loose = (sectionOf(report, "orphans")?.loose ?? []) as LooseItem[];
+  const numberOnly = (sectionOf(report, "orphans")?.number_only ?? []) as LooseItem[];
+  const rulesPending = pendingRules((sectionOf(report, "rules")?.pending ?? []) as string[], decisions);
   const diffs = items<DiffItem>("diffs");
   const rules = items<RuleItem>("rules");
   const mainSheet = typeof decisions.main_sheet === "string" ? decisions.main_sheet : report.main_sheet;
@@ -290,6 +295,7 @@ function Protocol({
   const blocking = report.blocking.filter((key) => {
     if (key === "columns") return openCount > 0;
     if (key === "entities") return !confirmed;
+    if (key === "rules") return rulesPending.length > 0;
     return true;
   });
 
@@ -313,13 +319,14 @@ function Protocol({
     numbers: numbers.length
       ? `${numbers.length} ${plural(numbers.length, "номер", "номера", "номеров")} · предупреждение`
       : "повторов нет",
-    orphans: orphansSummary(orphans, loose, decisions),
+    orphans: orphansSummary(orphans, loose, numberOnly, decisions),
     diffs: diffsSummary(diffs, mainSheet, decisions),
     rules: rulesSummary(rules),
   };
   const waiting: Partial<Record<SectionKey, string>> = {
     columns: openCount ? `ждут решения: ${openCount}` : undefined,
     entities: confirmed ? undefined : "ждёт решения",
+    rules: rulesPending.length ? `ждут решения: ${rulesPending.length}` : undefined,
   };
   const titleOf = (key: SectionKey) => sectionOf(report, key)?.title ?? key;
   const anchor = (key: SectionKey) => `${idBase}-${key}`;
@@ -404,10 +411,18 @@ function Protocol({
     end_dates: <EndDatesStep items={endDates} counts={endCounts} decisions={decisions} decide={decide} />,
     numbers: <NumbersStep items={numbers} />,
     orphans: (
-      <OrphansStep items={orphans} loose={loose} blocks={blocks} mainSheet={mainSheet} decisions={decisions} decide={decide} />
+      <OrphansStep
+        items={orphans}
+        loose={loose}
+        numberOnly={numberOnly}
+        blocks={blocks}
+        mainSheet={mainSheet}
+        decisions={decisions}
+        decide={decide}
+      />
     ),
     diffs: <DiffsStep items={diffs} mainSheet={mainSheet} decisions={decisions} decide={decide} />,
-    rules: <RulesStep items={rules} onEdit={onEditRule} />,
+    rules: <RulesStep items={rules} statuses={statuses} decisions={decisions} decide={decide} />,
   };
 
   const elapsed = Math.max(0, Math.round((now - startedAt) / 1000));
@@ -462,9 +477,12 @@ function Protocol({
 
       <div className={`fin-apply-bar ${styles.bar}`}>
         <div className={styles.barText} aria-live="polite">
-          {error ? (
+          {error && !error.retry ? (
+            <span className={`fin-fail ${styles.barReason}`}>Решение не принято: {error.text}</span>
+          ) : null}
+          {error?.retry ? (
             <span className="fin-fail">
-              Решение не сохранилось: {error} ·{" "}
+              Решение не сохранилось: {error.text} ·{" "}
               <button type="button" className="fin-link-btn" onClick={retry}>
                 Повторить
               </button>
@@ -482,6 +500,18 @@ function Protocol({
                   </button>
                 </span>
               ))}
+              {rulesPending.length ? (
+                <span className={styles.barReason}>
+                  {rulesPending
+                    .slice(0, 2)
+                    .map((block) => {
+                      const rule = rules.find((item) => item.block === block);
+                      return rule ? `${blockLabel(rule.sheet, rule.title)}: ${rule.reason}` : block;
+                    })
+                    .join("; ")}
+                  {rulesPending.length > 2 ? ` и ещё ${rulesPending.length - 2}` : ""}
+                </span>
+              ) : null}
             </span>
           ) : (
             <span>Всё решено</span>
@@ -494,7 +524,7 @@ function Protocol({
           <button
             type="button"
             className="btn-primary"
-            disabled={blocking.length > 0 || applying || Boolean(error)}
+            disabled={blocking.length > 0 || applying || Boolean(error?.retry)}
             aria-busy={applying || dirty || undefined}
             onClick={() => void apply()}
           >

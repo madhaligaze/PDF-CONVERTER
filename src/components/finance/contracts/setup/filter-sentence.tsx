@@ -44,7 +44,11 @@ import { ECONOMIC_WORDS, PHASE_WORDS, lowerFirst } from "@/components/finance/co
 
 type Kind = "list" | "party" | "person" | "text" | "bool" | "flag";
 
-type Entry = { key: string; title: string; kind: Kind; options: PopOption[] };
+/**
+ * `archived` — значения в архиве: их не предлагают, но условие, написанное до
+ * архива, должно читаться словом, а не «убранным значением».
+ */
+type Entry = { key: string; title: string; kind: Kind; options: PopOption[]; archived?: PopOption[] };
 
 /** Системные поля, по которым сервер отбирает (`facts_of`). */
 const FILTERABLE_SYSTEM = new Set([
@@ -89,6 +93,11 @@ function catalog({ schema, parties, people }: Ctx): Entry[] {
           title,
           kind: "list",
           options: (schema.lists[field.key] ?? []).map((item) => ({ value: item.id, label: item.value })),
+          archived: (schema.archived_values?.[field.key] ?? []).map((item) => ({
+            value: item.id,
+            label: item.value,
+            hint: "в архиве",
+          })),
         });
         break;
       case "department":
@@ -246,8 +255,13 @@ export function ruleProblem(filter: ViewFilter): string {
   return count === 1 ? "В одном условии не выбрано значение" : `Не выбраны значения в условиях: ${count}`;
 }
 
-function valuesText(values: string[], options: PopOption[]): string {
-  const labels = values.map((id) => options.find((item) => item.value === id)?.label ?? "убранное значение");
+function valuesText(values: string[], options: PopOption[], archived: PopOption[] = []): string {
+  const labels = values.map((id) => {
+    const live = options.find((item) => item.value === id);
+    if (live) return live.label;
+    const gone = archived.find((item) => item.value === id);
+    return gone ? `${gone.label} (в архиве)` : "убранное значение";
+  });
   if (labels.length <= 3) return labels.join(", ");
   return `${labels.slice(0, 3).join(", ")} и ещё ${labels.length - 3}`;
 }
@@ -332,8 +346,14 @@ type Props = {
   value: ViewFilter;
   onChange?: (next: ViewFilter) => void;
   lead?: string;
-  /** Правило без условий — все договоры (так устроен главный лист). */
-  allText?: string;
+  /**
+   * Что значит правило без условий. Сервер (`views.place`) читает его так:
+   * у обычного листа — ни одного договора, у главного — все договоры (или
+   * те, что не подошли другим блокам). Какой это лист, знает вызывающий.
+   */
+  emptyText?: string;
+  /** Подпись кнопки первого условия на пустом правиле. */
+  emptyAdd?: string;
   readOnly?: boolean;
   /** Схема не из хранилища — для протокола загрузки до заведения реестра. */
   schema?: RegistrySchema | null;
@@ -344,7 +364,8 @@ export function FilterSentence({
   value,
   onChange,
   lead = "Показывать договоры, где",
-  allText = "Показывать все договоры",
+  emptyText = "Пока ни одного договора",
+  emptyAdd = "задайте условие",
   readOnly,
   schema: schemaProp,
   aside,
@@ -397,8 +418,13 @@ export function FilterSentence({
     return (
       <div className="setup-rule">
         <p className="setup-rule-line">
-          {allText}
-          {editable ? <> {adder(null, "+ условие")}</> : null}
+          {emptyText}
+          {editable ? (
+            <>
+              <span className="fin-muted"> · </span>
+              {adder(null, emptyAdd)}
+            </>
+          ) : null}
           {aside ? <span className="setup-rule-aside">{aside}</span> : null}
         </p>
       </div>
@@ -505,11 +531,17 @@ function Condition({ condition, byKey, fieldOptions, editable, autoOpen, onSettl
 
   let valuePart: ReactNode = null;
   if (withValues(read.op)) {
-    const text = read.values.length ? valuesText(read.values, entry.options) : "выбрать…";
+    const text = read.values.length ? valuesText(read.values, entry.options, entry.archived) : "выбрать…";
+    // Архивное значение, уже стоящее в условии, остаётся в списке отметок —
+    // иначе его нельзя было бы снять, не удаляя всё условие.
+    const options = [
+      ...entry.options,
+      ...(entry.archived ?? []).filter((item) => read.values.includes(item.value)),
+    ];
     valuePart = editable ? (
       <MultiPop
         values={read.values}
-        options={entry.options}
+        options={options}
         onChange={(values) => onChange(writeCondition(entry.key, kind, read.op, values, ""))}
         label={`Значения: ${entry.title}`}
         text={text}

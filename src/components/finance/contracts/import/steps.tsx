@@ -8,15 +8,19 @@
  * Не блокирующие пункты видны и меняются, но «Завести» не держат: их
  * умолчание ничего не теряет (статус сохраняется как написан, дата — со
  * смыслом «не ясен», строка вне главного листа заводится, в расхождении верен
- * главный лист).
+ * главный лист). Правила листов держат «Завести» там, где предложенное
+ * правило приносит лишних или теряет строк больше допуска: лист, который после
+ * загрузки вчетверо больше, чем в файле, молча не заводится.
  */
 import { useState } from "react";
 
+import type { ViewFilter } from "@/components/finance/api";
 import { plural } from "@/components/finance/format";
 
 import { ChoiceLine } from "./choice-line";
 import styles from "./registry-import.module.css";
 import { RolesText } from "./roles-text";
+import { RuleEditor, type ValueOption } from "./rule-editor";
 import {
   BILLING_LABELS,
   ECONOMIC_LABELS,
@@ -35,6 +39,7 @@ import {
   type LooseItem,
   type NumberItem,
   type OrphanItem,
+  type RuleAction,
   type RuleItem,
   type StatusItem,
 } from "./types";
@@ -360,6 +365,7 @@ export function NumbersStep({ items }: { items: NumberItem[] }) {
 export function OrphansStep({
   items,
   loose,
+  numberOnly,
   blocks,
   mainSheet,
   decisions,
@@ -367,6 +373,7 @@ export function OrphansStep({
 }: {
   items: OrphanItem[];
   loose: LooseItem[];
+  numberOnly: LooseItem[];
   blocks: BlockItem[];
   mainSheet: string;
   decisions: Decisions;
@@ -446,46 +453,101 @@ export function OrphansStep({
       )}
       {loose.length ? (
         <div>
-          <p className={styles.subhead}>Совпали только по номеру</p>
-          <table className="proto-table">
-            <thead>
-              <tr>
-                <th>Номер</th>
-                <th>В листе</th>
-                <th>В «{mainSheet}»</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {loose.map((item) => (
-                <tr key={item.ref}>
-                  <td className="fin-mono">{text(item.number)}</td>
-                  <td>
-                    {text(item.sheet_customer)} <span className="fin-mono fin-muted">{item.ref}</span>
-                  </td>
-                  <td>
-                    {text(item.main_customer)} <span className="fin-mono fin-muted">{item.main}</span>
-                  </td>
-                  <td>
-                    <button type="button" className="fin-link-btn" onClick={() => decide({ loose: { [item.ref]: "separate" } })}>
-                      Это разные договоры
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <p className={styles.subhead}>Сведены с «{mainSheet}» не по всем признакам</p>
+          <PairTable
+            items={loose}
+            mainSheet={mainSheet}
+            action="Разные договоры"
+            onAction={(item) => decide({ loose: { [item.ref]: "separate" } })}
+          />
+        </div>
+      ) : null}
+      {numberOnly.length ? (
+        <div>
+          <p className={styles.subhead}>Тот же номер, но стороны другие — заведутся отдельно</p>
+          <PairTable
+            items={numberOnly}
+            mainSheet={mainSheet}
+            action="Это он"
+            onAction={(item) => decide({ loose: { [item.ref]: "same" } })}
+          />
         </div>
       ) : null}
     </div>
   );
 }
 
-export function orphansSummary(items: OrphanItem[], loose: LooseItem[], decisions: Decisions): string {
+const LOOSE_WORDS: Record<string, string> = {
+  swapped: "стороны переставлены",
+  number_party: "номер и одна сторона",
+  number: "по номеру, решение человека",
+};
+
+function parties(executor: unknown, customer: unknown): string {
+  return `${text(executor) || "—"} → ${text(customer) || "—"}`;
+}
+
+/** Пара «строка листа ↔ строка главного»: стороны обеих рядом, чтобы сравнить глазами. */
+function PairTable({
+  items,
+  mainSheet,
+  action,
+  onAction,
+}: {
+  items: LooseItem[];
+  mainSheet: string;
+  action: string;
+  onAction: (item: LooseItem) => void;
+}) {
+  return (
+    <table className="proto-table">
+      <thead>
+        <tr>
+          <th>Номер</th>
+          <th>В листе</th>
+          <th>В «{mainSheet}»</th>
+          <th />
+        </tr>
+      </thead>
+      <tbody>
+        {items.map((item) => (
+          <tr key={item.ref}>
+            <td className="fin-mono">
+              {text(item.number)}
+              {item.kind ? (
+                <>
+                  <br />
+                  <span className="annot">{LOOSE_WORDS[item.kind] ?? item.kind}</span>
+                </>
+              ) : null}
+            </td>
+            <td>
+              {parties(item.sheet_executor, item.sheet_customer)} <span className="fin-mono fin-muted">{item.ref}</span>
+            </td>
+            <td>
+              {parties(item.main_executor, item.main_customer)} <span className="fin-mono fin-muted">{item.main}</span>
+            </td>
+            <td>
+              <button type="button" className="fin-link-btn" onClick={() => onAction(item)}>
+                {action}
+              </button>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+export function orphansSummary(items: OrphanItem[], loose: LooseItem[], numberOnly: LooseItem[], decisions: Decisions): string {
   const chosen = dictOf<boolean>(decisions, "orphans");
   const create = items.filter((item) => !item.existing && (item.ref in chosen ? chosen[item.ref] !== false : item.create)).length;
   const head = items.length ? `${create} из ${items.length} будут заведены` : "все строки листов есть в главном";
-  return head + (loose.length ? ` · ${loose.length} совпали только по номеру` : "");
+  return (
+    head +
+    (loose.length ? ` · сведены не по всем признакам: ${loose.length}` : "") +
+    (numberOnly.length ? ` · тот же номер, другие стороны: ${numberOnly.length}` : "")
+  );
 }
 
 // ── 08 Расхождения листов с главным ─────────────────────────────────────────
@@ -600,51 +662,141 @@ function bySubject(rule: RuleItem): boolean {
   return fields.includes("subject") && !fields.includes("type");
 }
 
-export function RulesStep({ items, onEdit }: { items: RuleItem[]; onEdit?: (block: string) => void }) {
+const SOURCE_WORDS: Record<RuleItem["source"], string> = {
+  suggested: "предложено",
+  accepted: "принято",
+  manual: "своё правило",
+  empty: "пустой блок",
+};
+
+type RuleChoice = { action?: RuleAction; filter?: ViewFilter } | null;
+
+/** Решение по блоку, как его видит экран: принятое сервером или ещё летящее. */
+export function ruleChoice(decisions: Decisions, block: string): RuleAction | null {
+  const raw = dictOf<RuleChoice>(decisions, "rules")[block];
+  if (!raw || typeof raw !== "object") return null;
+  if (raw.action) return raw.action;
+  return raw.filter ? "rule" : null;
+}
+
+/** Блоки, которые держат «Завести»: сервер назвал, а решения по ним ещё нет. */
+export function pendingRules(pending: string[], decisions: Decisions): string[] {
+  return pending.filter((block) => ruleChoice(decisions, block) === null);
+}
+
+/** Написания из файла для фразы правила: виды, статусы, отделы — из пункта 04, предметы — из правил. */
+function valueOptions(items: RuleItem[], statuses: StatusItem[]): Record<string, ValueOption[]> {
+  const out: Record<string, ValueOption[]> = { type: [], subject: [], department: [], status: [] };
+  for (const item of statuses) out[item.field]?.push({ value: item.value, count: item.count });
+  const subjects = new Set<string>();
+  for (const rule of items) {
+    for (const group of rule.filter.any ?? [])
+      for (const condition of group.all)
+        if (condition.field === "subject" && Array.isArray(condition.value)) for (const value of condition.value) subjects.add(String(value));
+    for (const brief of [...rule.missing, ...rule.extra_sample]) if (text(brief.subject)) subjects.add(text(brief.subject));
+  }
+  out.subject = [...subjects].sort((a, b) => a.localeCompare(b, "ru")).map((value) => ({ value }));
+  return out;
+}
+
+export function RulesStep({
+  items,
+  statuses,
+  decisions,
+  decide,
+}: {
+  items: RuleItem[];
+  statuses: StatusItem[];
+  decisions: Decisions;
+  decide: Decide;
+}) {
+  const [editing, setEditing] = useState<string | null>(null);
   if (!items.length) return <p className="fin-soft">Других листов нет</p>;
+  const options = valueOptions(items, statuses);
+
   return (
     <div className={styles.stack}>
       {items.map((rule) => {
-        const empty = !(rule.filter.any ?? []).length;
+        const choice = ruleChoice(decisions, rule.block);
+        const asks = rule.needs_decision && choice === null;
+        const missingMore = rule.missing_count - rule.missing.length;
         return (
           <div key={rule.block} className={styles.rule9}>
             <p className={styles.subhead}>
-              {blockLabel(rule.sheet, rule.title)}{" "}
-              {rule.source === "suggested" ? <span className="annot">предложено</span> : null}{" "}
-              {bySubject(rule) ? <span className="annot">по предмету, не по виду</span> : null}
+              {blockLabel(rule.sheet, rule.title)} <span className="annot">{SOURCE_WORDS[rule.source] ?? rule.source}</span>
+              {bySubject(rule) && rule.source !== "empty" ? (
+                <>
+                  {" "}
+                  <span className="annot">по предмету, не по виду</span>
+                </>
+              ) : null}
             </p>
-            <p className={`proto-rule${empty ? " fin-fail" : ""}`}>{rule.sentence}</p>
+            {asks ? <p className={`${styles.line} ${styles.wait}`}>Ждёт решения: {rule.reason}</p> : null}
+            <p className="proto-rule">{rule.sentence}</p>
             <p className={styles.line}>
               <span className="proto-count">
                 {rule.caught} из {rule.in_sheet}
               </span>{" "}
-              <span className="fin-soft">{plural(rule.in_sheet, "строки", "строк", "строк")} блока</span>
+              <span className="fin-soft">
+                {plural(rule.in_sheet, "строки", "строк", "строк")} листа
+                {rule.extra ? ` · лишних ${rule.extra}` : ""}
+              </span>
             </p>
             {rule.missing.length ? (
               <p className={styles.line}>
-                <span className="fin-soft">Не подходят: </span>
+                <span className="fin-soft">Не попадут в лист: </span>
                 {rule.missing.map(briefText).join(" · ")}
+                {missingMore > 0 ? ` и ещё ${missingMore}` : ""}
                 <br />
-                <span className="fin-soft">
-                  {rule.missing.length === 1 ? "Эта строка останется" : "Эти строки останутся"} в реестре, но не в листе.
-                </span>
+                <span className="fin-soft">В реестре они останутся, в листе их не будет.</span>
               </p>
             ) : null}
             {rule.extra ? (
               <p className={styles.line}>
-                <span className="fin-soft">
-                  Ещё {rule.extra} {plural(rule.extra, "договор", "договора", "договоров")} из других листов
-                  {rule.extra === 1 ? " попадёт" : " попадут"} сюда:{" "}
-                </span>
+                <span className="fin-soft">Попадут сюда из других листов: </span>
                 {rule.extra_sample.map(briefText).join(" · ")}
-                {rule.extra > rule.extra_sample.length ? " …" : ""}
+                {rule.extra > rule.extra_sample.length ? ` и ещё ${rule.extra - rule.extra_sample.length}` : ""}
               </p>
             ) : null}
-            <p className={styles.line}>
-              <button type="button" className="fin-link-btn" onClick={() => onEdit?.(rule.block)}>
-                поправить в настройке листа
-              </button>
-            </p>
+            <div className={styles.actions}>
+              <ChoiceLine<RuleAction>
+                label={`Правило · ${blockLabel(rule.sheet, rule.title)}`}
+                items={[
+                  { value: "accept", label: "Принять правило" },
+                  { value: "rule", label: "Поправить правило" },
+                  { value: "empty", label: "Оставить пустым" },
+                ]}
+                value={choice}
+                onChange={(value) => {
+                  if (value === "rule") {
+                    setEditing(rule.block);
+                    return;
+                  }
+                  setEditing(null);
+                  decide({ rules: { [rule.block]: { action: value } } });
+                }}
+              />
+              {choice ? (
+                <button
+                  type="button"
+                  className={`fin-link-btn fin-soft ${styles.small}`}
+                  onClick={() => decide({ rules: { [rule.block]: null } })}
+                >
+                  вернуть предложенное
+                </button>
+              ) : null}
+            </div>
+            {editing === rule.block ? (
+              <RuleEditor
+                filter={rule.filter}
+                options={options}
+                onCancel={() => setEditing(null)}
+                onApply={(filter) => {
+                  setEditing(null);
+                  decide({ rules: { [rule.block]: { action: "rule", filter } } });
+                }}
+              />
+            ) : null}
           </div>
         );
       })}
@@ -656,5 +808,9 @@ export function rulesSummary(items: RuleItem[]): string {
   if (!items.length) return "других листов нет";
   const caught = items.reduce((sum, item) => sum + item.caught, 0);
   const total = items.reduce((sum, item) => sum + item.in_sheet, 0);
-  return `${items.length} ${plural(items.length, "правило", "правила", "правил")} · покрыто ${caught} из ${total} строк`;
+  const extra = items.reduce((sum, item) => sum + item.extra, 0);
+  return (
+    `${items.length} ${plural(items.length, "правило", "правила", "правил")} · в листы попадут ${caught} из ${total} строк` +
+    (extra ? ` · лишних ${extra}` : "")
+  );
 }

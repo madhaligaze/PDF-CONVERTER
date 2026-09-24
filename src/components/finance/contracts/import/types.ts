@@ -76,7 +76,23 @@ export type OrphanItem = {
   create: boolean;
   existing: string | null;
 };
-export type LooseItem = { ref: string; main: string; number: unknown; sheet_customer: unknown; main_customer: unknown };
+/**
+ * Строка листа, сведённая с главным не по полному ключу (номер + обе стороны).
+ * `kind`: `swapped` — те же стороны, но переставлены; `number_party` — номер и
+ * одна общая внешняя сторона; `number` — только номер, и «это он» сказал
+ * человек. У пар из `number_only` (тот же номер без общей стороны) `kind` нет:
+ * они заводятся отдельно, пока человек не скажет «это он».
+ */
+export type LooseItem = {
+  ref: string;
+  main: string;
+  number: unknown;
+  sheet_customer: unknown;
+  sheet_executor: unknown;
+  main_customer: unknown;
+  main_executor: unknown;
+  kind?: "swapped" | "number_party" | "number";
+};
 export type DiffItem = {
   id: string;
   main_ref: string;
@@ -90,18 +106,44 @@ export type DiffItem = {
   take: "main" | "sheet";
 };
 export type Brief = { ref: string; number: unknown; customer: unknown; executor: unknown; type: unknown; subject: unknown };
+export type RuleAction = "accept" | "rule" | "empty";
+
+/**
+ * Правило блока другого листа. `source`: `suggested` — предложено и ещё не
+ * принято; `accepted` — принято как есть; `manual` — своё; `empty` — блок
+ * оставлен пустым (пустое правило неглавного листа не отбирает ничего).
+ * `needs_decision` — предложенное правило приносит лишних или теряет строк
+ * больше `limit`, и без человека «Завести» не пустит; `reason` — почему.
+ */
 export type RuleItem = {
   block: string;
   sheet: string;
   title: string;
   filter: ViewFilter;
   sentence: string;
-  source: "suggested" | "manual";
+  source: "suggested" | "accepted" | "manual" | "empty";
+  decision: RuleAction | null;
+  needs_decision: boolean;
+  reason: string;
+  limit: number;
   in_sheet: number;
   caught: number;
   extra: number;
+  missing_count: number;
   missing: Brief[];
   extra_sample: Brief[];
+};
+
+/** Поля, по которым разбор умеет проверить правило на строках файла (`importer.RULE_CONDITION_OPS`). */
+export const RULE_LIST_FIELDS = ["type", "subject", "department", "status"] as const;
+export const RULE_FLAG_FIELDS = ["executor_is_own", "customer_is_own"] as const;
+export const RULE_FIELD_WORDS: Record<string, string> = {
+  type: "вид",
+  subject: "предмет",
+  department: "отдел",
+  status: "статус",
+  executor_is_own: "исполнитель — наше юрлицо",
+  customer_is_own: "заказчик — наше юрлицо",
 };
 
 export function sectionOf(report: Report, key: SectionKey): ContractImportSection | undefined {
