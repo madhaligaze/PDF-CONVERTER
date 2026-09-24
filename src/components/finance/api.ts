@@ -981,7 +981,10 @@ export type OwnEntity = {
 export type RegistrySchema = {
   schema_rev: number;
   fields: RegistryField[];
+  /** Действующие значения — их предлагают выборы. */
   lists: Record<string, ListValue[]>;
+  /** Значения в архиве — только чтобы подписать договоры, где они стоят. */
+  archived_values?: Record<string, ListValue[]>;
   departments: { id: string; code: string; title: string; position: number }[];
   views: RegistryView[];
   own_entities: OwnEntity[];

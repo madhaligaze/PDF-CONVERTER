@@ -16,7 +16,11 @@ export function fieldOf(schema: RegistrySchema | null, key: string): RegistryFie
 
 export function listValue(schema: RegistrySchema | null, field: string, id: unknown): ListValue | undefined {
   if (!schema || typeof id !== "string") return undefined;
-  return schema.lists[field]?.find((item) => item.id === id);
+  // Архивное значение выборы не предлагают, но старый договор им подписан.
+  return (
+    schema.lists[field]?.find((item) => item.id === id) ??
+    schema.archived_values?.[field]?.find((item) => item.id === id)
+  );
 }
 
 export function listText(schema: RegistrySchema | null, field: string, id: unknown): string {
