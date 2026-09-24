@@ -8,7 +8,7 @@
  * сторона — вопрос «Это ТОО «Атриум плюс»?», молча не выбирается ничего
  * (правило «не угадывать»).
  */
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import { type Party, contractsApi } from "@/components/finance/api";
 
@@ -43,6 +43,7 @@ export function Combo({
   const [active, setActive] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   const root = useRef<HTMLDivElement>(null);
+  const listId = useId();
 
   useEffect(() => {
     if (autoFocus) input.current?.focus();
@@ -97,6 +98,7 @@ export function Combo({
         className="ifield-input"
         role="combobox"
         aria-expanded="true"
+        aria-controls={listId}
         aria-autocomplete="list"
         value={query}
         placeholder={placeholder}
@@ -107,7 +109,7 @@ export function Combo({
         }}
         onKeyDown={onKey}
       />
-      <div className="fin-pop" role="listbox" style={{ top: "calc(100% + 4px)", left: "-0.5rem", right: "-0.5rem" }}>
+      <div id={listId} className="fin-pop" role="listbox" style={{ top: "calc(100% + 4px)", left: "-0.5rem", right: "-0.5rem" }}>
         {shown.map((option, index) => {
           const head = option.group && option.group !== lastGroup ? option.group : "";
           lastGroup = option.group ?? lastGroup;
@@ -188,7 +190,6 @@ export function PartyPicker({ slot, label, own, onPick, onCancel }: PartyPickerP
     return () => {
       if (timer.current) clearTimeout(timer.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const ownOptions: ComboOption[] = own.map((party) => ({

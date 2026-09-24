@@ -428,7 +428,13 @@ function effectWord(effect: string): string {
 function SourceText({ contractId, seq }: { contractId: string; seq: number }) {
   const schema = useRegistry((s) => s.schema);
   const contract = useRegistry((s) => s.byId.get(contractId));
-  const [pieces, setPieces] = useState<ParsedPiece[] | null>(null);
+  // Разобранные куски принадлежат версии договора, из которой их разобрали:
+  // договор поменялся — куски устарели сами, без эффекта-сброса.
+  const version = `${contractId}:${seq}`;
+  const [parsed, setParsed] = useState<{ version: string; pieces: ParsedPiece[] } | null>(null);
+  const pieces = parsed?.version === version ? parsed.pieces : null;
+  const setPieces = (update: (list: ParsedPiece[] | null) => ParsedPiece[]) =>
+    setParsed((prev) => ({ version, pieces: update(prev?.version === version ? prev.pieces : null) }));
   const [error, setError] = useState("");
   const [hover, setHover] = useState<number | null>(null);
   const textField = fieldOf(schema, "amendments_text");
@@ -436,17 +442,13 @@ function SourceText({ contractId, seq }: { contractId: string; seq: number }) {
   const text = String(contract?.values.amendments_text ?? "");
   const summary = String(contract?.values.amendments_summary_text ?? "");
 
-  useEffect(() => {
-    setPieces(null);
-  }, [contractId, seq]);
-
   if (!textField && !summaryField) return null;
   if (!text && !summary && !textField?.editable) return null;
   const parse = async () => {
     setError("");
     try {
       const result = await contractsApi.amendments.parse(contractId);
-      setPieces(result.pieces);
+      setPieces(() => result.pieces);
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : "Не разобралось");
     }
@@ -616,13 +618,11 @@ function History({ contractId, seq }: { contractId: string; seq: number }) {
   }, [contractId, seq]);
   if (!items || !items.length) return null;
   const shown = all ? items : items.slice(0, 5);
-  let lastDay = "";
   return (
     <Section title="История">
-      {shown.map((item) => {
+      {shown.map((item, index) => {
         const day = dayTitle(item.at);
-        const head = day !== lastDay ? day : "";
-        lastDay = day;
+        const head = index === 0 || dayTitle(shown[index - 1].at) !== day ? day : "";
         return (
           <div key={item.id}>
             {head ? <div className="hist-day">{head}</div> : null}

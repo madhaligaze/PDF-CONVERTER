@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { UniverSheet, type UniverApi, type WorkbookSnapshot } from "@/components/univer/sheet";
-import { useFillHeight } from "@/components/books/use-fill-height";
+import { useFillHeight } from "@/components/univer/use-fill-height";
 import {
   type GridColumn,
   type GridPayload,

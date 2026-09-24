@@ -63,6 +63,13 @@ export type RegistryState = {
   departed: ReadonlyMap<string, string>;
   /** Только что появившиеся строки — для прочерка верхней линии. */
   fresh: ReadonlySet<string>;
+  /**
+   * Договор → отборы (и блоки), в которых он стоял до правки, уведшей его
+   * оттуда. Лист держит такую строку приглушённой на месте до смены вкладки.
+   * Считается при приходе изменений, а не при отрисовке: список не должен
+   * помнить, что рисовал в прошлый раз.
+   */
+  wasIn: ReadonlyMap<string, readonly { view: string; block: number }[]>;
 };
 
 const EMPTY: RegistryState = {
@@ -82,9 +89,24 @@ const EMPTY: RegistryState = {
   remote: [],
   departed: new Map(),
   fresh: new Set(),
+  wasIn: new Map(),
 };
 
 let state: RegistryState = EMPTY;
+
+/** Отборы, из которых договор ушёл этой правкой, — вдобавок к уже запомненным. */
+function leftViews(
+  wasIn: Map<string, readonly { view: string; block: number }[]>,
+  before: Contract | undefined,
+  after: Contract,
+): void {
+  if (!before) return;
+  const now = new Set(after.views.map((place) => place.view));
+  const gone = before.views.filter((place) => !now.has(place.view));
+  if (!gone.length) return;
+  const known = wasIn.get(after.id) ?? [];
+  wasIn.set(after.id, [...known.filter((place) => !gone.some((g) => g.view === place.view)), ...gone]);
+}
 const listeners = new Set<() => void>();
 
 function emit(next: Partial<RegistryState>): void {
@@ -274,12 +296,14 @@ function applyChanges(batch: ChangesBatch): void {
   }
   const byId = new Map(state.byId);
   const departed = new Map(state.departed);
+  const wasIn = new Map(state.wasIn);
   const fresh = new Set<string>();
   const notes: RemoteNote[] = [];
   for (const incoming of batch.contracts) {
     const before = byId.get(incoming.id);
     const mine = state.edits.get(incoming.id);
     if (!before) fresh.add(incoming.id);
+    leftViews(wasIn, before, incoming);
     // Поля с правкой в полёте не перетираются: побеждает то, что человек
     // только что напечатал; конфликт решит сервер по `known_seq`.
     let merged = incoming;
@@ -320,17 +344,18 @@ function applyChanges(batch: ChangesBatch): void {
     remote: [...notes, ...state.remote].slice(0, 20),
     departed,
     fresh,
+    wasIn,
   });
 }
 
 export function forgetDeparted(): void {
-  if (state.departed.size || state.fresh.size) {
+  if (state.departed.size || state.fresh.size || state.wasIn.size) {
     const byId = new Map(state.byId);
     for (const [id] of state.departed) {
       const item = byId.get(id);
       if (item?.deleted) byId.delete(id);
     }
-    emit({ departed: new Map(), fresh: new Set(), byId, order: sortOrder(byId) });
+    emit({ departed: new Map(), fresh: new Set(), wasIn: new Map(), byId, order: sortOrder(byId) });
   }
 }
 
@@ -367,6 +392,8 @@ function putOne(one: OneContract, keepEdits = true): void {
     }
     merged = { ...incoming, values };
   }
+  const wasIn = new Map(state.wasIn);
+  leftViews(wasIn, byId.get(incoming.id), incoming);
   byId.set(incoming.id, merged);
   emit({
     byId,
@@ -374,6 +401,7 @@ function putOne(one: OneContract, keepEdits = true): void {
     seq: Math.max(state.seq, incoming.seq),
     parties: { ...state.parties, ...one.parties },
     people: { ...state.people, ...one.people },
+    wasIn,
   });
 }
 
@@ -571,6 +599,11 @@ export async function ensurePeople(): Promise<void> {
   } catch {
     /* выбор покажет тех, кто уже есть в договорах */
   }
+}
+
+if (typeof window !== "undefined" && process.env.NODE_ENV !== "production") {
+  // Только в разработке: пробники Playwright читают состояние хранилища.
+  (window as unknown as Record<string, unknown>).__finRegistry = { getRegistry, needsMode };
 }
 
 if (typeof window !== "undefined") {

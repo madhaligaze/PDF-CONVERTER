@@ -1,5 +1,10 @@
 import type { Field, Row } from "@/components/books/api";
 import type { WorkbookSnapshot } from "@/components/univer/sheet";
+import { DATE_PATTERN, MONEY_PATTERN, dateOf, serialOf } from "@/components/univer/sheet-model";
+
+// Даты номером дня и формат с `[$-419]` переехали в `univer/sheet-model.ts`
+// (их берут и «Финансы»); отсюда — прежние имена, чтобы «Книги» не менялись.
+export { dateOf, serialOf };
 
 /**
  * Книга «Книг» → книга Univer, и обратный перевод координат.
@@ -48,46 +53,10 @@ const HEAD_STYLE = {
   },
 };
 
-/**
- * Префикс `[$-419]` — русская локаль ПРЯМО В ОБРАЗЦЕ формата.
- *
- * Движок форматов Univer берёт локаль не из книги, а из самого образца. Без
- * префикса тот же `#,##0.00` даёт «95,323.00» вместо «95 323,00»: цифры на
- * месте, а разделители чужие — худший вид расхождения, потому что число
- * выглядит правильным. То же правило и по той же причине применяет импорт из
- * Google (`app/webexcel/univer.py`).
- */
-const RU = "[$-419]";
-
-const MONEY_STYLE = { ht: 3, n: { pattern: `${RU}#,##0.00` } };
+/** Префикс `[$-419]` в образцах и эпоха дат — см. `univer/sheet-model.ts`. */
+const MONEY_STYLE = { ht: 3, n: { pattern: MONEY_PATTERN } };
 const NUMBER_STYLE = { ht: 3 };
-const DATE_STYLE = { n: { pattern: `${RU}DD.MM.YYYY` } };
-
-/**
- * Дата → порядковый номер дня, как их считает Excel: сутки от 30 декабря 1899.
- *
- * Отдавать дату строкой нельзя. Строка в таблице — текст: она не отсортируется
- * по времени, не встанет в формулу и покажется как «2026-06-01» вместо
- * «01.06.2026». Ровно это и было видно на первой же собранной книге.
- *
- * Обе точки берутся полночью по UTC, и разница между ними — целое число
- * суток. Часовой пояс сюда не входит вовсе, поэтому и защищаться от него не
- * нужно. Первая попытка всё же защищалась — брала полдень «на всякий случай»,
- * — и получала ровно половину суток сверху, которую `Math.round` округлял
- * вверх. Вся книга сдвинулась на день вперёд: `2026-06-01` показывалось как
- * `02.06.2026`. Заметить это можно было только сверив с исходной книгой, и
- * никакой ошибки при этом не возникало.
- */
-const EPOCH = Date.UTC(1899, 11, 30);
-
-export function serialOf(text: string): number | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text.trim());
-  if (!match) return null;
-  const [, year, month, day] = match;
-  const at = Date.UTC(Number(year), Number(month) - 1, Number(day));
-  if (!Number.isFinite(at)) return null;
-  return Math.round((at - EPOCH) / 86400000);
-}
+const DATE_STYLE = { n: { pattern: DATE_PATTERN } };
 
 /** Ширина колонки по типу — та же мера, что была в собственной решётке. */
 function widthOf(field: Field): number {
@@ -142,13 +111,6 @@ export function valueOf(cell: unknown, field?: Field): string {
   // сорок шесть тысяч вместо первого июня.
   if (field?.type === "date" && typeof raw === "number") return dateOf(raw);
   return String(raw);
-}
-
-/** Порядковый номер дня Excel → `ГГГГ-ММ-ДД`, как книга хранит даты. */
-export function dateOf(serial: number): string {
-  const at = new Date(EPOCH + Math.round(serial) * 86400000);
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${at.getUTCFullYear()}-${pad(at.getUTCMonth() + 1)}-${pad(at.getUTCDate())}`;
 }
 
 export function buildWorkbook(

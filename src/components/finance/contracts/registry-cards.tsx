@@ -95,19 +95,21 @@ export function Registry({ me, onGo }: { me: Me; onGo: (section: string) => void
   const people = useRegistry((s) => s.people);
   const fresh = useRegistry((s) => s.fresh);
   const removed = useRegistry((s) => s.departed);
+  const wasIn = useRegistry((s) => s.wasIn);
 
   const views = useMemo(() => [...(schema?.views ?? [])].sort((a, b) => a.position - b.position), [schema]);
   const [viewKey, setViewKey] = useState<string>(() => readParam("v") ?? "main");
   const view = views.find((item) => item.key === viewKey) ?? views[0];
   const [query, setQuery] = useState("");
   const [issuesOnly, setIssuesOnly] = useState(false);
-  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 } | null>(null);
+  // Сортировка своя у каждого листа и помнится в браузере. Выбранная здесь
+  // привязана к листу, на котором её выбрали; на другом листе — его память.
+  const [sortPick, setSortPick] = useState<{ view: string; sort: { key: SortKey; dir: 1 | -1 } | null } | null>(null);
   const [openId, setOpenId] = useState<string | null>(() => readParam("id"));
   const [draft, setDraft] = useState<{ view?: string; block?: number } | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [slowPhase, setSlowPhase] = useState(false);
   const search = useRef<HTMLInputElement>(null);
-  const shown = useRef<Map<string, string>>(new Map());
 
   useCardRefresh(openId, !!openId);
 
@@ -117,14 +119,15 @@ export function Registry({ me, onGo }: { me: Me; onGo: (section: string) => void
     return () => clearTimeout(timer);
   }, [phase]);
 
-  useEffect(() => {
-    if (view) setSort(readSort(view.key));
-  }, [view]);
+  const viewKeyNow = view?.key ?? null;
+  const sort = useMemo(
+    () => (viewKeyNow === null ? null : sortPick?.view === viewKeyNow ? sortPick.sort : readSort(viewKeyNow)),
+    [viewKeyNow, sortPick],
+  );
 
   const selectView = (key: string) => {
     setViewKey(key);
     setIssuesOnly(false);
-    shown.current = new Map();
     forgetDeparted();
     writeParams({ v: key === "main" ? null : key }, false);
   };
@@ -183,7 +186,16 @@ export function Registry({ me, onGo }: { me: Me; onGo: (section: string) => void
     // убран. Отсеянный поиском или «замечаниями» не ушёл: его просто не ищут.
     const insideIds = new Set(inside.map((row) => row.contract.id));
     const leaving: { contract: Contract; block: number; departed?: string }[] = [];
-    for (const [id, blockKey] of shown.current) {
+    const candidates = new Map<string, number>();
+    for (const [id, places] of wasIn) {
+      const place = places.find((item) => item.view === view.key);
+      if (place) candidates.set(id, place.block);
+    }
+    for (const id of removed.keys()) {
+      const place = byId.get(id)?.views.find((item) => item.view === view.key);
+      if (place && !candidates.has(id)) candidates.set(id, place.block);
+    }
+    for (const [id, block] of candidates) {
       if (insideIds.has(id)) continue;
       const contract = byId.get(id);
       if (!contract) continue;
@@ -194,7 +206,7 @@ export function Registry({ me, onGo }: { me: Me; onGo: (section: string) => void
         const target = views.find((other) => other.key !== view.key && !other.main && contract.views.some((place) => place.view === other.key));
         text = target ? `ушёл в «${target.title}»` : "ушёл из листа";
       } else if (removed.get(id)) text = removed.get(id) ?? text;
-      leaving.push({ contract, block: Number(blockKey) || 0, departed: text });
+      leaving.push({ contract, block, departed: text });
     }
     const combined = [...inside, ...leaving];
     if (sort) {
@@ -205,13 +217,7 @@ export function Registry({ me, onGo }: { me: Me; onGo: (section: string) => void
       combined.sort((a, b) => a.block - b.block || a.contract.position - b.contract.position);
     }
     return combined;
-  }, [view, all, byId, matchesSearch, issuesOnly, sort, views, removed, schema, parties, people]);
-
-  useEffect(() => {
-    const next = new Map<string, string>();
-    for (const row of rows) if (!row.departed || shown.current.has(row.contract.id)) next.set(row.contract.id, String(row.block));
-    shown.current = next;
-  }, [rows]);
+  }, [view, all, byId, matchesSearch, issuesOnly, sort, views, removed, wasIn, schema, parties, people]);
 
   const issueCount = useMemo(
     () =>
@@ -372,7 +378,7 @@ export function Registry({ me, onGo }: { me: Me; onGo: (section: string) => void
           sort={sort}
           onSort={(key) => {
             const next = !sort || sort.key !== key ? { key, dir: 1 as const } : sort.dir === 1 ? { key, dir: -1 as const } : null;
-            setSort(next);
+            setSortPick({ view: view.key, sort: next });
             writeSort(view.key, next);
           }}
         />

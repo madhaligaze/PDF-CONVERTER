@@ -93,14 +93,21 @@ export function InlineField({ contractId, field, label, labelNote, wide, suffix,
   const text = display(field, value, { schema, parties, people });
   const readOnly = !field.editable;
 
+  // Прочерк «сохранено» гаснет сам: включается в кадре анимации после ответа,
+  // выключается через 0,7 с — оба раза из таймера, а не посреди эффекта.
   useEffect(() => {
-    if (edit?.state === "sending") wasSending.current = true;
-    else if (!edit && wasSending.current) {
-      wasSending.current = false;
-      setDone(true);
-      const timer = setTimeout(() => setDone(false), 700);
-      return () => clearTimeout(timer);
+    if (edit?.state === "sending") {
+      wasSending.current = true;
+      return;
     }
+    if (edit || !wasSending.current) return;
+    wasSending.current = false;
+    const on = requestAnimationFrame(() => setDone(true));
+    const off = setTimeout(() => setDone(false), 700);
+    return () => {
+      cancelAnimationFrame(on);
+      clearTimeout(off);
+    };
   }, [edit]);
 
   const commit = (next: unknown) => {
