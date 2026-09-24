@@ -1005,11 +1005,8 @@ export class RegistryBinding {
   start(active: string | null, openId: string | null): () => void {
     const api = this.api;
     const workbook = api.getActiveWorkbook?.();
-    try {
-      api.toggleDarkMode?.(this.ctx.pal.dark);
-    } catch {
-      /* старая версия без тёмной темы — лист останется светлым */
-    }
+    // Тему холста переключает общий корень листов (`univer/sheet.tsx`); здесь
+    // только свои цвета ячеек — см. `retheme`.
     if (active && this.models.has(active)) {
       const sheet = workbook?.getSheetBySheetId?.(active);
       if (sheet) workbook.setActiveSheet(sheet);
@@ -1066,6 +1063,11 @@ export class RegistryBinding {
       const observer = new MutationObserver(() => this.retheme());
       observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
       this.disposers.push(() => observer.disconnect());
+      // «Как в системе»: тема меняется без атрибута — вслед за системой.
+      const system = window.matchMedia?.("(prefers-color-scheme: dark)");
+      const onSystem = () => this.retheme();
+      system?.addEventListener?.("change", onSystem);
+      this.disposers.push(() => system?.removeEventListener?.("change", onSystem));
     }
 
     return () => {
@@ -1074,9 +1076,6 @@ export class RegistryBinding {
       window.clearTimeout(this.followTimer);
       this.disposers.forEach((stop) => stop());
       this.disposers = [];
-      // Тёмная тема Univer вешает класс на `<html>` и сама его не снимает —
-      // остался бы, и светлый лист журнала получил бы тёмную ленту.
-      document.documentElement.classList.remove("univer-dark");
     };
   }
 
@@ -2094,13 +2093,8 @@ export class RegistryBinding {
     const pal = paletteNow();
     if (pal.dark === this.ctx.pal.dark && pal.fail === this.ctx.pal.fail && pal.flash === this.ctx.pal.flash) return;
     this.ctx.pal = pal;
-    try {
-      this.api.toggleDarkMode?.(pal.dark);
-    } catch {
-      /* останется прежняя тема холста */
-    }
-    // Цвета токенов (отказ, вспышка, строка карточки) зашиты в ячейки —
-    // переписываем только их.
+    // Холст перекрашивает корень листов; цвета токенов (отказ, вспышка,
+    // строка карточки) зашиты в ячейки — переписываем только их.
     for (const model of this.models.values()) {
       const rows: number[] = [];
       model.rows.forEach((state, row) => {

@@ -4626,52 +4626,17 @@ html, body { overflow-x: clip; }
 /* Лист Univer занимает всю оставшуюся высоту; замер — use-fill-height. */
 .fin-sheet { border-radius: var(--radius-card); overflow: hidden; border: 1px solid var(--fin-line); }
 
-/* ─── Лист во весь экран ─── */
-.fin-sheet-wrap { position: relative; }
-.fin-sheet-wrap[data-full="true"] {
+/* ─── Лист Univer: общий корень всех таблиц (src/components/univer/sheet.tsx) ───
+   Во весь экран лист уходит сам, из корня: раздел, в котором он стоит, про
+   это ничего не знает. Кнопка «На весь экран» — вкладка ленты Univer с её же
+   классами, своих стилей у неё нет. */
+.usheet { position: relative; width: 100%; height: 100%; }
+.usheet-canvas { width: 100%; height: 100%; }
+.usheet[data-full="true"] {
   position: fixed;
   inset: 0;
   z-index: 80;
-  padding: 0;
   background: var(--page-bg);
-}
-.fin-sheet-wrap[data-full="true"] .fin-sheet { border-radius: 0; border: 0; height: 100%; }
-.fin-full-btn {
-  position: absolute;
-  top: 0.5rem;
-  /* Слева от вкладки «Начало» — место указано человеком. Точное смещение
-     проставляется в коде по измеренной вкладке; здесь запас на случай, если
-     вкладку не нашли. */
-  left: 0.75rem;
-  /* Выше ленты Univer: она рисует свою панель поверх, и кнопка, стоявшая ниже
-     по слою, ловила клики только по краю. */
-  z-index: 30;
-  padding: 0.25rem 0.75rem;
-  border-radius: 999px;
-  border: 1px solid var(--accent-line);
-  background: var(--fin-plate);
-  color: var(--accent);
-  font-size: 0.75rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
-  /* Подмигивание: о кнопке надо узнать, а искать её незачем. */
-  animation: fin-wink 4s var(--ease-out) infinite;
-}
-.fin-full-btn:hover { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
-.fin-full-btn:active { background: var(--accent-press); border-color: var(--accent-press); }
-/* Раскрытый лист: кнопка обычная. Подмигивать ей больше не о чем — своё дело
-   она уже сделала, а мигающее у человека перед глазами весь рабочий день
-   раздражает сильнее, чем помогает. */
-.fin-full-btn[data-full="true"] { animation: none; color: var(--fin-text-soft); border-color: var(--fin-line); }
-.fin-full-btn[data-full="true"]:hover { color: var(--accent-fg); }
-@keyframes fin-wink {
-  0%, 74%, 100% { box-shadow: 0 0 0 0 var(--accent-soft); }
-  82% { box-shadow: 0 0 0 5px var(--accent-soft); }
-  90% { box-shadow: 0 0 0 0 var(--accent-soft); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .fin-full-btn { animation: none; }
 }
 
 /* ─── Телефон ─── */

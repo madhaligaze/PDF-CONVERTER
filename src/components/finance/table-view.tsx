@@ -559,69 +559,9 @@ export function TableView({ onChanged, refresh = 0 }: { onChanged: () => void; r
     return () => disposers.forEach((stop) => stop());
   }, []);
 
-  const payload = sheet?.payload ?? null;
   const workbook = useMemo(() => (sheet ? buildWorkbook(sheet.payload) : null), [sheet]);
 
-  /** Лист во весь экран. */
-  const [full, setFull] = useState(false);
-  /**
-   * Где стоит кнопка раскрытия: вплотную слева от вкладки «Начало».
-   *
-   * Считается по разметке Univer, потому что лента у них центрирована: ширина
-   * группы вкладок зависит от языка и версии, и зашитое смещение попало бы то
-   * на «Начало», то в пустоту.
-   */
-  const [fullLeft, setFullLeft] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (!full) return;
-    // Пока лист во весь экран, страница под ним не едет: прокрутка колесом
-    // должна двигать таблицу, а не то, что осталось снизу.
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setFull(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.body.style.overflow = previous;
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [full]);
-
-  useEffect(() => {
-    // Univer меряет холст сам, но только по событию: без толчка после смены
-    // размера лист остаётся прежней ширины внутри нового окна.
-    const id = window.setTimeout(() => window.dispatchEvent(new Event("resize")), 60);
-    return () => window.clearTimeout(id);
-  }, [full]);
-
-  useEffect(() => {
-    const place = () => {
-      const root = box.current;
-      if (!root) return;
-      const tab = Array.from(root.querySelectorAll<HTMLElement>("div, span, a, button")).find(
-        (node) => node.childElementCount === 0 && node.textContent?.trim() === "Начало",
-      );
-      if (!tab) {
-        setFullLeft(null);
-        return;
-      }
-      const left = tab.getBoundingClientRect().left - root.getBoundingClientRect().left;
-      // 132px — ширина кнопки с отступом. Меньше зазора не оставляем: кнопка,
-      // прижатая к вкладке, читается как ещё одна вкладка ленты.
-      setFullLeft(Math.max(8, Math.round(left - 132)));
-    };
-    const id = window.setTimeout(place, 400);
-    const slower = window.setTimeout(place, 1600);
-    window.addEventListener("resize", place);
-    return () => {
-      window.clearTimeout(id);
-      window.clearTimeout(slower);
-      window.removeEventListener("resize", place);
-    };
-  }, [box, full, payload]);
-
+  // «На весь экран» и тема — в общем корне листов (`univer/sheet.tsx`).
   return (
     <div className="flex flex-col gap-2">
       {error ? (
@@ -629,25 +569,10 @@ export function TableView({ onChanged, refresh = 0 }: { onChanged: () => void; r
           {error}
         </p>
       ) : null}
-      <div className="fin-sheet-wrap" data-full={full ? "true" : undefined}>
-        <div className="fin-sheet" ref={box} style={{ height: full ? "100%" : height }}>
-          {workbook ? (
-            <UniverSheet key={`journal|${sheet?.generation ?? 0}`} data={workbook} onReady={onReady} />
-          ) : null}
-        </div>
-        {/* Кнопка лежит поверх ленты Univer, а не внутри неё: вставлять свои
-            узлы в чужую разметку значит ломаться на каждом их обновлении.
-            Положение считается по вкладке «Начало» — см. эффект выше. */}
-        <button
-          type="button"
-          className="fin-full-btn"
-          data-full={full ? "true" : undefined}
-          style={fullLeft === null ? undefined : { left: `${fullLeft}px` }}
-          onClick={() => setFull((was) => !was)}
-        >
-          {full ? "Свернуть" : "На весь экран"}
-        </button>
-
+      <div className="fin-sheet" ref={box} style={{ height }}>
+        {workbook ? (
+          <UniverSheet key={`journal|${sheet?.generation ?? 0}`} data={workbook} onReady={onReady} />
+        ) : null}
       </div>
       {/* Строка состояния: таблица обязана говорить, что записала. Молчание
           после правки — это и есть сомнение «сохранилось ли». В покое пусто:
