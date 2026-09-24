@@ -12,7 +12,7 @@
  * исчезают под глазами: договор, ушедший из листа, стоит приглушённым до смены
  * вкладки. Цвет на экране в нормальном состоянии — только «N замечаний».
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import {
   type Contract,
@@ -137,6 +137,14 @@ export function Registry({ me, onGo }: { me: Me; onGo: (section: string) => void
     setDraft(null);
     writeParams({ id }, !!id);
   }, []);
+  /** Стабильная — иначе `memo` строк не сработал бы ни разу. */
+  const openRow = useCallback(
+    (id: string) => {
+      setCursor(id);
+      openCard(id);
+    },
+    [openCard],
+  );
 
   useEffect(() => {
     const onPop = () => setOpenId(readParam("id"));
@@ -403,10 +411,7 @@ export function Registry({ me, onGo }: { me: Me; onGo: (section: string) => void
             openId={openId}
             fresh={fresh}
             needle={needle}
-            onOpen={(id) => {
-              setCursor(id);
-              openCard(id);
-            }}
+            onOpen={openRow}
           />
         )}
       </div>
@@ -568,11 +573,13 @@ function Rows({
   const schema = useRegistry((s) => s.schema);
   const parties = useRegistry((s) => s.parties);
   const people = useRegistry((s) => s.people);
+  const limit = useProgressive(rows.length, `${view.key}|${needle}|${grouped}`);
   const out: React.ReactNode[] = [];
   let lastBlock = -1;
   const blockCounts: Record<number, number> = {};
   if (grouped) for (const row of rows) blockCounts[row.block] = (blockCounts[row.block] ?? 0) + 1;
-  for (const row of rows) {
+  const shown = limit < rows.length ? rows.slice(0, limit) : rows;
+  for (const row of shown) {
     if (grouped && row.block !== lastBlock) {
       lastBlock = row.block;
       const title = view.blocks[row.block]?.title || `Блок ${row.block + 1}`;
@@ -584,83 +591,170 @@ function Rows({
       );
     }
     const contract = row.contract;
-    const title = counterpartTitle(contract, parties) || "—";
-    const own = ownSide(contract, parties);
-    const roles = roleLabels(contract);
-    const phase = phaseOf(schema, contract);
-    const issues = contract.issues.filter((issue) => !issue.acknowledged).length;
-    const billing = String(contract.values.billing ?? "");
-    const amount = contract.values.amount;
-    const terms = String(contract.values.amount_terms ?? "");
     const personIds = Array.isArray(contract.values.people) ? (contract.values.people as string[]) : [];
-    const firstPerson = personIds[0] ? shortName(people[personIds[0]]?.name) : "";
-    const planned = String(contract.values.planned_end_at ?? "");
-    const overdue = planned && planned < (schema?.today ?? "") && (phase === "active" || phase === "in_progress");
-    const kind = listText(schema, "type", contract.values.type);
-    const status = listText(schema, "status", contract.values.status);
-    const number = bareNumber(contract.values.number);
+    // Строке отдаются её стороны и люди, а не словари целиком: словари
+    // пересобираются на каждый опрос с изменениями, и `memo` перерисовывал бы
+    // все 10 000 строк на одну чужую правку.
     out.push(
-      <div
+      <Row
         key={contract.id}
-        id={`creg-row-${contract.id}`}
-        role="row"
-        tabIndex={0}
-        className={`creg-row${fresh.has(contract.id) ? " creg-row-new" : ""}`}
-        aria-selected={openId === contract.id}
-        data-closed={isClosed(schema, contract) ? "true" : undefined}
-        data-departed={row.departed ? "true" : undefined}
-        onClick={() => !row.departed && onOpen(contract.id)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && !row.departed) onOpen(contract.id);
-        }}
-      >
-        <span className="creg-num creg-col-num" title={String(contract.values.number ?? "")}>
-          {number || "—"}
-        </span>
-        <span className="creg-party" title={title}>
-          <Highlight text={title} needle={needle} />
-        </span>
-        <span className="creg-col-own" title={own.slot === "customer" ? `${own.code} · ${roles.customer.toLowerCase()}` : own.code}>
-          {own.code}
-          {own.slot === "customer" ? <span className="fin-muted"> · {roles.customer.toLowerCase()}</span> : null}
-        </span>
-        <span className="creg-col-kind" title={kind}>
-          {kind}
-        </span>
-        <span className="creg-money" title={terms || undefined}>
-          {amount !== undefined ? (
-            <>
-              {contractMoney(amount)}
-              {billing === "month" ? <small> /мес</small> : null}
-            </>
-          ) : terms ? (
-            <span className="fin-muted">{terms}</span>
-          ) : (
-            ""
-          )}
-        </span>
-        <span className={`creg-col-term${overdue ? " fin-fail" : ""}`}>{formatDay(planned)}</span>
-        <span className="creg-status" data-phase={phase || undefined} title={status}>
-          {status}
-        </span>
-        <span className="creg-col-people" title={personIds.map((id) => people[id]?.name ?? "").join(", ")}>
-          {firstPerson}
-          {personIds.length > 1 ? <span className="fin-muted"> +{personIds.length - 1}</span> : null}
-        </span>
-        {row.departed ? (
-          <span className="creg-note">{row.departed}</span>
-        ) : (
-          <span className="creg-issues">{issues ? `${issues} ${plural(issues, "замечание", "замечания", "замечаний")}` : ""}</span>
-        )}
-        <span className="creg-meta">
-          {[number, own.code, kind, phase !== "active" ? status : ""].filter(Boolean).join(" · ")}
-          {issues ? <span className="fin-fail"> · {issues} замеч.</span> : null}
-        </span>
-      </div>,
+        contract={contract}
+        departed={row.departed}
+        open={openId === contract.id}
+        fresh={fresh.has(contract.id)}
+        needle={needle}
+        schema={schema}
+        executor={parties[String(contract.values.executor ?? "")]}
+        customer={parties[String(contract.values.customer ?? "")]}
+        firstPerson={personIds[0] ? people[personIds[0]]?.name ?? "" : ""}
+        peopleTitle={personIds.map((id) => people[id]?.name ?? "").join(", ")}
+        peopleCount={personIds.length}
+        onOpen={onOpen}
+      />,
     );
   }
   return <div role="rowgroup">{out}</div>;
 }
+
+/**
+ * Сколько строк списка уже нарисовано.
+ *
+ * Реестр на 10 000 договоров рисовался одним куском — 126 000 элементов и
+ * 20 с до первой строки в режиме разработки. Теперь сразу рисуются первые
+ * `FIRST_ROWS`, остальные дописываются пачками в свободное время кадра: все
+ * строки всё равно оказываются в DOM (поиск браузера и фокус по id работают),
+ * но первая строка видна сразу. Смена листа, поиска или группировки
+ * начинает заново.
+ */
+const FIRST_ROWS = 300;
+/** Пачка — такая, чтобы кадр не превращался в долгую задачу: по 1 200 строк
+ *  пачка шла полсекунды, и открытие карточки ждало её в очереди. */
+const NEXT_ROWS = 400;
+
+function useProgressive(total: number, reset: string): number {
+  const [state, setState] = useState({ reset, limit: FIRST_ROWS });
+  const limit = state.reset === reset ? state.limit : FIRST_ROWS;
+  if (state.reset !== reset) setState({ reset, limit: FIRST_ROWS });
+  useEffect(() => {
+    if (limit >= total) return;
+    const grow = () => setState((prev) => (prev.reset === reset ? { reset, limit: prev.limit + NEXT_ROWS } : prev));
+    // Safari до сих пор без requestIdleCallback — там кадр по таймеру.
+    const idle = typeof window.requestIdleCallback === "function";
+    const handle = idle ? window.requestIdleCallback(grow, { timeout: 200 }) : window.setTimeout(grow, 16);
+    return () => {
+      if (idle) window.cancelIdleCallback(handle);
+      else window.clearTimeout(handle);
+    };
+  }, [limit, total, reset]);
+  return limit;
+}
+
+type RowProps = {
+  contract: Contract;
+  departed?: string;
+  open: boolean;
+  fresh: boolean;
+  needle: string;
+  schema: RegistrySchema | null;
+  executor?: Party;
+  customer?: Party;
+  firstPerson: string;
+  peopleTitle: string;
+  peopleCount: number;
+  onOpen: (id: string) => void;
+};
+
+/** Строка реестра. Перерисовывается, только когда поменялся её договор или
+ *  её стороны, — а не на каждое открытие карточки и чужую правку. */
+const Row = memo(function Row({
+  contract,
+  departed,
+  open,
+  fresh,
+  needle,
+  schema,
+  executor,
+  customer,
+  firstPerson,
+  peopleTitle,
+  peopleCount,
+  onOpen,
+}: RowProps) {
+  const pair: Record<string, Party> = {};
+  if (executor) pair[String(contract.values.executor)] = executor;
+  if (customer) pair[String(contract.values.customer)] = customer;
+  const title = counterpartTitle(contract, pair) || "—";
+  const own = ownSide(contract, pair);
+  const roles = roleLabels(contract);
+  const phase = phaseOf(schema, contract);
+  const issues = contract.issues.filter((issue) => !issue.acknowledged).length;
+  const billing = String(contract.values.billing ?? "");
+  const amount = contract.values.amount;
+  const terms = String(contract.values.amount_terms ?? "");
+  const planned = String(contract.values.planned_end_at ?? "");
+  const overdue = planned && planned < (schema?.today ?? "") && (phase === "active" || phase === "in_progress");
+  const kind = listText(schema, "type", contract.values.type);
+  const status = listText(schema, "status", contract.values.status);
+  const number = bareNumber(contract.values.number);
+  return (
+    <div
+      id={`creg-row-${contract.id}`}
+      role="row"
+      tabIndex={0}
+      className={`creg-row${fresh ? " creg-row-new" : ""}`}
+      aria-selected={open}
+      data-closed={isClosed(schema, contract) ? "true" : undefined}
+      data-departed={departed ? "true" : undefined}
+      onClick={() => !departed && onOpen(contract.id)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" && !departed) onOpen(contract.id);
+      }}
+    >
+      <span className="creg-num creg-col-num" title={String(contract.values.number ?? "")}>
+        {number || "—"}
+      </span>
+      <span className="creg-party" title={title}>
+        <Highlight text={title} needle={needle} />
+      </span>
+      <span className="creg-col-own" title={own.slot === "customer" ? `${own.code} · ${roles.customer.toLowerCase()}` : own.code}>
+        {own.code}
+        {own.slot === "customer" ? <span className="fin-muted"> · {roles.customer.toLowerCase()}</span> : null}
+      </span>
+      <span className="creg-col-kind" title={kind}>
+        {kind}
+      </span>
+      <span className="creg-money" title={terms || undefined}>
+        {amount !== undefined ? (
+          <>
+            {contractMoney(amount)}
+            {billing === "month" ? <small> /мес</small> : null}
+          </>
+        ) : terms ? (
+          <span className="fin-muted">{terms}</span>
+        ) : (
+          ""
+        )}
+      </span>
+      <span className={`creg-col-term${overdue ? " fin-fail" : ""}`}>{formatDay(planned)}</span>
+      <span className="creg-status" data-phase={phase || undefined} title={status}>
+        {status}
+      </span>
+      <span className="creg-col-people" title={peopleTitle}>
+        {shortName(firstPerson)}
+        {peopleCount > 1 ? <span className="fin-muted"> +{peopleCount - 1}</span> : null}
+      </span>
+      {departed ? (
+        <span className="creg-note">{departed}</span>
+      ) : (
+        <span className="creg-issues">{issues ? `${issues} ${plural(issues, "замечание", "замечания", "замечаний")}` : ""}</span>
+      )}
+      <span className="creg-meta">
+        {[number, own.code, kind, phase !== "active" ? status : ""].filter(Boolean).join(" · ")}
+        {issues ? <span className="fin-fail"> · {issues} замеч.</span> : null}
+      </span>
+    </div>
+  );
+});
 
 function Highlight({ text, needle }: { text: string; needle: string }) {
   if (!needle) return <>{text}</>;
