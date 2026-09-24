@@ -157,6 +157,15 @@ export function PeopleIcon(props: IconProps) {
   );
 }
 
+/** Один человек — личный кабинет в раме на телефоне. */
+export function PersonIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="8" r="3.4" /><path d="M5.5 19.5a6.5 6.5 0 0 1 13 0" />
+    </Svg>
+  );
+}
+
 export function ReceiptIcon(props: IconProps) {
   return (
     <Svg {...props}>

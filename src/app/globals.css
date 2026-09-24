@@ -201,7 +201,8 @@
 :root,
 .home-stage,
 .auth-poster,
-.stage-curtain {
+.stage-curtain,
+.cab-portrait {
   --surface:       var(--bg-surface);
   --accent-blue:   var(--accent);
   --accent-border: var(--accent-line);
@@ -1934,7 +1935,8 @@ html, body { overflow-x: clip; }
    меняя тёмную палитру, надо пройтись и здесь.                            */
 .home-stage,
 .auth-poster,
-.stage-curtain {
+.stage-curtain,
+.cab-portrait {
   color-scheme: dark;
 
   --bg-base:       #0e100f;
@@ -2314,6 +2316,56 @@ html, body { overflow-x: clip; }
 }
 .auth-note code { font-family: var(--font-martian), ui-monospace, monospace; font-size: 0.8em; color: var(--text-primary); }
 .auth-switch { align-self: flex-start; }
+
+/* Вход сотрудника по номеру (фронт-план ERP, 6.8). Ссылки под формой —
+   одной строкой с переносом: «Войти как сотрудник» кнопкой, остальное —
+   ссылками, чтобы главное действие экрана оставалось одно. */
+.auth-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1.25rem;
+  margin-top: 1.25rem;
+}
+.auth-link { font-size: 0.8125rem; color: var(--text-secondary); }
+.auth-link:hover { color: var(--text-primary); }
+/* Номер между шагами не вводится заново — он стоит текстом с «Изменить». */
+.auth-number {
+  display: flex;
+  align-items: baseline;
+  gap: 0.9rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+.auth-number .fin-mono { font-size: 0.9375rem; color: var(--text-primary); }
+
+/* Телефон с маской-призраком. Призрак лежит НАД полем (фон поля иначе его
+   закрыл бы) и не ловит мышь; набранная часть в нём невидима, поэтому видна
+   только ещё не набранная маска. Шрифт у поля и призрака один и тот же
+   моноширинный — только так они совпадают символ в символ. */
+.phone-input { position: relative; display: block; }
+.phone-input .phone-field,
+.phone-ghost {
+  font-family: var(--font-martian), ui-monospace, monospace;
+  font-size: 1rem;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+.phone-ghost {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  padding: 0 0.85rem;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  white-space: pre;
+  overflow: hidden;
+  pointer-events: none;
+}
+.phone-ghost-typed { visibility: hidden; }
+.phone-input[data-invalid="true"] .phone-field { border-color: var(--fin-fail); }
 
 .auth-wait {
   min-height: 100svh;
@@ -4140,6 +4192,9 @@ html, body { overflow-x: clip; }
      дашборде. Правило стоит сразу после объявления — выше по файлу оно бы
      проиграло. */
   .fin-nav { display: none; }
+  /* Без денежных разделов (юрист с одними договорами) в колонке на узком
+     окне не остаётся ничего — пустая полоса с рамкой под реестром. */
+  .fin-aside[data-money="false"] { display: none; }
 }
 .fin-nav-item {
   display: flex;
@@ -5257,4 +5312,470 @@ textarea.ifield-input { resize: vertical; field-sizing: content; min-height: 4.5
 @media (prefers-reduced-motion: reduce) {
   .creg-row-new::before { animation: none; opacity: 0; }
   .ifield-trace[data-state="sending"], .ifield-trace[data-state="done"] { transition: none; }
+}
+
+/* ═══ Личный кабинет «Финансов» ═══════════════════════════════════════════════
+   Фронт-план ERP, 6.9. Всё о людях — своё, сотрудники, права, журнал
+   действий — живёт здесь, а не в колонке разделов. Правила те же, что у
+   реестра: цвет только у отказа (роза) и ожидания (янтарь), «всё хорошо»
+   цветом не показывается, строки не прыгают. */
+
+/* ─── Выбор текстом с линией: вкладки и «Нет · Видит · Правит» ─── */
+.fin-sel {
+  position: relative;
+  display: flex;
+  gap: 1.25rem;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.fin-sel::-webkit-scrollbar { display: none; }
+.fin-sel-item {
+  flex: none;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 0.5rem 0 0.625rem;
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--fin-text-soft);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.fin-sel-item:hover { color: var(--fin-text); }
+.fin-sel-item[aria-selected="true"],
+.fin-sel-item[aria-checked="true"] { color: var(--fin-text); font-weight: 600; }
+.fin-sel-item:disabled { cursor: default; }
+.fin-sel-item:disabled:not([aria-checked="true"]):not([aria-selected="true"]) { opacity: 0.45; }
+.fin-sel-item:focus-visible { outline: 2px solid var(--fin-text); outline-offset: 3px; border-radius: 2px; }
+.fin-sel-count { font-size: 0.8125rem; font-weight: 400; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.fin-sel-line {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 1px;
+  height: 1.5px;
+  background: var(--fin-text);
+  transform-origin: left center;
+  pointer-events: none;
+}
+.fin-sel[data-size="sm"] { gap: 0.875rem; }
+.fin-sel[data-size="sm"] .fin-sel-item { font-size: 0.8125rem; padding: 0.25rem 0 0.375rem; }
+.fin-sel[data-size="sm"] .fin-sel-line { height: 1px; }
+
+/* ─── Рама: запросы и имя вместо «Выйти» ─── */
+.fin-head-requests,
+.fin-head-person {
+  flex: none;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 0.5rem;
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--fin-chrome-text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.fin-head-person::after,
+.fin-head-requests::after {
+  content: "";
+  position: absolute;
+  left: 0.5rem;
+  right: 0.5rem;
+  bottom: 8px;
+  height: 1px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 0.3s var(--ease-out);
+}
+.fin-head-person:hover::after,
+.fin-head-requests:hover::after,
+.fin-head-person[data-on="true"]::after { transform: scaleX(1); }
+.fin-head-person:focus-visible,
+.fin-head-requests:focus-visible { outline: 2px solid var(--fin-chrome-text); outline-offset: 2px; border-radius: 4px; }
+.fin-head-person-icon { color: var(--fin-chrome-text); }
+.fin-head-person-icon:hover { background: var(--fin-neutral-soft); }
+
+.fin-denied { padding: 1.5rem 0.25rem; font-size: 0.9375rem; color: var(--fin-text-soft); }
+
+/* Кабинет отдаёт себе плиту целиком: колонки разделов нет. */
+.fin-plate[data-cabinet="true"] { display: block; }
+.fin-body-cabinet { padding: 0; }
+
+/* ─── Портрет ─── */
+.cab { min-width: 0; }
+.cab-portrait {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 208px;
+  padding: 1rem 1.5rem 1.5rem;
+  background: var(--bg-base);
+  color: var(--text-primary);
+}
+@media (max-width: 1023.98px) { .cab-portrait { height: 168px; } }
+@media (max-width: 639.98px) { .cab-portrait { height: 148px; padding: 0.75rem 1rem 1rem; } }
+.cab-liquid { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -2; }
+.cab-portrait-veil {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(0deg, rgba(14, 16, 15, 0.72) 0%, rgba(14, 16, 15, 0.1) 70%);
+}
+.cab-portrait-top { display: flex; justify-content: space-between; gap: 0.75rem; }
+.cab-portrait-foot { display: flex; flex-direction: column; gap: 0.625rem; min-width: 0; }
+.cab-name { margin: 0; color: var(--text-primary); overflow-wrap: anywhere; }
+@media (max-width: 639.98px) { .cab-name { font-size: 1.75rem; } }
+.cab-portrait-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 1rem;
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+/* ─── Колонка кабинета по центру плиты ─── */
+.cab-column {
+  max-width: 1120px;
+  margin-inline: auto;
+  padding: 1.5rem 24px 3rem;
+  color: var(--fin-text);
+}
+@media (max-width: 639.98px) { .cab-column { padding: 1rem 16px 5rem; } }
+.cab-body { margin-top: 1.25rem; min-width: 0; }
+
+.cab-tabs { display: grid; gap: 0.25rem; margin-top: 0.5rem; border-bottom: 1px solid var(--fin-line); }
+.cab-tabs-row { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: end; }
+.cab-tabs-group { padding-bottom: 0.7rem; color: var(--text-muted); }
+@media (max-width: 639.98px) {
+  .cab-tabs-row { grid-template-columns: minmax(0, 1fr); }
+  .cab-tabs-group { display: none; }
+}
+
+/* ─── «Ждут решения» ─── */
+.cab-pending { margin-bottom: 1.25rem; padding-bottom: 1rem; border-bottom: 1px solid var(--fin-line); }
+.cab-block-title { margin: 0 0 0.375rem; font-size: 0.8125rem; font-weight: 600; color: var(--fin-text); }
+.cab-pending-row {
+  display: grid;
+  grid-template-columns: minmax(10rem, 14rem) minmax(0, 1fr) 7rem auto;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 44px;
+  font-size: 0.875rem;
+  overflow: hidden;
+}
+.cab-pending-who { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cab-pending-row[data-kind="reset"] .cab-pending-what { font-weight: 600; }
+.cab-pending-time { font-size: 0.75rem; text-align: right; }
+.cab-pending-act { display: inline-flex; align-items: center; gap: 0.75rem; justify-content: flex-end; }
+.cab-pending-resolve { font-size: 0.8125rem; color: var(--fin-text-soft); }
+.cab-recent { margin: 0.5rem 0 0; font-size: 0.8125rem; }
+@media (max-width: 639.98px) {
+  .cab-pending-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "who time" "what act";
+    gap: 0.125rem 0.75rem;
+    padding: 0.5rem 0;
+  }
+  .cab-pending-who { grid-area: who; }
+  .cab-pending-time { grid-area: time; }
+  .cab-pending-what { grid-area: what; }
+  .cab-pending-act { grid-area: act; }
+}
+
+/* ─── Строки «подпись · значение» ─── */
+.cab-lines { display: grid; }
+.cab-line {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  align-items: center;
+  gap: 1rem;
+  min-height: 44px;
+  font-size: 0.875rem;
+}
+.cab-line-top { align-items: start; padding-top: 0.75rem; }
+.cab-line-top .cab-line-label { padding-top: 0; }
+.cab-line-label { color: var(--fin-text-soft); }
+.cab-line-value { position: relative; min-width: 0; }
+.cab-line-text {
+  max-width: 100%;
+  padding: 0.25rem 0.5rem;
+  margin-left: -0.5rem;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font: inherit;
+  color: var(--fin-text);
+  text-align: left;
+  cursor: text;
+  overflow-wrap: anywhere;
+}
+.cab-line-text:hover { border-color: var(--fin-card-line); }
+.cab-line-text:focus-visible { outline: 2px solid var(--fin-text); outline-offset: 2px; }
+.cab-line-text[data-empty="true"] { color: var(--text-muted); }
+.cab-line-text.fin-mono, .cab-line-static.fin-mono { font-size: 0.875rem; }
+.cab-line-static { color: var(--fin-text); overflow-wrap: anywhere; }
+.cab-input { max-width: 28rem; padding: 0.4rem 0.6rem; }
+.cab-phone { display: block; max-width: 20rem; }
+.cab-line-error { display: block; margin-top: 0.25rem; font-size: 0.75rem; }
+.cab-trace {
+  position: absolute;
+  left: -0.5rem;
+  right: 0;
+  bottom: -2px;
+  height: 1px;
+  background: var(--fin-trace);
+  opacity: 0;
+  transform: scaleX(0);
+  transform-origin: left center;
+  pointer-events: none;
+}
+[data-sending="true"] > .cab-trace {
+  opacity: 1;
+  transform: scaleX(0.85);
+  transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.15s, opacity 0s 0.15s;
+}
+.cab-lines-gap { height: 1px; margin: 0.5rem 0; background: var(--fin-line); }
+.cab-companies { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; }
+.cab-company[aria-current="true"] { font-weight: 600; }
+.cab-password { display: grid; gap: 0.75rem; max-width: 22rem; padding-bottom: 0.75rem; }
+.cab-consequence { margin: 0; font-size: 0.8125rem; color: var(--fin-text); }
+@media (max-width: 639.98px) {
+  .cab-line { grid-template-columns: minmax(0, 1fr); gap: 0.125rem; padding: 0.5rem 0; }
+  .cab-line-label { font-size: 0.75rem; }
+}
+
+/* ─── Списки: сеансы, сотрудники ─── */
+.cab-list { display: grid; }
+.cab-row {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1.2fr) minmax(7rem, 0.8fr) minmax(8rem, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  min-height: var(--fin-row-h);
+  padding: 0 0.5rem;
+  margin: 0 -0.5rem;
+  border-bottom: 1px solid var(--fin-line);
+  font-size: 0.875rem;
+  color: var(--fin-text);
+  text-align: left;
+}
+button.cab-row { width: calc(100% + 1rem); background: none; border-left: none; border-right: none; border-top: none; font: inherit; cursor: pointer; }
+button.cab-row:hover { background: var(--fin-hover); }
+button.cab-row:focus-visible { outline: 2px solid var(--fin-text); outline-offset: -2px; }
+.cab-row-main { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cab-row-note { font-size: 0.8125rem; }
+.cab-row-act { display: inline-flex; justify-content: flex-end; }
+.cab-session-ip { font-size: 0.75rem; }
+.cab-list-foot { justify-self: start; margin-top: 0.75rem; }
+/* Каждая строка — своя сетка, поэтому колонки заданы шириной, а не `auto`:
+   иначе длинный статус («просит сбросить пароль · 14:02») сдвигал бы
+   должность и телефон в своей строке, и столбцы расходились. */
+.cab-person { grid-template-columns: minmax(12rem, 1.3fr) minmax(7rem, 0.8fr) 11rem 15rem; }
+.cab-session { grid-template-columns: minmax(12rem, 1.2fr) 9rem minmax(10rem, 1fr) 8rem; }
+.cab-person-job, .cab-person-phone { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cab-person-status { overflow: hidden; text-overflow: ellipsis; }
+.cab-person-phone { font-size: 0.75rem; }
+.cab-person-status { font-size: 0.8125rem; text-align: right; white-space: nowrap; }
+.cab-person-status[data-tone="strong"] { font-weight: 600; }
+.cab-person[data-request="true"] { background: var(--fin-selected); }
+@media (max-width: 759.98px) {
+  .cab-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "main status" "job phone";
+    gap: 0.125rem 0.75rem;
+    padding-block: 0.5rem;
+  }
+  .cab-row-main { grid-area: main; }
+  .cab-person-status { grid-area: status; }
+  .cab-person-job { grid-area: job; font-size: 0.8125rem; }
+  .cab-person-phone { grid-area: phone; text-align: right; }
+  .cab-session { grid-template-areas: "main act" "ip note"; }
+  .cab-session .cab-row-act { grid-area: act; }
+  .cab-session .cab-session-ip { grid-area: ip; }
+  .cab-session .cab-row-note { grid-area: note; text-align: right; }
+}
+
+.cab-error { margin: 0.75rem 0 0; font-size: 0.8125rem; }
+.cab-wait, .cab-empty { padding: 1.25rem 0.25rem; margin: 0; font-size: 0.875rem; color: var(--fin-text-soft); }
+.cab-note { margin: 1rem 0 0; font-size: 0.8125rem; }
+.cab-admin-line { margin: 0.5rem 0; font-size: 0.9375rem; color: var(--fin-text); }
+
+/* ─── Сотрудники ─── */
+.cab-people-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  border-bottom: 1px solid var(--fin-line);
+}
+.cab-people-tabs { flex: 1 1 auto; }
+.cab-people-add { display: inline-flex; gap: 0.5rem; padding-bottom: 0.375rem; }
+@media (max-width: 639.98px) { .cab-people-add { display: none; } }
+.cab-dept-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem 1.25rem;
+  padding: 0.875rem 0 0.5rem;
+  font-size: 0.875rem;
+}
+.cab-dept-title { flex: 1 1 auto; font-weight: 500; }
+.cab-dept-title .fin-mono { font-size: 0.8125rem; }
+.cab-dept-act { font-size: 0.8125rem; color: var(--fin-text-soft); }
+.cab-fab { z-index: 30; }
+
+.cab-add {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+  padding: 1rem;
+  border: 1px solid var(--fin-card-line);
+  border-radius: 10px;
+  background: var(--fin-card-bg);
+}
+.cab-add-grid { display: grid; grid-template-columns: minmax(12rem, 1.4fr) minmax(12rem, 1fr) minmax(8rem, 0.8fr) minmax(8rem, 0.9fr); gap: 0.75rem; }
+@media (max-width: 899.98px) { .cab-add-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+@media (max-width: 559.98px) { .cab-add-grid { grid-template-columns: minmax(0, 1fr); } }
+.cab-add-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; }
+.cab-add-actions { display: inline-flex; gap: 0.5rem; margin-left: auto; }
+.cab-add-dept { grid-template-columns: 8rem minmax(0, 1fr) auto; align-items: end; }
+@media (max-width: 559.98px) { .cab-add-dept { grid-template-columns: minmax(0, 1fr); } }
+.cab-add-dept .cab-error { grid-column: 1 / -1; }
+
+/* Текстовый переключатель вместо флажка: «Доступ в систему», юрлица. */
+.cab-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 32px;
+  padding: 0 0.75rem;
+  border: 1px solid var(--fin-card-line);
+  border-radius: 999px;
+  background: none;
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--fin-text-soft);
+  cursor: pointer;
+}
+.cab-toggle[aria-pressed="true"] { color: var(--fin-text); border-color: var(--fin-text); font-weight: 600; }
+.cab-toggle:focus-visible { outline: 2px solid var(--fin-text); outline-offset: 2px; }
+
+/* ─── Карточка сотрудника ─── */
+.cab-card-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.75rem; margin: 0.5rem 0 0; font-size: 0.875rem; }
+.cab-card-status { margin: 1rem 0 0; font-size: 0.9375rem; color: var(--fin-text); }
+.cab-card-status[data-tone="strong"] { font-weight: 600; }
+.cab-card-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
+.cab-open-form { display: grid; gap: 0.75rem; max-width: 22rem; margin-top: 1rem; }
+.cab-open-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
+.cab-card-tabs { margin-top: 1.5rem; border-bottom: 1px solid var(--fin-line); }
+.cab-card-body { margin-top: 1rem; }
+.cab-card .cab-line { grid-template-columns: 140px minmax(0, 1fr); }
+
+/* ─── Права ─── */
+.cab-rights { display: grid; }
+.cab-rights-wrap { display: grid; gap: 0.5rem; }
+.cab-rights-head { margin: 0.75rem 0 0; font-size: 0.875rem; font-weight: 600; }
+.cab-rights-group { margin: 1.25rem 0 0.25rem; color: var(--text-muted); }
+.cab-right {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) auto;
+  align-items: center;
+  gap: 0.25rem 1.5rem;
+  min-height: 44px;
+  font-size: 0.875rem;
+  border-bottom: 1px solid var(--fin-line);
+}
+.cab-rights[data-person="true"] .cab-right { grid-template-columns: minmax(10rem, 1fr) auto 5.5rem; }
+.cab-right-head { min-height: 28px; border-bottom: none; }
+.cab-right-title { display: flex; flex-direction: column; gap: 0.125rem; min-width: 0; padding: 0.375rem 0; }
+.cab-right-note { margin-left: 0.5rem; font-size: 0.75rem; }
+.cab-right-sub { font-size: 0.75rem; }
+.cab-right-total { font-weight: 600; text-align: right; }
+.cab-right > .cab-trace { left: 0; }
+.cab-right > .cab-line-error { grid-column: 1 / -1; padding-bottom: 0.375rem; }
+.cab-right-more { display: grid; padding-left: 1.25rem; }
+.cab-right-sub-row { min-height: 40px; }
+.cab-entities { display: flex; flex-direction: column; align-items: flex-end; gap: 0.5rem; padding: 0.375rem 0; }
+.cab-entity-list { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.375rem; }
+.cab-right-fold { justify-self: start; margin: 0.625rem 0 0.25rem; font-size: 0.8125rem; color: var(--fin-text-soft); text-decoration: none; }
+.cab-level { justify-content: flex-end; }
+/* В строке «подпись · значение» выбор стоит там же, где значения, — слева. */
+.cab-line .cab-level { justify-content: flex-start; }
+@media (max-width: 639.98px) {
+  .cab-right, .cab-rights[data-person="true"] .cab-right { grid-template-columns: minmax(0, 1fr) auto; }
+  .cab-right .cab-level { grid-column: 1 / -1; justify-content: flex-start; }
+  .cab-right-head { display: none; }
+  .cab-right-more { padding-left: 0.75rem; }
+  .cab-entities { align-items: flex-start; }
+  .cab-entity-list { justify-content: flex-start; }
+}
+
+/* ─── Журнал действий ─── */
+.cab-feed-filters { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem; }
+.cab-feed-search { flex: 1 1 18rem; min-width: 0; }
+.cab-feed-select { flex: 0 1 14rem; min-width: 0; font-size: 0.875rem; }
+.cab-feed-cats { margin-bottom: 0.25rem; border-bottom: 1px solid var(--fin-line); }
+.cab-feed-list { display: grid; }
+.cab-feed-day {
+  position: sticky;
+  top: 64px;
+  z-index: 1;
+  margin: 0;
+  padding: 0.875rem 0 0.375rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--fin-text);
+  background: var(--fin-plate);
+}
+.cab-feed-row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) 96px;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 40px;
+  font-size: 0.875rem;
+  border-bottom: 1px solid var(--fin-line);
+}
+.cab-feed-list[data-person="true"] .cab-feed-row { grid-template-columns: 56px 140px minmax(0, 1fr) 96px; }
+.cab-feed-time { font-size: 0.75rem; }
+.cab-feed-who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fin-text-soft); }
+.cab-feed-text { min-width: 0; overflow-wrap: anywhere; padding: 0.375rem 0; }
+.cab-feed-text .fin-link-btn { text-align: left; text-decoration: none; border-bottom: 1px solid var(--fin-dotted); }
+.cab-feed-row[data-undone="true"] .cab-feed-text { color: var(--fin-text-soft); }
+.cab-feed-act { display: inline-flex; justify-content: flex-end; }
+@media (max-width: 639.98px) {
+  .cab-feed-row, .cab-feed-list[data-person="true"] .cab-feed-row {
+    grid-template-columns: 48px minmax(0, 1fr) auto;
+    grid-template-areas: "time who act" "text text text";
+    gap: 0 0.5rem;
+    padding: 0.375rem 0;
+  }
+  .cab-feed-time { grid-area: time; }
+  .cab-feed-who { grid-area: who; }
+  .cab-feed-text { grid-area: text; padding: 0.125rem 0 0; }
+  .cab-feed-act { grid-area: act; }
+  .cab-feed-list:not([data-person="true"]) .cab-feed-row { grid-template-areas: "time act act" "text text text"; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-sending="true"] > .cab-trace { transition: none; }
+  .fin-head-person::after, .fin-head-requests::after { transition: none; }
 }

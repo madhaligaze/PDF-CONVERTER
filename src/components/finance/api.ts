@@ -49,13 +49,33 @@ export type Dictionaries = {
 
 export type Company = { id: string; title: string; role: string };
 
+export type AccessLevel = "none" | "view" | "edit";
+export type MemberRole = "owner" | "admin" | "employee";
+
 export type Me = {
   authenticated: boolean;
-  user?: { id: string; email: string; full_name: string; must_change_password: boolean };
+  user?: { id: string; email: string; phone?: string; full_name: string; must_change_password: boolean };
   company?: Company | null;
   companies?: Company[];
-  /** Что человеку можно: read | write | accounts | people | company. */
+  /** Прежние способности: read | write | accounts | people | company.
+   *  Для экранов, ещё не переведённых на `access`. */
   abilities?: string[];
+  role?: MemberRole | null;
+  /** Раздел прав → уровень. Владельцу и администратору — всё «edit». */
+  access?: Record<string, AccessLevel>;
+  contracts_scope?: {
+    rows: "all" | "department" | "own";
+    entities: string[];
+    fields: Record<string, AccessLevel>;
+  };
+  /** Открытые просьбы к администраторам — «N запросов» в раме. */
+  pending_requests?: number;
+  employee?: {
+    id: string;
+    full_name: string;
+    job_title: string;
+    department: { id: string; code: string; title: string } | null;
+  } | null;
 };
 
 export type MemberRow = {
@@ -72,6 +92,9 @@ export type SessionRow = {
   created_at: string | null;
   last_seen_at: string | null;
   user_agent: string;
+  ip?: string;
+  /** Сеанс, из которого смотрят. */
+  current?: boolean;
 };
 
 export type Overview = {
@@ -618,6 +641,18 @@ export const financeApi = {
   register: (body: { email: string; password: string; company: string; full_name?: string }) =>
     request<Me>("/auth/register", { method: "POST", body: JSON.stringify(body) }),
   logout: () => request<{ ok: boolean }>("/auth/logout", { method: "POST" }),
+  // Вход сотрудника по номеру: номер → «пароль» или «задайте пароль».
+  phoneStart: (phone: string) =>
+    request<{ step: "password" | "set_password" }>("/auth/phone/start", {
+      method: "POST",
+      body: JSON.stringify({ phone }),
+    }),
+  phoneLogin: (body: { phone: string; password: string }) =>
+    request<Me>("/auth/phone/login", { method: "POST", body: JSON.stringify(body) }),
+  phoneSetPassword: (body: { phone: string; password: string }) =>
+    request<{ ok: boolean }>("/auth/phone/set-password", { method: "POST", body: JSON.stringify(body) }),
+  phoneForgot: (phone: string) =>
+    request<{ ok: boolean }>("/auth/phone/forgot", { method: "POST", body: JSON.stringify({ phone }) }),
   switchCompany: (companyId: string) =>
     request<Me>("/auth/switch", { method: "POST", body: JSON.stringify({ company_id: companyId }) }),
   addCompany: (title: string) =>
@@ -1159,5 +1194,197 @@ export const contractsApi = {
         method: "POST",
         body: JSON.stringify({ filter }),
       }),
+  },
+};
+
+// ── Люди, права, журнал действий (личный кабинет) ────────────────────────────
+
+export type Department = {
+  id: string;
+  code: string;
+  title: string;
+  position: number;
+  archived: boolean;
+  employees: number;
+};
+
+/** `no_access` — человек в справочнике без входа (например, ответственный). */
+export type AccountStatus = "no_access" | "blocked" | "pending" | "pending_expired" | "active";
+
+export type EmployeeRequest = {
+  id: string;
+  kind: "password_reset_requested" | "login_locked";
+  created_at: string | null;
+};
+
+export type EmployeeRow = {
+  id: string;
+  full_name: string;
+  short_name: string;
+  job_title: string;
+  department_id: string | null;
+  position: number;
+  archived: boolean;
+  phone: string;
+  status: AccountStatus;
+  account: {
+    user_id: string;
+    email: string;
+    phone: string;
+    role: MemberRole;
+    status: AccountStatus;
+    pending_until: string | null;
+    last_seen_at: string | null;
+    last_login_at: string | null;
+    blocked_at: string | null;
+  } | null;
+  requests: EmployeeRequest[];
+};
+
+export type NotificationItem = {
+  id: string;
+  kind: "password_reset_requested" | "login_locked" | "password_set" | string;
+  actionable: boolean;
+  created_at: string | null;
+  resolved_at: string | null;
+  resolved_by: string | null;
+  payload: { ip?: string; user_agent?: string; repeats?: number; [key: string]: unknown };
+  subject: { user_id: string; employee_id: string | null; name: string; phone: string } | null;
+};
+
+export type AccessResource = {
+  key: string;
+  title: string;
+  group: string;
+  levels: AccessLevel[];
+  note?: string;
+};
+
+export type AccessCatalog = {
+  resources: AccessResource[];
+  fields: { key: string; field: string; title: string; levels: AccessLevel[] }[];
+  row_scopes: ("all" | "department" | "own")[];
+};
+
+export type ContractScope = { rows?: "all" | "department" | "own"; entities?: string[] };
+export type Grant = { level: AccessLevel; scope?: ContractScope };
+
+/** Права субъекта. У человека ещё права отдела и итог — для колонок «Отдел» и «Итог». */
+export type SubjectAccess = {
+  subject: {
+    kind: "department" | "employee";
+    id: string;
+    title: string;
+    code?: string;
+    role?: MemberRole | null;
+    /** Владелец и администратор: матрицы нет, «видит и правит всё». */
+    admin?: boolean;
+    department?: { id: string; code: string; title: string } | null;
+  };
+  grants: Record<string, Grant>;
+  department_grants?: Record<string, Grant>;
+  effective: Record<string, AccessLevel>;
+  contracts_scope?: { rows: "all" | "department" | "own"; entities: string[] };
+};
+
+export type GrantChange = AccessLevel | { level: AccessLevel; scope?: ContractScope } | null;
+
+export type AuditActor = { user_id: string; employee_id: string | null; name: string; short_name: string };
+
+export type AuditItem = {
+  id: string;
+  at: string | null;
+  category: "data" | "auth" | "admin" | "view" | "export" | "import" | string;
+  kind: string;
+  title: string;
+  entity: string;
+  entity_id: string | null;
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+  actor: AuditActor | null;
+  actor_text: string;
+  ip: string;
+  user_agent: string;
+  session_id: string | null;
+  undone_at: string | null;
+  can_undo: boolean;
+};
+
+export type AuditQuery = {
+  q?: string;
+  user_id?: string;
+  employee_id?: string;
+  department_id?: string;
+  /** Через запятую: data,auth,admin,view,export,import. */
+  category?: string;
+  /** `contract.*` — все события договоров. */
+  kind?: string;
+  entity_id?: string;
+  since?: string;
+  until?: string;
+  cursor?: string;
+  limit?: number;
+};
+
+const P = "/people";
+
+export const peopleApi = {
+  list: () => request<{ departments: Department[]; employees: EmployeeRow[] }>(P),
+  departments: {
+    create: (data: { code: string; title?: string }) =>
+      request<Department>(`${P}/departments`, { method: "POST", body: JSON.stringify(data) }),
+    update: (id: string, data: { code?: string; title?: string; archived?: boolean }) =>
+      request<Department>(`${P}/departments/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  },
+  employees: {
+    create: (data: {
+      full_name: string;
+      phone?: string;
+      department_id?: string | null;
+      job_title?: string;
+      access?: boolean;
+      role?: MemberRole;
+    }) => request<EmployeeRow>(`${P}/employees`, { method: "POST", body: JSON.stringify(data) }),
+    update: (id: string, data: Record<string, unknown>) =>
+      request<EmployeeRow>(`${P}/employees/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    archive: (id: string) => request<EmployeeRow>(`${P}/employees/${id}`, { method: "DELETE" }),
+    /** Открыть вход человеку из справочника: учётка по номеру ждёт пароль 72 часа. */
+    openAccount: (id: string, data: { phone?: string; role?: MemberRole }) =>
+      request<EmployeeRow>(`${P}/employees/${id}/account`, { method: "POST", body: JSON.stringify(data) }),
+    reset: (id: string) => request<EmployeeRow>(`${P}/employees/${id}/reset`, { method: "POST" }),
+    block: (id: string) => request<EmployeeRow>(`${P}/employees/${id}/block`, { method: "POST" }),
+    unblock: (id: string) => request<EmployeeRow>(`${P}/employees/${id}/unblock`, { method: "POST" }),
+    endSessions: (id: string) =>
+      request<EmployeeRow & { sessions_closed?: number }>(`${P}/employees/${id}/end-sessions`, { method: "POST" }),
+    sessions: (id: string) => request<{ items: SessionRow[] }>(`${P}/employees/${id}/sessions`),
+  },
+  access: {
+    catalog: () => request<AccessCatalog>("/access/catalog"),
+    get: (kind: "department" | "employee", id: string) => request<SubjectAccess>(`/access/${kind}/${id}`),
+    put: (kind: "department" | "employee", id: string, changes: Record<string, GrantChange>) =>
+      request<SubjectAccess>(`/access/${kind}/${id}`, { method: "PUT", body: JSON.stringify({ changes }) }),
+  },
+  audit: {
+    list: (query: AuditQuery = {}) =>
+      request<{ items: AuditItem[]; next_cursor: string | null }>(`/audit${qs(query)}`),
+    view: (section: string, contractId?: string) =>
+      request<{ recorded: boolean }>("/audit/view", {
+        method: "POST",
+        body: JSON.stringify({ section, contract_id: contractId ?? null }),
+      }),
+    undo: (id: string) => request<{ ok: boolean }>(`/audit/${id}/undo`, { method: "POST" }),
+  },
+  notifications: {
+    list: () => request<{ items: NotificationItem[]; pending: number }>("/notifications"),
+    resolve: (id: string) =>
+      request<{ ok: boolean; id: string; pending: number }>(`/notifications/${id}/resolve`, { method: "POST" }),
+  },
+  self: {
+    endOtherSessions: () => request<{ closed: number }>("/auth/sessions/end-others", { method: "POST" }),
+    changePassword: (body: { old_password: string; new_password: string }) =>
+      request<{ ok: boolean; sessions_closed: number }>("/auth/password", { method: "POST", body: JSON.stringify(body) }),
+    /** Свои ФИО и телефон — только владельцу и администратору. */
+    profile: (data: { full_name?: string; phone?: string }) =>
+      request<Me>("/auth/profile", { method: "PATCH", body: JSON.stringify(data) }),
   },
 };

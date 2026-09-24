@@ -25,13 +25,12 @@ import {
   FolderIcon,
   GaugeIcon,
   GridIcon,
-  HistoryIcon,
+  PersonIcon,
   PlugIcon,
   ReceiptIcon,
   RepeatIcon,
   ScaleIcon,
   ListIcon,
-  PeopleIcon,
   RefreshIcon,
   TableIcon,
   TargetIcon,
@@ -42,15 +41,19 @@ import {
 import {
   type Dictionaries,
   type Overview,
+  FinanceApiError,
   financeApi,
+  peopleApi,
   compactMoney,
   formatMoney,
 } from "@/components/finance/api";
+import { MONEY_RESOURCES, can, canAny, isAdmin, nameOf } from "@/components/finance/access";
 import { AuthGate, AuthLoading, PasswordChangeGate, useMe } from "@/components/finance/auth-gate";
+import { Cabinet } from "@/components/finance/cabinet/cabinet";
+import { plural, shortName } from "@/components/finance/format";
 import { FadeIn } from "@/components/motion/fade-in";
 import { SplitReveal } from "@/components/motion/split-reveal";
 import { StageLink } from "@/components/motion/stage-transition";
-import { TeamPanel } from "@/components/finance/team-panel";
 import { RulesPanel } from "@/components/finance/rules-panel";
 import { OperationDialog } from "@/components/finance/operation-dialog";
 import { Journal } from "@/components/finance/journal";
@@ -60,18 +63,56 @@ import { FinanceServiceIcon } from "@/components/service-icons";
 import { InvoicesPanel } from "@/components/finance/invoices-panel";
 import { RecurrencesPanel } from "@/components/finance/recurrences-panel";
 import { IntegrationsPanel } from "@/components/finance/integrations-panel";
-import {
-  BalanceReport,
-  HistoryPanel,
-  IndicatorsReport,
-  StatementReport,
-} from "@/components/finance/ledger-reports";
+import { BalanceReport, IndicatorsReport, StatementReport } from "@/components/finance/ledger-reports";
 import { CashFlowReport, DebtsReport, ProfitReport, ProjectsReport } from "@/components/finance/reports";
 import { CalendarView } from "@/components/finance/calendar-view";
 import { PlanActualReport } from "@/components/finance/plan-actual";
 import { DictionariesPanel } from "@/components/finance/dictionaries-panel";
-import { Registry } from "@/components/finance/contracts/registry-cards";
+import { Registry, useRegistryBoot } from "@/components/finance/contracts/registry-cards";
+import { ContractCard } from "@/components/finance/contracts/contract-card";
+import { boot } from "@/components/finance/contracts/store";
+import { RegistryImport } from "@/components/finance/contracts/import/registry-import";
+import { RegistrySetup } from "@/components/finance/contracts/setup/registry-setup";
 import { readParam, writeParams } from "@/components/finance/address";
+import type { Me } from "@/components/finance/api";
+
+/** «Настроить реестр» читает схему из хранилища реестра — поднимаем его, если
+ *  экран открыли по ссылке, минуя «Реестр». */
+function SetupScreen({ me, onBack }: { me: Me; onBack: () => void }) {
+  useRegistryBoot(me);
+  return <RegistrySetup onBack={onBack} />;
+}
+
+/** Univer роняет серверную отрисовку — лист реестра только в браузере. */
+const RegistrySheet = dynamic(
+  () => import("./contracts/registry-sheet").then((m) => m.RegistrySheet),
+  { ssr: false, loading: () => <p className="creg-empty">Готовим лист…</p> },
+);
+
+/**
+ * «Реестр · таблица»: лист и карточка поверх него. Карточка встаёт внизу по
+ * центру, немодальная: строка договора в листе остаётся видна, и правка в
+ * ячейке меняет карточку на глазах (фронт-план, 6.2 и 6.4).
+ */
+function SheetScreen({ me }: { me: Me }) {
+  useRegistryBoot(me);
+  const [openId, setOpenId] = useState<string | null>(() => readParam("id"));
+  const open = useCallback((id: string | null) => {
+    setOpenId(id);
+    writeParams({ id }, id !== null);
+  }, []);
+  useEffect(() => {
+    const onPop = () => setOpenId(readParam("id"));
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+  return (
+    <>
+      <RegistrySheet onOpenCard={open} openId={openId} />
+      <ContractCard id={openId} open={!!openId} dock="bottom" onClose={() => open(null)} onCreated={(id) => open(id)} />
+    </>
+  );
+}
 
 /**
  * Табличный вид грузится только по требованию: Univer тянет за собой канвас и
@@ -100,14 +141,13 @@ type Section =
   | "sheets"
   | "dictionaries"
   | "rules"
-  | "team"
   | "invoices"
   | "recurrences"
   | "integrations"
   | "balance"
   | "indicators"
   | "statement"
-  | "history";
+  | "me";
 
 /**
  * Разделы живут в левой колонке, а не лентой сверху.
@@ -120,7 +160,13 @@ type Section =
  * Значок здесь не украшение: в свёрнутой колонке он единственное, по чему
  * раздел узнаётся.
  */
-type SectionItem = { key: Section; title: string; icon: (props: { size?: number }) => ReactElement };
+type SectionItem = {
+  key: Section;
+  title: string;
+  icon: (props: { size?: number }) => ReactElement;
+  /** Право, которое открывает раздел (`app/finance/access.py`, RESOURCES). */
+  resource: string;
+};
 
 /**
  * Разделы сгруппированы так же, как у Finmap: работа с операциями, отчёты,
@@ -133,59 +179,66 @@ const GROUPS: { title: string; items: SectionItem[] }[] = [
     // деньгам и отчётам (план, «Картина целиком»).
     title: "Договоры",
     items: [
-      { key: "contracts", title: "Реестр", icon: ContractIcon },
-      { key: "contracts-sheet", title: "Реестр · таблица", icon: ContractGridIcon },
+      { key: "contracts", title: "Реестр", icon: ContractIcon, resource: "contracts" },
+      { key: "contracts-sheet", title: "Реестр · таблица", icon: ContractGridIcon, resource: "contracts" },
     ],
   },
   {
     title: "Учёт",
     items: [
-      { key: "journal", title: "Журнал", icon: ListIcon },
-      { key: "table", title: "Таблица", icon: TableIcon },
-      { key: "calendar", title: "Календарь", icon: CalendarIcon },
-      { key: "invoices", title: "Счета", icon: ReceiptIcon },
-      { key: "recurrences", title: "Повторения", icon: RepeatIcon },
-      { key: "import", title: "Загрузка", icon: UploadIcon },
-      { key: "sheets", title: "Google Таблицы", icon: GridIcon },
+      { key: "journal", title: "Журнал", icon: ListIcon, resource: "journal" },
+      { key: "table", title: "Таблица", icon: TableIcon, resource: "table" },
+      { key: "calendar", title: "Календарь", icon: CalendarIcon, resource: "calendar" },
+      { key: "invoices", title: "Счета", icon: ReceiptIcon, resource: "invoices" },
+      { key: "recurrences", title: "Повторения", icon: RepeatIcon, resource: "recurrences" },
+      { key: "import", title: "Загрузка", icon: UploadIcon, resource: "import" },
+      { key: "sheets", title: "Google Таблицы", icon: GridIcon, resource: "sheets" },
     ],
   },
   {
     title: "Отчёты",
     items: [
-      { key: "cash", title: "Деньги", icon: WalletIcon },
-      { key: "profit", title: "Прибыль", icon: TrendIcon },
-      { key: "debts", title: "Долги", icon: ClockIcon },
-      { key: "balance", title: "Баланс", icon: ScaleIcon },
-      { key: "indicators", title: "Показатели", icon: GaugeIcon },
-      { key: "statement", title: "Выписка по счёту", icon: FileTextIcon },
-      { key: "projects", title: "Проекты", icon: FolderIcon },
-      { key: "plan", title: "План / Факт", icon: TargetIcon },
+      { key: "cash", title: "Деньги", icon: WalletIcon, resource: "reports.cash" },
+      { key: "profit", title: "Прибыль", icon: TrendIcon, resource: "reports.profit" },
+      { key: "debts", title: "Долги", icon: ClockIcon, resource: "reports.debts" },
+      { key: "balance", title: "Баланс", icon: ScaleIcon, resource: "reports.balance" },
+      { key: "indicators", title: "Показатели", icon: GaugeIcon, resource: "reports.indicators" },
+      { key: "statement", title: "Выписка по счёту", icon: FileTextIcon, resource: "reports.statement" },
+      { key: "projects", title: "Проекты", icon: FolderIcon, resource: "reports.projects" },
+      { key: "plan", title: "План / Факт", icon: TargetIcon, resource: "reports.plan" },
     ],
   },
   {
+    // «Команда» и «История» ушли в личный кабинет (фронт-план, 3.1): колонка —
+    // инструмент учёта, всё о людях живёт в кабинете.
     title: "Настройки",
     items: [
-      { key: "integrations", title: "Интеграции", icon: PlugIcon },
-      { key: "rules", title: "Правила", icon: BoltIcon },
-      { key: "dictionaries", title: "Справочники", icon: BookIcon },
-      { key: "team", title: "Команда", icon: PeopleIcon },
-      { key: "history", title: "История", icon: HistoryIcon },
+      { key: "integrations", title: "Интеграции", icon: PlugIcon, resource: "integrations" },
+      { key: "rules", title: "Правила", icon: BoltIcon, resource: "rules" },
+      { key: "dictionaries", title: "Справочники", icon: BookIcon, resource: "dictionaries" },
     ],
   },
 ];
 
-/** Экраны без пункта в колонке: редкие действия внутри «Реестра» (меню ⋯). */
+/**
+ * Экраны без пункта в колонке: редкие действия внутри «Реестра» (меню ⋯) и
+ * личный кабинет, который открывается по имени в раме. У кабинета права нет:
+ * своё видит каждый, а вкладки людей решают права `people` и `audit`.
+ */
 const HIDDEN_SECTIONS: SectionItem[] = [
-  { key: "contracts-import", title: "Загрузка реестра", icon: UploadIcon },
-  { key: "contracts-setup", title: "Настроить реестр", icon: BookIcon },
+  { key: "contracts-import", title: "Загрузка реестра", icon: UploadIcon, resource: "contracts" },
+  { key: "contracts-setup", title: "Настроить реестр", icon: BookIcon, resource: "contracts" },
+  { key: "me", title: "Личный кабинет", icon: PersonIcon, resource: "" },
 ];
 
 const SECTIONS: SectionItem[] = GROUPS.flatMap((group) => group.items);
 const ALL_SECTIONS: SectionItem[] = [...SECTIONS, ...HIDDEN_SECTIONS];
+/** Загрузка и настройка реестра меняют шаблон компании — владелец и администратор. */
+const ADMIN_SECTIONS = new Set<Section>(["contracts-import", "contracts-setup"]);
 
-function sectionFromAddress(): Section {
+function sectionFromAddress(): Section | null {
   const wanted = readParam("s");
-  return (ALL_SECTIONS.find((item) => item.key === wanted)?.key as Section | undefined) ?? "journal";
+  return (ALL_SECTIONS.find((item) => item.key === wanted)?.key as Section | undefined) ?? null;
 }
 
 /**
@@ -230,25 +283,84 @@ function subscribeRail(listener: () => void): () => void {
 export function FinanceClient() {
   // Раздел сам решает, кто вошёл: своя учётка, свой вход, своя компания.
   const { me, setMe, loading } = useMe();
-  const [section, setSectionState] = useState<Section>("journal");
+  const [picked, setSectionState] = useState<Section | null>(null);
   /**
    * Раздел живёт в адресе: ссылку на реестр или договор можно переслать.
    * Первый раздел читается после монтирования, а не в начальном состоянии —
    * иначе серверная отрисовка и первая клиентская разошлись бы.
    */
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- адрес читается только в браузере
     setSectionState(sectionFromAddress());
     const onPop = () => setSectionState(sectionFromAddress());
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
+  /** Колонка — только разрешённые разделы (фронт-план, 3.1). */
+  const visible = useCallback(
+    (item: SectionItem) =>
+      item.key === "me" || (ADMIN_SECTIONS.has(item.key) ? isAdmin(me) : can(me, item.resource)),
+    [me],
+  );
+  const groups = useMemo(
+    () => GROUPS.map((group) => ({ ...group, items: group.items.filter(visible) })).filter((g) => g.items.length),
+    [visible],
+  );
+  /** Без раздела в адресе — журнал, а кому он закрыт, — первый открытый. */
+  const home: Section = can(me, "journal") ? "journal" : (groups[0]?.items[0]?.key ?? "me");
+  const section: Section = picked ?? home;
+  const sectionItem = ALL_SECTIONS.find((item) => item.key === section);
+  const allowed = sectionItem ? visible(sectionItem) : false;
+  const money = canAny(me, MONEY_RESOURCES);
   const setSection = useCallback((next: Section | string) => {
     const key = (ALL_SECTIONS.find((item) => item.key === next)?.key ?? "journal") as Section;
     setSectionState(key);
-    // Запись открытого договора и лист принадлежат реестру — при смене
-    // раздела они уходят из адреса.
-    writeParams({ s: key === "journal" ? null : key, id: null, v: null }, true);
+    // Запись открытого договора, лист и вкладки кабинета принадлежат своему
+    // экрану — при смене раздела они уходят из адреса.
+    writeParams({ s: key, id: null, v: null, t: null, d: null }, true);
   }, []);
+  /** Откуда пришли в кабинет — туда и возвращает «← К учёту». */
+  const [cameFrom, setCameFrom] = useState<Section | null>(null);
+  const openCabinet = useCallback(() => {
+    if (section !== "me") setCameFrom(section);
+    setSection("me");
+  }, [section, setSection]);
+  const openContract = useCallback((id: string) => {
+    setSectionState("contracts");
+    writeParams({ s: "contracts", id, v: null, t: null, d: null }, true);
+  }, []);
+  const [pending, setPending] = useState(0);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- число приходит вместе с me
+    setPending(me?.pending_requests ?? 0);
+  }, [me?.pending_requests]);
+
+  /**
+   * Права могут поменяться, пока человек в разделе: `me` перечитывается раз в
+   * минуту, пока вкладка видна, — колонка перестраивается, «N запросов»
+   * обновляется. 403 на любом запросе перечитывает сразу (фронт-план, 3.4).
+   */
+  const refreshMe = useCallback(async () => {
+    try {
+      const next = await financeApi.me();
+      setMe(next.authenticated ? next : null);
+    } catch (exc) {
+      if (exc instanceof FinanceApiError && exc.status === 401) setMe(null);
+    }
+  }, [setMe]);
+  useEffect(() => {
+    if (!me) return;
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") void refreshMe();
+    }, 60000);
+    return () => clearInterval(timer);
+  }, [me, refreshMe]);
+
+  /** Сигнал «открыт раздел» в журнал действий; сервер сам держит «не чаще раза в минуту». */
+  useEffect(() => {
+    if (!me?.company || !sectionItem?.resource || !allowed) return;
+    void peopleApi.audit.view(sectionItem.resource).catch(() => undefined);
+  }, [me?.company, sectionItem?.resource, allowed]);
   /**
    * Колонка разделов: свёрнута в полосу значков и раскрывается наведением.
    *
@@ -307,7 +419,9 @@ export function FinanceClient() {
   const companyId = me?.company?.id ?? null;
 
   useEffect(() => {
-    if (!companyId) return;
+    // Сводка и справочники — у денег. Юристу с одними договорами они не
+    // открыты: запрос ответил бы 403 и повесил бы над реестром чужую ошибку.
+    if (!companyId || !money) return;
     let alive = true;
     (async () => {
       try {
@@ -326,20 +440,43 @@ export function FinanceClient() {
     };
     // Компания в зависимостях не для порядка: при переключении надо перечитать
     // всё, иначе на экране останутся счета и операции прежней компании.
-  }, [revision, companyId]);
+  }, [revision, companyId, money]);
 
   const currency = overview?.workspace.currency ?? "KZT";
   const symbol = currency === "KZT" ? "₸" : currency;
 
   const content = useMemo(() => {
-    if (!dictionaries) return null;
+    if (!me) return null;
+    if (!allowed) {
+      return (
+        <p className="fin-denied">
+          Нет доступа к разделу «{sectionItem?.title ?? ""}». Доступ даёт администратор.
+        </p>
+      );
+    }
     switch (section) {
       case "contracts":
-        return me ? <Registry me={me} onGo={setSection} /> : null;
+        return <Registry me={me} onGo={setSection} />;
       case "contracts-sheet":
+        return <SheetScreen me={me} />;
       case "contracts-import":
+        return (
+          <RegistryImport
+            onDone={() => {
+              if (me.company) void boot(me.company.id, me.user?.id ?? null, true);
+              setSection("contracts");
+            }}
+            onCancel={() => setSection("contracts")}
+            onEditRule={() => setSection("contracts-setup")}
+          />
+        );
       case "contracts-setup":
-        return <p className="creg-empty">Экран собирается — будет в этой сборке.</p>;
+        return <SetupScreen me={me} onBack={() => setSection("contracts")} />;
+      default:
+        break;
+    }
+    if (!dictionaries) return null;
+    switch (section) {
       case "journal":
         return <Journal dictionaries={dictionaries} revision={revision} onChanged={reload} />;
       case "table":
@@ -371,8 +508,6 @@ export function FinanceClient() {
         return <RulesPanel dictionaries={dictionaries} onChanged={reload} />;
       case "dictionaries":
         return <DictionariesPanel dictionaries={dictionaries} onChanged={reload} />;
-      case "team":
-        return me ? <TeamPanel me={me} onChanged={reload} /> : null;
       case "invoices":
         return <InvoicesPanel dictionaries={dictionaries} onChanged={reload} />;
       case "recurrences":
@@ -385,12 +520,10 @@ export function FinanceClient() {
         return <IndicatorsReport revision={revision} />;
       case "statement":
         return <StatementReport accounts={dictionaries.accounts} revision={revision} />;
-      case "history":
-        return <HistoryPanel revision={revision} onChanged={reload} />;
       default:
         return null;
     }
-  }, [section, dictionaries, revision, reload, me, sheetRefresh, setSection]);
+  }, [section, sectionItem, allowed, dictionaries, revision, reload, me, sheetRefresh, setSection]);
 
   if (loading) return <AuthLoading />;
   if (!me) return <AuthGate onReady={(next) => setMe(next)} />;
@@ -452,6 +585,15 @@ export function FinanceClient() {
           )}
         </div>
 
+        {pending > 0 && can(me, "people", "edit") ? (
+          <button type="button" className="fin-head-requests" onClick={openCabinet}>
+            {pending} {plural(pending, "запрос", "запроса", "запросов")}
+          </button>
+        ) : null}
+
+        {/* Строка действий — только при праве правки журнала; без права её нет
+            вовсе, а не пустое место (фронт-план, 3.3). */}
+        {can(me, "journal", "edit") ? (
         <div className="fin-actions">
           <button type="button" className="fin-act" data-kind="income" onClick={() => {
               setDialogPlan(false);
@@ -473,28 +615,38 @@ export function FinanceClient() {
             ⇄ Перевод
           </button>
         </div>
+        ) : null}
+        {money ? (
+          <button
+            type="button"
+            className="fin-act only-desktop"
+            style={{ padding: "0 0.75rem" }}
+            onClick={() => {
+              reload();
+              setSheetRefresh((value) => value + 1);
+            }}
+            title="Перечитать данные"
+          >
+            <RefreshIcon size={15} />
+          </button>
+        ) : null}
+        {/* Имя вместо «Выйти»: выход — редкое действие, он в кабинете. */}
         <button
           type="button"
-          className="fin-act only-desktop"
-          style={{ padding: "0 0.75rem" }}
-          onClick={() => {
-            reload();
-            setSheetRefresh((value) => value + 1);
-          }}
-          title="Перечитать данные"
+          className="fin-head-person only-desktop"
+          data-on={section === "me" ? "true" : undefined}
+          onClick={openCabinet}
+          title="Личный кабинет"
         >
-          <RefreshIcon size={15} />
+          {shortName(nameOf(me)) || "Личный кабинет"}
         </button>
         <button
           type="button"
-          className="fin-act only-desktop"
-          onClick={async () => {
-            await financeApi.logout();
-            setMe(null);
-          }}
-          title={me.user?.email ?? ""}
+          className="fin-icon-btn fin-head-person-icon only-mobile"
+          onClick={openCabinet}
+          aria-label="Личный кабинет"
         >
-          Выйти
+          <PersonIcon size={18} />
         </button>
       </header>
 
@@ -510,8 +662,32 @@ export function FinanceClient() {
         </div>
       ) : null}
 
+      {section === "me" ? (
+        <div className="fin-plate" data-cabinet="true">
+          <main className="fin-body fin-body-cabinet min-w-0">
+            <Cabinet
+              me={me}
+              onMe={(next) => {
+                setMe(next);
+                reload();
+              }}
+              onBack={() => setSection(cameFrom && cameFrom !== "me" ? cameFrom : home)}
+              onLogout={async () => {
+                await financeApi.logout().catch(() => undefined);
+                setMe(null);
+              }}
+              onOpenContract={openContract}
+              onPending={setPending}
+            />
+          </main>
+        </div>
+      ) : (
       <div className="fin-plate">
-        <aside className="fin-aside" data-open={railOpen ? "true" : undefined}>
+        <aside
+          className="fin-aside"
+          data-open={railOpen ? "true" : undefined}
+          data-money={money ? undefined : "false"}
+        >
           {/* Внутренний слой прилипает к экрану, а сама колонка тянется на
               всю высоту плиты — вместе с подложкой и разделительной линией.
               Прилипни колонка целиком, подложка обрывалась бы посреди длинного
@@ -521,7 +697,7 @@ export function FinanceClient() {
               Подпись не прячется display'ем: свёрнутая колонка её обрезает
               шириной, поэтому переход плавный, а не мигающий. */}
           <nav className="fin-nav" aria-label="Разделы финансов">
-            {GROUPS.map((group) => (
+            {groups.map((group) => (
               <div key={group.title} className="fin-nav-group">
                 <span className="fin-nav-head">{group.title}</span>
                 {group.items.map((item) => (
@@ -545,12 +721,14 @@ export function FinanceClient() {
 
           {/* Главная цифра в свёрнутом виде: ради неё на панель и смотрят, не
               раскрывая её. В раскрытой колонке её место занимает полный блок. */}
+          {money ? (
           <div className="fin-rail-foot" aria-hidden="true">
             <span className="fin-rail-sum">{compactMoney(overview?.total)}</span>
             <span className="fin-rail-cur">{symbol}</span>
           </div>
+          ) : null}
 
-
+          {money ? (
           <div className="fin-aside-full flex flex-col gap-3">
           <div className="fin-total">
             <span className="fin-total-label">Всего на счетах</span>
@@ -608,6 +786,7 @@ export function FinanceClient() {
             ) : null}
           </div>
           </div>
+          ) : null}
 
           <button
             type="button"
@@ -634,11 +813,11 @@ export function FinanceClient() {
               у соседей разные: одинаковые (оба `section`) React в сборке не
               различал, и старые заголовки не удалялись — копились над новыми. */}
           <SplitReveal key={`title-${section}`} as="h1" className="fin-section-title" duration={0.9}>
-            {ALL_SECTIONS.find((item) => item.key === section)?.title ?? ""}
+            {sectionItem?.title ?? ""}
           </SplitReveal>
           {/* На телефоне колонка не работает — там разделы остаются лентой. */}
           <nav className="fin-tabs" aria-label="Разделы финансов">
-            {SECTIONS.map((item) => (
+            {groups.flatMap((group) => group.items).map((item) => (
               <button
                 key={item.key}
                 type="button"
@@ -653,6 +832,7 @@ export function FinanceClient() {
           <FadeIn key={`body-${section}`}>{content}</FadeIn>
         </main>
       </div>
+      )}
 
       {dialogKind && dictionaries ? (
         <OperationDialog
