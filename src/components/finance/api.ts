@@ -280,6 +280,8 @@ export type GridPayload = {
   rows: GridRow[];
   options: Record<string, string[]>;
   total: number;
+  /** Номер изменения журнала, с которого лист начинает опрос. */
+  seq?: number;
 };
 
 export type RuleCondition = { field: string; op: string; value: string };
@@ -694,6 +696,9 @@ export const financeApi = {
 
   grid: (params: Record<string, string | number | undefined>) =>
     request<GridPayload>(`/grid${qs(params)}`),
+  /** Живой режим листа «Таблица»: строки, изменённые после номера, и снятые. */
+  gridChanges: (since: number) =>
+    request<{ rows: GridRow[]; removed: string[]; seq: number }>(`/grid/changes${qs({ since })}`),
   autotagPreview: () => request<AutotagPreview>("/autotag"),
   autotagApply: (groups: { side: string; category: string }[]) =>
     request<{ updated: number; by_category: Record<string, number> }>("/autotag", {

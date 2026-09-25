@@ -17,6 +17,8 @@
  */
 import { useSyncExternalStore } from "react";
 
+import { type PollOutcome, type Poller, pollWhileVisible } from "@/components/univer/live";
+
 import {
   type ChangeMode,
   type ChangesBatch,
@@ -209,27 +211,13 @@ export async function reloadAll(): Promise<void> {
 
 // ── Живой режим: опрос ───────────────────────────────────────────────────────
 
-const POLL_MS = 2000;
-const BACKOFF = [2000, 4000, 8000, 16000, 30000];
+// Сам опрос (пауза, видимость вкладки, отступление) — общий движок листов
+// `univer/live.ts`; здесь только что спросить и как применить ответ.
 let interest = 0;
-let timer: ReturnType<typeof setTimeout> | null = null;
-let polling = false;
+let poller: Poller | null = null;
 
-function schedule(delay: number): void {
-  if (timer) clearTimeout(timer);
-  timer = null;
-  if (interest <= 0) return;
-  if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
-  timer = setTimeout(pollOnce, delay);
-}
-
-async function pollOnce(): Promise<void> {
-  timer = null;
-  if (polling || interest <= 0 || state.phase !== "ready") {
-    schedule(POLL_MS);
-    return;
-  }
-  polling = true;
+async function pollOnce(): Promise<PollOutcome> {
+  if (state.phase !== "ready") return "ok";
   try {
     const batch = await contractsApi.changes(state.seq);
     applyChanges(batch);
@@ -237,11 +225,11 @@ async function pollOnce(): Promise<void> {
     emit({ live });
     if (batch.schema_rev !== state.schemaRev) await reloadSchema();
     flushQueued();
-    schedule(POLL_MS);
+    return "ok";
   } catch (exc) {
     if (exc instanceof FinanceApiError && exc.status === 401) {
       onAuthLost?.();
-      return;
+      return "stop";
     }
     if (exc instanceof FinanceApiError && exc.status === 403) await reloadSchema();
     const failures = state.live.failures + 1;
@@ -249,34 +237,20 @@ async function pollOnce(): Promise<void> {
     // сбой не должен мигать янтарём.
     const stale = state.live.lastOkAt === null || Date.now() - state.live.lastOkAt > 6000;
     emit({ live: { online: !(failures >= 2 || stale), lastOkAt: state.live.lastOkAt, failures } });
-    schedule(BACKOFF[Math.min(failures - 1, BACKOFF.length - 1)]);
-  } finally {
-    polling = false;
-  }
-}
-
-function onVisibility(): void {
-  if (document.visibilityState === "visible") schedule(0);
-  else if (timer) {
-    clearTimeout(timer);
-    timer = null;
+    return "fail";
   }
 }
 
 /** Экран, которому нужен живой режим, держит интерес, пока открыт. */
 export function holdLive(): () => void {
   interest += 1;
-  if (interest === 1 && typeof document !== "undefined") {
-    document.addEventListener("visibilitychange", onVisibility);
-    schedule(POLL_MS);
-  }
+  if (interest === 1) poller = pollWhileVisible(pollOnce);
   return () => {
     interest -= 1;
     if (interest <= 0) {
       interest = 0;
-      if (timer) clearTimeout(timer);
-      timer = null;
-      document.removeEventListener("visibilitychange", onVisibility);
+      poller?.stop();
+      poller = null;
     }
   };
 }

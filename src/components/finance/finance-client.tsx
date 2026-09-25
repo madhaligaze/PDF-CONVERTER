@@ -479,7 +479,7 @@ export function FinanceClient() {
       case "journal":
         return <Journal dictionaries={dictionaries} revision={revision} onChanged={reload} />;
       case "table":
-        return <TableView onChanged={reload} refresh={sheetRefresh} />;
+        return <TableView onChanged={reload} refresh={sheetRefresh} canEdit={can(me, "table", "edit")} />;
       case "calendar":
         return <CalendarView revision={revision} />;
       case "cash":

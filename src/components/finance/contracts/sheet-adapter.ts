@@ -58,6 +58,7 @@ import {
   type RegistryState,
 } from "@/components/finance/contracts/store";
 import { parseDay, plural, shortName } from "@/components/finance/format";
+import { guardSheets } from "@/components/univer/protect";
 import type { UniverApi, WorkbookSnapshot } from "@/components/univer/sheet";
 import {
   DATE_PATTERN,
@@ -956,14 +957,6 @@ function cellsOf(matrix: unknown): Array<[number, number]> {
   return out;
 }
 
-function columnLetter(index: number): string {
-  let out = "";
-  for (let rest = index + 1; rest > 0; rest = Math.floor((rest - 1) / 26)) {
-    out = String.fromCharCode(65 + ((rest - 1) % 26)) + out;
-  }
-  return out;
-}
-
 /** Первая строка, с которой два расклада расходятся; `-1` — одинаковы. */
 function firstDiff(a: Slot[], b: Slot[]): number {
   const limit = Math.min(a.length, b.length);
@@ -1013,7 +1006,7 @@ export class RegistryBinding {
     }
     this.ctx.openId = openId;
     if (openId) this.repaintIds([openId]);
-    void this.applyPermissions().then(() => this.hideShadow());
+    void this.applyPermissions();
 
     const listen = (disposable: { dispose?: () => void } | undefined | null) => {
       if (disposable?.dispose) this.disposers.push(() => disposable.dispose?.());
@@ -1099,94 +1092,30 @@ export class RegistryBinding {
    *   человек видит, но не правит) защищены диапазоном.
    */
   private async applyPermissions(): Promise<void> {
-    const api = this.api;
-    const point = api.Enum?.WorksheetPermissionPoint;
-    const rangePoint = api.Enum?.RangePermissionPoint;
-    const workbook = api.getActiveWorkbook?.();
-    if (!point || !workbook) return;
-    // Штриховку снимаем до защиты, иначе лист успевает показаться под ней.
-    await this.waitRendered();
-    this.hideShadow();
+    // Сама механика прав (protect, штриховка, запрет владельцу правила) —
+    // общий корень листов `univer/protect.ts`; здесь только что разрешено.
     const canEdit = Boolean(this.ctx.state.schema?.access.edit);
-    for (const model of this.models.values()) {
-      if (!this.alive) return;
-      const sheet = workbook.getSheetBySheetId?.(model.layout.key);
-      const permission = sheet?.getWorksheetPermission?.();
-      if (!permission) continue;
-      try {
-        // С версии 0.25 точки прав ставятся только на защищённый лист:
-        // без `protect()` каждая бросает «worksheet protection does not exist»,
-        // и лист оставался открытым для вставки строк и колонок.
-        if (!permission.isProtected?.()) {
-          await permission.protect({ name: "Реестр договоров", allowViewByOthers: true });
-        }
-        if (!canEdit) {
-          await permission.setReadOnly();
-          continue;
-        }
-        await permission.applyConfig({
-          mode: "editable",
-          points: {
-            [point.InsertRow]: false,
-            [point.DeleteRow]: false,
-            [point.InsertColumn]: false,
-            [point.DeleteColumn]: false,
-            [point.Sort]: model.layout.single,
-            [point.Filter]: model.layout.single,
+    const cancel = await guardSheets(
+      this.api,
+      [...this.models.values()].map((model) => ({
+        sheetId: model.layout.key,
+        guard: {
+          name: "Реестр договоров",
+          readOnly: !canEdit,
+          allow: {
+            insertRows: false,
+            deleteRows: false,
+            insertColumns: false,
+            deleteColumns: false,
+            sort: model.layout.single,
+            filter: model.layout.single,
           },
-        });
-        if (model.layout.readOnlyCols.length) {
-          const ranges = model.layout.readOnlyCols.map((column) => {
-            const letter = columnLetter(column);
-            return sheet.getRange(`${letter}:${letter}`);
-          });
-          const rules = await permission.protectRanges([
-            { ranges, options: { name: "Только чтение", allowViewByOthers: true } },
-          ]);
-          // Владелец правила — сам вошедший, а владельцу Univer правку
-          // разрешает. Запрещаем явно.
-          for (const rule of rules ?? []) {
-            if (rangePoint) await rule.setPoint?.(rangePoint.Edit, false);
-          }
-        }
-      } catch (exc) {
-        console.warn(`права листа «${model.layout.title}» не встали:`, exc);
-      }
-    }
-  }
-
-  /**
-   * Защищённый лист Univer заштриховывает целиком — косой сеткой поверх шапки
-   * и всех строк, хотя править в нём можно почти всё; колонки «только чтение»
-   * и так видны приглушённым текстом. Стратегию штриховки Univer читает из
-   * настройки, когда создаёт отрисовку, а меняет только у уже созданной —
-   * поэтому ставим её после прав, когда лист точно отрисован, и ещё раз чуть
-   * позже на случай, если отрисовка доехала позже прав.
-   */
-  /** Отрисовка листа создаётся позже книги — ждём её (до трёх секунд). */
-  private async waitRendered(): Promise<void> {
-    for (let attempt = 0; attempt < 60 && this.alive; attempt += 1) {
-      try {
-        if (this.api.getActiveWorkbook?.()?.getActiveSheet?.()?.getSkeleton?.()) return;
-      } catch {
-        /* отрисовки ещё нет */
-      }
-      await new Promise((resolve) => window.setTimeout(resolve, 50));
-    }
-  }
-
-  private hideShadow(): void {
-    const apply = () => {
-      if (!this.alive) return;
-      try {
-        this.api.setProtectedRangeShadowStrategy?.("none");
-      } catch {
-        /* старая версия без стратегии — штриховка останется */
-      }
-    };
-    apply();
-    const timer = window.setTimeout(apply, 600);
-    this.disposers.push(() => window.clearTimeout(timer));
+          lockedColumns: model.layout.readOnlyCols,
+        },
+      })),
+      () => this.alive,
+    );
+    this.disposers.push(cancel);
   }
 
   // ── Запись в лист ──

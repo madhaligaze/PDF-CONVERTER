@@ -2,8 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { type PollOutcome, pollWhileVisible } from "@/components/univer/live";
+import { guardSheets } from "@/components/univer/protect";
 import { UniverSheet, type UniverApi, type WorkbookSnapshot } from "@/components/univer/sheet";
 import { useFillHeight } from "@/components/univer/use-fill-height";
+import { writeCells } from "@/components/univer/write";
 import {
   type GridColumn,
   type GridPayload,
@@ -230,13 +233,24 @@ type Mounted = {
   generation: number;
   payload: GridPayload;
   rows: Map<number, GridRow>;
+  /** Обратная карта: операция → строка листа. Правка коллеги ложится по ней. */
+  ids: Map<string, number>;
+  /** Номер изменения журнала, после которого спрашивает живой режим. */
+  seq: number;
 };
 
 function mount(payload: GridPayload, generation: number): Mounted {
   const rows = new Map<number, GridRow>();
-  payload.rows.forEach((row, index) => rows.set(index + 1, row));
-  return { generation, payload, rows };
+  const ids = new Map<string, number>();
+  payload.rows.forEach((row, index) => {
+    rows.set(index + 1, row);
+    ids.set(row.id, index + 1);
+  });
+  return { generation, payload, rows, ids, seq: payload.seq ?? 0 };
 }
+
+/** Лист журнала в книге Univer — адрес для записи и прав. */
+const SHEET_ID = "journal";
 
 /** Что сделано одной правкой — для строки состояния. */
 type Tally = {
@@ -252,7 +266,16 @@ type Beat = { text: string; at: number; refusal: boolean };
 /** Номер строки так, как его видит человек: слева у Univer строка шапки — «1». */
 const shown = (sheetRow: number) => sheetRow + 1;
 
-export function TableView({ onChanged, refresh = 0 }: { onChanged: () => void; refresh?: number }) {
+export function TableView({
+  onChanged,
+  refresh = 0,
+  canEdit = true,
+}: {
+  onChanged: () => void;
+  refresh?: number;
+  /** Право правки раздела «Таблица». Нет — лист только для чтения. */
+  canEdit?: boolean;
+}) {
   const [sheet, setSheet] = useState<Mounted | null>(null);
   const [error, setError] = useState("");
   const [beat, setBeat] = useState<Beat | null>(null);
@@ -272,6 +295,10 @@ export function TableView({ onChanged, refresh = 0 }: { onChanged: () => void; r
   useEffect(() => {
     onChangedRef.current = onChanged;
   }, [onChanged]);
+  const canEditRef = useRef(canEdit);
+  useEffect(() => {
+    canEditRef.current = canEdit;
+  }, [canEdit]);
 
   // Чтение — с отменой: ответ, пришедший после ухода с раздела, не должен
   // собирать лист в уже снятом компоненте. `refresh` — кнопка «Перечитать» в
@@ -319,32 +346,44 @@ export function TableView({ onChanged, refresh = 0 }: { onChanged: () => void; r
     const { columns } = mine.payload;
 
     const active = () => api.getActiveWorkbook()?.getActiveSheet();
+    let alive = true;
+    disposers.push(() => {
+      alive = false;
+    });
+    /** Строки, у которых правка уходит на сервер: опрос их не трогает. */
+    const busy = new Set<number>();
+    /** Строка, где сейчас открыт редактор ячейки, и правки коллег, ждущие его закрытия. */
+    let editingRow: number | null = null;
+    const deferred = new Map<number, GridRow>();
 
-    /** Записать в строку листа то, что знает сервер. */
+    /**
+     * Записать в строку листа то, что знает сервер. Мутацией из корня листов
+     * (`univer/write.ts`): права её не режут (колонки «только чтение» пишет
+     * сервер, не человек), и в «Отменить» она не попадает.
+     */
     const writeRow = (sheetRow: number, row: GridRow | null) => {
-      const target = active();
-      if (!target) return;
       writing.current += 1;
       try {
-        const values = [
-          columns.map((column) => (row ? cellFor(column, row.cells[column.key] ?? "") : { v: "" })),
-        ];
-        target.getRange(sheetRow, 0, 1, columns.length).setValues(values);
-      } catch (exc) {
-        console.warn(`строка ${shown(sheetRow)} не перерисовалась:`, exc);
+        const line: Record<number, Record<string, unknown> | null> = {};
+        columns.forEach((column, index) => {
+          line[index] = row ? cellFor(column, row.cells[column.key] ?? "") : null;
+        });
+        if (!writeCells(api, SHEET_ID, { [sheetRow]: line })) {
+          console.warn(`строка ${shown(sheetRow)} не перерисовалась`);
+        }
       } finally {
         writing.current -= 1;
       }
     };
 
     const writeHeader = () => {
-      const target = active();
-      if (!target) return;
       writing.current += 1;
       try {
-        target
-          .getRange(HEADER_ROW, 0, 1, columns.length)
-          .setValues([columns.map((column) => ({ v: column.title, s: "head" }))]);
+        const line: Record<number, Record<string, unknown>> = {};
+        columns.forEach((column, index) => {
+          line[index] = { v: column.title, s: "head" };
+        });
+        writeCells(api, SHEET_ID, { [HEADER_ROW]: line });
       } finally {
         writing.current -= 1;
       }
@@ -373,6 +412,15 @@ export function TableView({ onChanged, refresh = 0 }: { onChanged: () => void; r
     };
 
     const saveExisting = async (sheetRow: number, index: number, tally: Tally) => {
+      busy.add(sheetRow);
+      try {
+        await saveExistingCell(sheetRow, index, tally);
+      } finally {
+        busy.delete(sheetRow);
+      }
+    };
+
+    const saveExistingCell = async (sheetRow: number, index: number, tally: Tally) => {
       const column = columns[index];
       const row = mine.rows.get(sheetRow);
       if (!column || !row) return;
@@ -430,12 +478,14 @@ export function TableView({ onChanged, refresh = 0 }: { onChanged: () => void; r
         tally.missing = `строка ${shown(sheetRow)}: не хватает — ${missing.join(", ")}`;
         return;
       }
+      busy.add(sheetRow);
       try {
         const out = await financeApi.addGridRow(cells);
         // Операция остаётся там, где её напечатали. Место по дате она займёт
         // при следующей сборке листа — как новая строка в Excel не прыгает
         // посреди ввода в середину таблицы.
         mine.rows.set(sheetRow, out.row);
+        mine.ids.set(out.row.id, sheetRow);
         writeRow(sheetRow, out.row);
         tally.created += 1;
         tally.lastRow = sheetRow;
@@ -443,8 +493,130 @@ export function TableView({ onChanged, refresh = 0 }: { onChanged: () => void; r
         tally.refusals.push(
           `строка ${shown(sheetRow)}: ${exc instanceof Error ? exc.message : "операция не заведена"}`,
         );
+      } finally {
+        busy.delete(sheetRow);
       }
     };
+
+    // ── Живой режим: правки коллег (опрос — общий движок `univer/live.ts`) ──
+
+    /** Первая пустая строка под журналом — туда встаёт операция коллеги. */
+    const freeRow = (): number | null => {
+      const limit = Number(active()?.getMaxRows?.() ?? mine.payload.rows.length + SPARE_ROWS + 1);
+      for (let sheetRow = mine.payload.rows.length + 1; sheetRow < limit; sheetRow += 1) {
+        if (mine.rows.has(sheetRow) || busy.has(sheetRow) || editingRow === sheetRow) continue;
+        const cells = readRow(sheetRow);
+        if (Object.values(cells).some((value) => String(value ?? "").trim() !== "")) continue;
+        return sheetRow;
+      }
+      return null;
+    };
+
+    /** Строка коллеги новее той, что на экране, — записать; занята — отложить. */
+    const place = (sheetRow: number, row: GridRow): boolean => {
+      const known = mine.rows.get(sheetRow);
+      if (known && known.version >= row.version) return false;
+      if (busy.has(sheetRow) || editingRow === sheetRow) {
+        deferred.set(sheetRow, row);
+        return false;
+      }
+      mine.rows.set(sheetRow, row);
+      writeRow(sheetRow, row);
+      return true;
+    };
+
+    const applyRemote = (batch: { rows: GridRow[]; removed: string[] }) => {
+      let changed = 0;
+      let added = 0;
+      let removed = 0;
+      let overflow = 0;
+      for (const row of batch.rows) {
+        const at = mine.ids.get(row.id);
+        if (at !== undefined) {
+          if (place(at, row)) changed += 1;
+          continue;
+        }
+        // Новая операция коллеги — в первую пустую строку внизу, как новая
+        // операция, напечатанная здесь: место по дате она займёт при
+        // следующей сборке листа, а не прыжком посреди чужого ввода.
+        const free = freeRow();
+        if (free === null) {
+          overflow += 1;
+          continue;
+        }
+        mine.rows.set(free, row);
+        mine.ids.set(row.id, free);
+        writeRow(free, row);
+        added += 1;
+      }
+      for (const id of batch.removed) {
+        const at = mine.ids.get(id);
+        if (at === undefined) continue;
+        mine.rows.delete(at);
+        mine.ids.delete(id);
+        deferred.delete(at);
+        writeRow(at, null);
+        removed += 1;
+      }
+      const parts: string[] = [];
+      if (changed) parts.push(`изменено строк: ${changed}`);
+      if (added) parts.push(`новых операций: ${added}`);
+      if (removed) parts.push(`удалено: ${removed}`);
+      if (overflow) parts.push(`ещё ${overflow} — пустых строк не хватило, «Перечитать» соберёт лист заново`);
+      if (parts.length) {
+        setBeat({ text: `Правки коллег: ${parts.join(" · ")}`, at: Date.now(), refusal: false });
+        onChangedRef.current();
+      }
+    };
+
+    const tick = async (): Promise<PollOutcome> => {
+      try {
+        const batch = await financeApi.gridChanges(mine.seq);
+        if (!alive) return "stop";
+        applyRemote(batch);
+        mine.seq = Math.max(mine.seq, batch.seq);
+        return "ok";
+      } catch (exc) {
+        // Вход потерян или раздел закрыли — опрашивать больше нечего.
+        if (exc instanceof FinanceApiError && (exc.status === 401 || exc.status === 403)) return "stop";
+        return "fail";
+      }
+    };
+    const poller = pollWhileVisible(tick);
+    disposers.push(() => poller.stop());
+
+    // Права листа — общим корнем (`univer/protect.ts`). Строки не вставляются
+    // и не удаляются (строка — адрес операции; новая заводится в пустой
+    // строке внизу), колонки — тоже (их задаёт сервер); сортировка закрыта:
+    // она перемешала бы строки на экране, а карта «строка → операция»
+    // осталась бы прежней, и правка ушла бы в соседнюю операцию. Фильтр
+    // строки не двигает — он открыт.
+    void guardSheets(
+      api,
+      [
+        {
+          sheetId: SHEET_ID,
+          guard: {
+            name: "Журнал",
+            readOnly: !canEditRef.current,
+            allow: {
+              insertRows: false,
+              deleteRows: false,
+              insertColumns: false,
+              deleteColumns: false,
+              sort: false,
+              filter: true,
+            },
+            lockedColumns: columns.flatMap((column, index) => (column.editable ? [] : [index])),
+            lockedRows: [HEADER_ROW],
+          },
+        },
+      ],
+      () => alive,
+    ).then((cancel) => {
+      if (alive) disposers.push(cancel);
+      else cancel();
+    });
 
     const apply = async (touched: Map<number, Set<number>>) => {
       const tally: Tally = { saved: 0, created: 0, lastRow: 0, refusals: [], missing: "" };
@@ -539,7 +711,10 @@ export function TableView({ onChanged, refresh = 0 }: { onChanged: () => void; r
     const KEYBOARD = 4; // DeviceInputEventType.Keyboard
     const edits = api.addEvent?.(
       api.Event.SheetEditStarted,
-      (event: { column: number; eventType?: number }) => {
+      (event: { row: number; column: number; eventType?: number }) => {
+        // Пока человек печатает в строке, правка коллеги её не перетирает —
+        // она ждёт закрытия редактора (см. SheetEditEnded ниже).
+        editingRow = event.row;
         if (event.eventType !== KEYBOARD || columns[event.column]?.kind !== "enum") return;
         const hide = () => {
           try {
@@ -556,6 +731,19 @@ export function TableView({ onChanged, refresh = 0 }: { onChanged: () => void; r
       },
     );
     if (edits?.dispose) disposers.push(() => edits.dispose());
+
+    const ended = api.addEvent?.(api.Event.SheetEditEnded, () => {
+      // Значение из редактора ложится командой чуть позже события — даём ему
+      // лечь и сохраниться, потом дописываем правки коллег, ждавшие этой
+      // строки (если своя правка их не обогнала — версия решает).
+      window.setTimeout(() => {
+        editingRow = null;
+        const waiting = [...deferred.entries()];
+        deferred.clear();
+        for (const [sheetRow, row] of waiting) place(sheetRow, row);
+      }, 30);
+    });
+    if (ended?.dispose) disposers.push(() => ended.dispose());
     return () => disposers.forEach((stop) => stop());
   }, []);
 
