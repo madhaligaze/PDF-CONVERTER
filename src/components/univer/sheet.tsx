@@ -75,7 +75,16 @@ type Props = {
   extras?: boolean;
   /** Кнопка «На весь экран» в ленте. По умолчанию есть у каждого листа. */
   fullscreen?: boolean;
+  /**
+   * Лист нарисован и Univer закончил свои отложенные задачи — главный поток
+   * свободен. Univer рисует не сразу после `createWorkbook`, а через 300 мс
+   * (стадия `Rendered`), поэтому «книга создана» ещё не значит «видно».
+   */
+  onShown?: () => void;
 };
+
+/** `LifecycleStages.Steady` из `@univerjs/core`. */
+const STEADY = 3;
 
 /**
  * Всё, что общее у листов продукта, живёт здесь, а не в разделах.
@@ -142,7 +151,7 @@ export function blankWorkbook(name = "Новая таблица"): WorkbookSnaps
 }
 
 export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverSheet(
-  { data, onReady, extras = false, fullscreen = true },
+  { data, onReady, extras = false, fullscreen = true, onShown },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -153,6 +162,8 @@ export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverS
   // книгу: эффект ниже монтируется один раз и живёт до размонтирования.
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
+  const onShownRef = useRef(onShown);
+  onShownRef.current = onShown;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const apiRef = useRef<any>(null);
 
@@ -224,6 +235,27 @@ export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverS
     // монтируется один раз на книгу, новая приходит пересозданием через `key`.
     const detach = onReadyRef.current?.(univerAPI);
 
+    // «Лист виден»: стадия Steady и два кадра — первый холст уже на экране.
+    let shownFrame = 0;
+    let shownSent = false;
+    const shown = () => {
+      if (shownSent) return;
+      shownSent = true;
+      shownFrame = requestAnimationFrame(() => {
+        shownFrame = requestAnimationFrame(() => onShownRef.current?.());
+      });
+    };
+    let lifecycle: { dispose?: () => void } | undefined;
+    try {
+      if ((univerAPI.getCurrentLifecycleStage?.() ?? 0) >= STEADY) shown();
+      else
+        lifecycle = univerAPI.addEvent(univerAPI.Event.LifeCycleChanged, ({ stage }: { stage: number }) => {
+          if (stage >= STEADY) shown();
+        });
+    } catch {
+      shown();
+    }
+
     // Смена темы в приложении — атрибут `data-theme`; «Как в системе» — ещё и
     // системная настройка, которая меняется без атрибута.
     const themeObserver = new MutationObserver(retheme);
@@ -232,9 +264,11 @@ export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverS
     system?.addEventListener?.("change", retheme);
 
     return () => {
+      cancelAnimationFrame(shownFrame);
       themeObserver.disconnect();
       system?.removeEventListener?.("change", retheme);
       try {
+        lifecycle?.dispose?.();
         detach?.();
         univerAPI.dispose();
       } catch {
@@ -251,11 +285,23 @@ export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverS
   // Вкладка «На весь экран» в ряду вкладок ленты. Лента рисуется Univer после
   // создания книги и может перерисоваться (смена листа, права) — наблюдатель
   // возвращает узел на место, если его выкинули.
+  //
+  // Наблюдатель только планирует, а в DOM пишет кадр спустя. Запись прямо из
+  // колбэка, который следит за тем же деревом, — петля: своя вставка рождает
+  // новую запись, та — новую вставку, и всё это в микрозадачах, до которых ни
+  // отрисовка, ни React уже не доходят. 26.09 так намертво висела вкладка при
+  // выходе из «Таблиц»: React оторвал лист от документа раньше, чем снял
+  // наблюдатель, проверка «узел на месте» смотрела на `isConnected`, который у
+  // оторванного дерева ложь, и узел вставлялся перед самим собой бесконечно.
   useEffect(() => {
     const root = containerRef.current;
     if (!fullscreen || !root) return;
     let host: HTMLElement | null = null;
+    let frame = 0;
     const attach = () => {
+      frame = 0;
+      // Лист уже снят со страницы и ждёт размонтирования — не трогать.
+      if (!root.isConnected) return;
       // Дешёвая проверка первой: Univer меняет DOM листа постоянно (редактор
       // ячейки, всплывающие списки), а узел на месте почти всегда.
       if (host?.isConnected && host.parentElement?.firstElementChild === host) return;
@@ -266,11 +312,15 @@ export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverS
         host.style.display = "contents";
         host.dataset.usheetSlot = "true";
       }
-      row.insertBefore(host, row.firstChild);
-      setTabSlot({ host, className: idleTabClass(row) });
+      if (row.firstChild !== host) row.insertBefore(host, row.firstChild);
+      const slot = { host, className: idleTabClass(row) };
+      setTabSlot((current) => (current?.host === slot.host && current.className === slot.className ? current : slot));
     };
-    const frame = requestAnimationFrame(attach);
-    const observer = new MutationObserver(attach);
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(attach);
+    };
+    schedule();
+    const observer = new MutationObserver(schedule);
     observer.observe(root, { childList: true, subtree: true });
     return () => {
       cancelAnimationFrame(frame);

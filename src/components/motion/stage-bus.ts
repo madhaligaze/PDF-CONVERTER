@@ -30,3 +30,35 @@ export function markStageClear(): void {
 export function whenStageClear(): Promise<void> {
   return clear;
 }
+
+/**
+ * Страница просит не поднимать занавес, пока она не соберётся.
+ *
+ * Нужна тяжёлым экранам: лист Univer — это ~7 МБ кода и сборка книги, по
+ * полсекунды и больше на главном потоке. Поднимись занавес одновременно с
+ * этой работой — подъём дёргается, а под ним видно, как экран складывается
+ * по частям. Держит не дольше, чем решит переход (см. `stage-transition.tsx`):
+ * медленная сеть не должна превращать занавес в чёрный экран.
+ */
+const holds = new Set<symbol>();
+let onRelease: (() => void) | null = null;
+
+export function holdStage(): () => void {
+  const token = Symbol("stage-hold");
+  holds.add(token);
+  return () => {
+    if (holds.delete(token) && holds.size === 0) onRelease?.();
+  };
+}
+
+export function stageHeld(): boolean {
+  return holds.size > 0;
+}
+
+/** Переход подписывается, чтобы поднять занавес, как только отпустили последнее. */
+export function onStageReleased(listener: () => void): () => void {
+  onRelease = listener;
+  return () => {
+    if (onRelease === listener) onRelease = null;
+  };
+}

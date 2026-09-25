@@ -7,13 +7,14 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   type ComponentProps,
   type ReactNode,
 } from "react";
 
 import { EASE_CARVE, gsap, prefersReducedMotion, SplitText } from "./gsap";
-import { markStageClear, markStageCovered } from "./stage-bus";
+import { holdStage, markStageClear, markStageCovered, onStageReleased, stageHeld } from "./stage-bus";
 
 /**
  * Переход между разделами: занавес.
@@ -33,6 +34,8 @@ import { markStageClear, markStageCovered } from "./stage-bus";
  * 3. **Поднимается только после того, как новая страница нарисована**: смена
  *    `pathname` плюс два кадра. Поднять раньше — человек увидит, как старый
  *    экран подменяется новым, то есть ровно то, что занавес должен скрыть.
+ *    Тяжёлая страница (лист Univer) может попросить подождать ещё —
+ *    `useStageHold`, но не дольше `HOLD_MS` после прихода.
  *
  * «Меньше движения» — обычная навигация, без занавеса.
  */
@@ -42,11 +45,15 @@ type Navigate = (href: string, label?: string) => void;
 const StageContext = createContext<Navigate | null>(null);
 
 const SAFETY_MS = 8000;
+/** Сколько страница может держать занавес после прихода. */
+const HOLD_MS = 3000;
 
 type Flight = {
   from: string;
   split: SplitText | null;
   timer: number;
+  holdTimer: number;
+  holdExpired: boolean;
   pushed: boolean;
   covered: boolean;
   arrived: boolean;
@@ -66,6 +73,7 @@ export function StageTransitionProvider({ children }: { children: ReactNode }) {
     if (!state || !curtain || state.lifting) return;
     state.lifting = true;
     window.clearTimeout(state.timer);
+    window.clearTimeout(state.holdTimer);
 
     gsap
       .timeline({
@@ -85,8 +93,21 @@ export function StageTransitionProvider({ children }: { children: ReactNode }) {
 
   const tryLift = useCallback(() => {
     const state = flight.current;
-    if (state?.covered && state.arrived) lift();
+    if (!state?.covered || !state.arrived) return;
+    if (stageHeld() && !state.holdExpired) {
+      if (!state.holdTimer) {
+        state.holdTimer = window.setTimeout(() => {
+          state.holdExpired = true;
+          lift();
+        }, HOLD_MS);
+      }
+      return;
+    }
+    lift();
   }, [lift]);
+
+  // Страница отпустила занавес — поднять, если он ждал только её.
+  useEffect(() => onStageReleased(tryLift), [tryLift]);
 
   const navigate = useCallback<Navigate>(
     (href, label = "") => {
@@ -108,6 +129,8 @@ export function StageTransitionProvider({ children }: { children: ReactNode }) {
         from: pathname,
         split,
         timer: 0,
+        holdTimer: 0,
+        holdExpired: false,
         pushed: false,
         covered: false,
         arrived: false,
@@ -192,6 +215,18 @@ export function StageLink({ href, label, onClick, target, ...rest }: StageLinkPr
       }}
     />
   );
+}
+
+/**
+ * Не поднимать занавес, пока `active`: страница ещё собирается.
+ *
+ * Брать в компоненте, который приходит вместе со страницей, а не в ленивом
+ * (`next/dynamic`): ленивый смонтируется, когда занавес уже пошёл вверх.
+ * Эффект — макетный, чтобы просьба успела раньше, чем переход решит
+ * поднимать. Без перехода (прямой заход по адресу) ничего не делает.
+ */
+export function useStageHold(active: boolean): void {
+  useLayoutEffect(() => (active ? holdStage() : undefined), [active]);
 }
 
 /** Переход через занавес из кода — для кнопок, которые не ссылки. */

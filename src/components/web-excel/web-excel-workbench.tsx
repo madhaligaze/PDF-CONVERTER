@@ -58,7 +58,12 @@ function message(exc: unknown, fallback: string): string {
   return exc instanceof Error && exc.message ? exc.message : fallback;
 }
 
-export function WebExcelWorkbench() {
+type Props = {
+  /** Лист собран и нарисован — занавес перехода можно поднимать. */
+  onShown?: () => void;
+};
+
+export function WebExcelWorkbench({ onShown }: Props) {
   const [workbook, setWorkbook] = useState<WorkbookSnapshot | null>(null);
   const [workbookKey, setWorkbookKey] = useState(0);
   const [doc, setDoc] = useState<Doc>(BLANK_DOC);
@@ -492,7 +497,7 @@ export function WebExcelWorkbench() {
 
       <div className="we-grid">
         {ready ? (
-          <UniverSheet key={workbookKey} ref={sheetRef} data={workbook} onReady={onReady} extras />
+          <UniverSheet key={workbookKey} ref={sheetRef} data={workbook} onReady={onReady} onShown={onShown} extras />
         ) : (
           <p className="we-grid-wait">Загружаем полку…</p>
         )}
