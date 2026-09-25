@@ -76,15 +76,18 @@ type Props = {
   /** Кнопка «На весь экран» в ленте. По умолчанию есть у каждого листа. */
   fullscreen?: boolean;
   /**
-   * Лист нарисован и Univer закончил свои отложенные задачи — главный поток
-   * свободен. Univer рисует не сразу после `createWorkbook`, а через 300 мс
-   * (стадия `Rendered`), поэтому «книга создана» ещё не значит «видно».
+   * Лист нарисован. Univer рисует не сразу после `createWorkbook`, а через
+   * 300 мс (стадия `Rendered`), поэтому «книга создана» ещё не значит «видно».
    */
   onShown?: () => void;
 };
 
-/** `LifecycleStages.Steady` из `@univerjs/core`. */
-const STEADY = 3;
+/**
+ * `LifecycleStages.Rendered` из `@univerjs/core`. Не `Steady`: её Univer
+ * объявляет по таймеру через 3 с после первой отрисовки, и занавес, ждущий
+ * её, стоял бы до своего предела.
+ */
+const RENDERED = 2;
 
 /**
  * Всё, что общее у листов продукта, живёт здесь, а не в разделах.
@@ -235,7 +238,7 @@ export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverS
     // монтируется один раз на книгу, новая приходит пересозданием через `key`.
     const detach = onReadyRef.current?.(univerAPI);
 
-    // «Лист виден»: стадия Steady и два кадра — первый холст уже на экране.
+    // «Лист виден»: стадия Rendered и два кадра — первый холст уже на экране.
     let shownFrame = 0;
     let shownSent = false;
     const shown = () => {
@@ -247,10 +250,10 @@ export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverS
     };
     let lifecycle: { dispose?: () => void } | undefined;
     try {
-      if ((univerAPI.getCurrentLifecycleStage?.() ?? 0) >= STEADY) shown();
+      if ((univerAPI.getCurrentLifecycleStage?.() ?? 0) >= RENDERED) shown();
       else
         lifecycle = univerAPI.addEvent(univerAPI.Event.LifeCycleChanged, ({ stage }: { stage: number }) => {
-          if (stage >= STEADY) shown();
+          if (stage >= RENDERED) shown();
         });
     } catch {
       shown();
