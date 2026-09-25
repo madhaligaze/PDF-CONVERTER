@@ -1,5 +1,9 @@
 import { ServicesClient } from "@/components/services/services-client";
+import { bbcEnabled } from "@/lib/features";
 
-export default function ServicesPage() {
-  return <ServicesClient />;
+/** Плитка BBC Dashboard — только если раздел не выключен (`src/lib/features.ts`). */
+export const dynamic = "force-dynamic";
+
+export default async function ServicesPage() {
+  return <ServicesClient bbcEnabled={await bbcEnabled()} />;
 }

@@ -99,7 +99,11 @@ function writeUrl(filters: Filters, mode: BbcMode, block: string) {
   params.set("block", block);
 
   const query = params.toString();
-  window.history.replaceState(null, "", query ? `?${query}` : window.location.pathname);
+  // Состояние записи истории — не наше: в нём роутер Next держит, какую
+  // страницу показывать. `null` на его месте ломал «Назад»: вышли из
+  // дашборда в «Сервисы», нажали «Назад» — адрес дашборда, а на экране
+  // «Сервисы», и ничего не происходит (сайт выглядел зависшим, 25.09).
+  window.history.replaceState(window.history.state, "", query ? `?${query}` : window.location.pathname);
 }
 
 /* ── Filtering ───────────────────────────────────────────────────────────────── */

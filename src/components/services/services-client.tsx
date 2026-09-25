@@ -16,7 +16,7 @@ import { ThemeToggle } from "@/components/stage/theme-toggle";
  * остальными дежурными пояснениями: пометка у каждой строки говорит то же
  * самое по делу, а общий абзац над ними читали один раз.
  */
-export function ServicesClient() {
+export function ServicesClient({ bbcEnabled = true }: { bbcEnabled?: boolean }) {
   const [openService, setOpenService] = useState<string | null>(null);
 
   const entries: IndexEntry[] = [
@@ -26,8 +26,11 @@ export function ServicesClient() {
       meta: "Обзвоны → Google Sheets",
       onSelect: () => setOpenService("autocall"),
     },
-    // BBC Dashboard (removable module)
-    { key: "bbc-dashboard", title: "BBC Dashboard", meta: "Сводная таблица", href: "/bbc-dashboard" },
+    // BBC Dashboard (removable module). Выключается переменной бэкенда
+    // BBC_DASHBOARD_ENABLED=false — тогда строки нет (см. src/lib/features.ts).
+    ...(bbcEnabled
+      ? [{ key: "bbc-dashboard", title: "BBC Dashboard", meta: "Сводная таблица", href: "/bbc-dashboard" }]
+      : []),
     // Финансы — обкатка управленческого учёта перед интеграцией с Finmap.
     // Строка здесь по делу, в отличие от «Книг»: раздел работает с теми же
     // внешними источниками (выписки банков, выгрузки), а не с нашей копией
