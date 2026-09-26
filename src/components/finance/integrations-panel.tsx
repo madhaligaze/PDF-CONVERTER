@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { ChoiceSelect } from "@/components/choice-select";
 import {
   type Account,
   type BankOption,
@@ -180,14 +181,13 @@ export function IntegrationsPanel({
           {picked.slug !== "sheets" ? (
             <label className="flex flex-col gap-1 min-w-[12rem]">
               <span className="fin-label">Счёт в учёте</span>
-              <select className="input-field" value={accountId} onChange={(e) => setAccountId(e.target.value)}>
-                <option value="">не выбран</option>
+              <ChoiceSelect className="input-field" value={accountId} onChange={setAccountId} placeholder="не выбран" clearable>
                 {accounts.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.name}
                   </option>
                 ))}
-              </select>
+              </ChoiceSelect>
             </label>
           ) : null}
           <span className="text-xs" style={{ color: "var(--text-muted)" }}>

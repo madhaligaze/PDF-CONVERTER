@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { ChoiceSelect } from "@/components/choice-select";
 import {
   type Dictionaries,
   type Operation,
@@ -137,51 +138,54 @@ export function Journal({ dictionaries, revision, onChanged }: Props) {
 
         <label className="flex flex-col gap-1">
           <span className="fin-label">Вид</span>
-          <select
+          <ChoiceSelect
             className="input-field"
             style={{ width: "auto" }}
             value={kinds}
-            onChange={(event) => setKinds(event.target.value)}
+            onChange={setKinds}
+            placeholder="Все"
+            clearable
           >
-            <option value="">Все</option>
             <option value="income">Поступления</option>
             <option value="expense">Списания</option>
             <option value="transfer">Переводы</option>
-          </select>
+          </ChoiceSelect>
         </label>
 
         <label className="flex flex-col gap-1">
           <span className="fin-label">Счёт</span>
-          <select
+          <ChoiceSelect
             className="input-field"
             style={{ width: "auto" }}
             value={accountId}
-            onChange={(event) => setAccountId(event.target.value)}
+            onChange={setAccountId}
+            placeholder="Все счета"
+            clearable
           >
-            <option value="">Все счета</option>
             {dictionaries.accounts.map((account) => (
               <option key={account.id} value={account.id}>
                 {account.name}
               </option>
             ))}
-          </select>
+          </ChoiceSelect>
         </label>
 
         <label className="flex flex-col gap-1">
           <span className="fin-label">Категория</span>
-          <select
+          <ChoiceSelect
             className="input-field"
             style={{ width: "auto" }}
             value={categoryId}
-            onChange={(event) => setCategoryId(event.target.value)}
+            onChange={setCategoryId}
+            placeholder="Все категории"
+            clearable
           >
-            <option value="">Все категории</option>
             {dictionaries.categories.map((category) => (
               <option key={category.id} value={category.id}>
                 {category.name}
               </option>
             ))}
-          </select>
+          </ChoiceSelect>
         </label>
 
         <label className="flex flex-col gap-1 flex-1 min-w-[10rem]">

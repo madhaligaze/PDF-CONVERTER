@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { ChoiceSelect } from "@/components/choice-select";
 import {
   type Dictionaries,
   type Invoice,
@@ -177,19 +178,17 @@ export function InvoicesPanel({
             </label>
             <label className="flex flex-col gap-1 min-w-[12rem]">
               <span className="fin-label">Контрагент</span>
-              <select className="input-field" value={counterpartyId} onChange={(e) => setCounterpartyId(e.target.value)}>
-                <option value="">не указан</option>
+              <ChoiceSelect className="input-field" value={counterpartyId} onChange={setCounterpartyId} placeholder="не указан" clearable>
                 {dictionaries.counterparties.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.name}
                   </option>
                 ))}
-              </select>
+              </ChoiceSelect>
             </label>
             <label className="flex flex-col gap-1 min-w-[12rem]">
               <span className="fin-label">Статья</span>
-              <select className="input-field" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-                <option value="">не указана</option>
+              <ChoiceSelect className="input-field" value={categoryId} onChange={setCategoryId} placeholder="не указана" clearable>
                 {dictionaries.categories
                   .filter((item) => item.side === (side === "out" ? "income" : "expense"))
                   .map((item) => (
@@ -197,18 +196,17 @@ export function InvoicesPanel({
                       {item.name}
                     </option>
                   ))}
-              </select>
+              </ChoiceSelect>
             </label>
             <label className="flex flex-col gap-1 min-w-[10rem]">
               <span className="fin-label">Проект</span>
-              <select className="input-field" value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-                <option value="">без проекта</option>
+              <ChoiceSelect className="input-field" value={projectId} onChange={setProjectId} placeholder="без проекта" clearable>
                 {dictionaries.projects.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.name}
                   </option>
                 ))}
-              </select>
+              </ChoiceSelect>
             </label>
           </div>
 

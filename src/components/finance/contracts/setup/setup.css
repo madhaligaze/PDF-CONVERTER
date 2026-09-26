@@ -19,6 +19,10 @@
 .setup-quiet { color: var(--fin-text-soft); }
 .setup-num { font-variant-numeric: tabular-nums; text-align: right; }
 .setup-arrow { color: var(--text-muted); }
+/* Пустое у кнопки-списка — приглушено (стандарт `ChoiceSelect`); правила
+   раскладок выше по специфичности красят кнопки в цвет текста, поэтому здесь
+   своя строка. Отказ («не назначен») — строкой ниже и побеждает. */
+.setup-root .fin-link-btn[data-empty="true"] { color: var(--text-muted); }
 .setup-root .fin-link-btn[data-fail="true"] { color: var(--fin-fail); text-decoration-color: currentColor; }
 .setup-root :is(.setup-toggle, .setup-inline-value, .setup-side-item, .setup-block-head, .setup-rule-x):focus-visible,
 .setup-field:focus-visible {

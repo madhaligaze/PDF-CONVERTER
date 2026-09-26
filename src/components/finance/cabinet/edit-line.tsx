@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
+import { ChoiceSelect } from "@/components/choice-select";
 import { PhoneInput, formatPhone, phoneDigits, phoneValue } from "@/components/finance/ui/phone-input";
 
 /**
@@ -75,6 +76,11 @@ export function EditLine({
 
   const rest =
     shown ?? (value ? (kind === "phone" ? formatPhone(value) : (options.find((o) => o.value === value)?.label ?? value)) : "");
+  // Пункт со значением "" — «пустое разрешено», его подпись — подсказка
+  // («Без отдела»). В список он не идёт, в покое — приглушён, как любое
+  // пустое (стандарт `ChoiceSelect`).
+  const blank = kind === "select" ? options.find((o) => o.value === "") : undefined;
+  const emptyText = blank?.label ?? placeholder;
 
   let control: ReactNode = null;
   if (editing) {
@@ -92,23 +98,27 @@ export function EditLine({
     };
     if (kind === "select") {
       control = (
-        <select
+        <ChoiceSelect
           ref={(el) => {
             field.current = el;
           }}
           className="input-field cab-input"
           value={draft}
-          onChange={(event) => void commit(event.target.value)}
+          onChange={(next) => void commit(next)}
           onBlur={() => setEditing(false)}
           onKeyDown={keys}
           aria-label={label}
+          placeholder={emptyText}
+          clearable={Boolean(blank)}
         >
-          {options.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+          {options
+            .filter((option) => option.value !== "")
+            .map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+        </ChoiceSelect>
       );
     } else if (kind === "phone") {
       control = (
@@ -153,10 +163,12 @@ export function EditLine({
             data-empty={rest ? undefined : "true"}
             onClick={() => setEditing(true)}
           >
-            {rest || placeholder}
+            {rest || emptyText}
           </button>
         ) : (
-          <span className={`cab-line-static ${mono ? "fin-mono" : ""}`}>{rest || "—"}</span>
+          <span className={`cab-line-static ${mono ? "fin-mono" : ""}`} data-empty={rest ? undefined : "true"}>
+            {rest || (blank ? emptyText : "—")}
+          </span>
         )}
         <span className="cab-trace" aria-hidden="true" />
         {error ? (

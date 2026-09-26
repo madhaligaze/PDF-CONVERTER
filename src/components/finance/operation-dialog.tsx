@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { ChoiceSelect } from "@/components/choice-select";
 import { CloseIcon } from "@/components/icons";
 import { PlaceholderOption } from "@/components/placeholder-option";
 import { useScrollLock } from "@/components/use-scroll-lock";
@@ -161,38 +162,38 @@ export function OperationDialog({ kind, plan, dictionaries, operation, onClose, 
           {(isTransfer || kind === "expense") && (
             <label className="flex flex-col gap-1">
               <span className="fin-label">Со счёта</span>
-              <select
+              <ChoiceSelect
                 ref={focusOn === "from" ? firstField : undefined}
                 className="input-field"
                 value={accountFrom}
-                onChange={(event) => setAccountFrom(event.target.value)}
+                onChange={setAccountFrom}
+                placeholder="Выберите счёт"
               >
-                <PlaceholderOption>Выберите счёт</PlaceholderOption>
                 {dictionaries.accounts.map((account) => (
                   <option key={account.id} value={account.id}>
                     {account.name}
                   </option>
                 ))}
-              </select>
+              </ChoiceSelect>
             </label>
           )}
 
           {(isTransfer || kind === "income") && (
             <label className="flex flex-col gap-1">
               <span className="fin-label">На счёт</span>
-              <select
+              <ChoiceSelect
                 ref={focusOn === "to" ? firstField : undefined}
                 className="input-field"
                 value={accountTo}
-                onChange={(event) => setAccountTo(event.target.value)}
+                onChange={setAccountTo}
+                placeholder="Выберите счёт"
               >
-                <PlaceholderOption>Выберите счёт</PlaceholderOption>
                 {dictionaries.accounts.map((account) => (
                   <option key={account.id} value={account.id}>
                     {account.name}
                   </option>
                 ))}
-              </select>
+              </ChoiceSelect>
             </label>
           )}
 
@@ -212,34 +213,36 @@ export function OperationDialog({ kind, plan, dictionaries, operation, onClose, 
             <>
               <label className="flex flex-col gap-1">
                 <span className="fin-label">Категория</span>
-                <select
+                <ChoiceSelect
                   className="input-field"
                   value={categoryId}
-                  onChange={(event) => setCategoryId(event.target.value)}
+                  onChange={setCategoryId}
+                  placeholder="Без категории"
+                  clearable
                 >
-                  <option value="">Без категории</option>
                   {categories.map((category) => (
                     <option key={category.id} value={category.id}>
                       {category.name}
                     </option>
                   ))}
-                </select>
+                </ChoiceSelect>
               </label>
 
               <label className="flex flex-col gap-1">
                 <span className="fin-label">Контрагент</span>
-                <select
+                <ChoiceSelect
                   className="input-field"
                   value={counterpartyId}
-                  onChange={(event) => setCounterpartyId(event.target.value)}
+                  onChange={setCounterpartyId}
+                  placeholder="Без контрагента"
+                  clearable
                 >
-                  <option value="">Без контрагента</option>
                   {dictionaries.counterparties.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.name}
                     </option>
                   ))}
-                </select>
+                </ChoiceSelect>
               </label>
             </>
           )}
@@ -286,18 +289,19 @@ export function OperationDialog({ kind, plan, dictionaries, operation, onClose, 
 
               <label className="flex flex-col gap-1">
                 <span className="fin-label">Проект</span>
-                <select
+                <ChoiceSelect
                   className="input-field"
                   value={projectId}
-                  onChange={(event) => setProjectId(event.target.value)}
+                  onChange={setProjectId}
+                  placeholder="Без проекта"
+                  clearable
                 >
-                  <option value="">Без проекта</option>
                   {dictionaries.projects.map((project) => (
                     <option key={project.id} value={project.id}>
                       {project.name}
                     </option>
                   ))}
-                </select>
+                </ChoiceSelect>
               </label>
 
               {!isTransfer ? (

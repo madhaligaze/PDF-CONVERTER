@@ -14,6 +14,7 @@
  */
 import { useState } from "react";
 
+import { ChoiceSelect } from "@/components/choice-select";
 import type { ViewFilter } from "@/components/finance/api";
 import { plural } from "@/components/finance/format";
 
@@ -129,57 +130,55 @@ export function StatusesStep({ items, decisions, decide }: { items: StatusItem[]
           {!editable ? (
             <span className="fin-soft">{meaningText(item.field, meaning)}</span>
           ) : item.field === "status" ? (
-            <select
+            <ChoiceSelect
               className={styles.select}
               aria-label={`Смысл статуса «${item.value}»`}
               value={meaning.handover ? "handover" : String(meaning.phase ?? "")}
-              onChange={(event) => {
-                const value = event.target.value;
+              onChange={(value) => {
                 decide({
                   statuses: { [spec]: value === "handover" ? { handover: "accounting" } : value ? { phase: value } : {} },
                 });
               }}
+              placeholder="смысл не назначен"
+              clearable
             >
-              <option value="">смысл не назначен</option>
               {Object.entries(PHASE_LABELS).map(([value, label]) => (
                 <option key={value} value={value}>
                   фаза: {label}
                 </option>
               ))}
               <option value="handover">передача бухгалтеру</option>
-            </select>
+            </ChoiceSelect>
           ) : (
             <span className={styles.inline}>
-              <select
+              <ChoiceSelect
                 className={styles.select}
                 aria-label={`Начисление вида «${item.value}»`}
                 value={String(meaning.billing ?? "")}
-                onChange={(event) =>
-                  decide({ statuses: { [spec]: pick({ ...meaning, billing: event.target.value }) } })
-                }
+                onChange={(value) => decide({ statuses: { [spec]: pick({ ...meaning, billing: value }) } })}
+                placeholder="начисление не назначено"
+                clearable
               >
-                <option value="">начисление не назначено</option>
                 {Object.entries(BILLING_LABELS).map(([value, label]) => (
                   <option key={value} value={value}>
                     {label}
                   </option>
                 ))}
-              </select>
-              <select
+              </ChoiceSelect>
+              <ChoiceSelect
                 className={styles.select}
                 aria-label={`Смысл вида «${item.value}»`}
                 value={String(meaning.economic_role ?? "")}
-                onChange={(event) =>
-                  decide({ statuses: { [spec]: pick({ ...meaning, economic_role: event.target.value }) } })
-                }
+                onChange={(value) => decide({ statuses: { [spec]: pick({ ...meaning, economic_role: value }) } })}
+                placeholder="смысл не назначен"
+                clearable
               >
-                <option value="">смысл не назначен</option>
                 {Object.entries(ECONOMIC_LABELS).map(([value, label]) => (
                   <option key={value} value={value}>
                     {label}
                   </option>
                 ))}
-              </select>
+              </ChoiceSelect>
             </span>
           )}
         </td>

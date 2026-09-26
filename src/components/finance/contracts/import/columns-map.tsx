@@ -22,6 +22,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { gsap, prefersReducedMotion, useGSAP } from "@/components/motion/gsap";
 import { plural } from "@/components/finance/format";
+import { PlaceholderOption } from "@/components/placeholder-option";
 
 import { ChoiceLine, type Choice } from "./choice-line";
 import styles from "./registry-import.module.css";
@@ -406,7 +407,7 @@ function ColumnChooser({
           if (event.target.value) onChoose({ action: "field", field: event.target.value });
         }}
       >
-        <option value="">другое поле…</option>
+        <PlaceholderOption>другое поле…</PlaceholderOption>
         {fields
           .filter((field) => !fieldKeys.includes(field.key))
           .map((field) => (

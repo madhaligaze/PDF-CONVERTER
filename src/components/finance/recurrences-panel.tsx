@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { ChoiceSelect } from "@/components/choice-select";
 import {
   type Dictionaries,
   type Recurrence,
@@ -172,19 +173,17 @@ export function RecurrencesPanel({
           </label>
           <label className="flex flex-col gap-1 min-w-[10rem]">
             <span className="fin-label">Счёт</span>
-            <select className="input-field" value={accountId} onChange={(e) => setAccountId(e.target.value)}>
-              <option value="">выберем при оплате</option>
+            <ChoiceSelect className="input-field" value={accountId} onChange={setAccountId} placeholder="выберем при оплате" clearable>
               {dictionaries.accounts.map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.name}
                 </option>
               ))}
-            </select>
+            </ChoiceSelect>
           </label>
           <label className="flex flex-col gap-1 min-w-[10rem]">
             <span className="fin-label">Статья</span>
-            <select className="input-field" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-              <option value="">не указана</option>
+            <ChoiceSelect className="input-field" value={categoryId} onChange={setCategoryId} placeholder="не указана" clearable>
               {dictionaries.categories
                 .filter((item) => item.side === kind)
                 .map((item) => (
@@ -192,18 +191,17 @@ export function RecurrencesPanel({
                     {item.name}
                   </option>
                 ))}
-            </select>
+            </ChoiceSelect>
           </label>
           <label className="flex flex-col gap-1 min-w-[10rem]">
             <span className="fin-label">Контрагент</span>
-            <select className="input-field" value={counterpartyId} onChange={(e) => setCounterpartyId(e.target.value)}>
-              <option value="">не указан</option>
+            <ChoiceSelect className="input-field" value={counterpartyId} onChange={setCounterpartyId} placeholder="не указан" clearable>
               {dictionaries.counterparties.map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.name}
                 </option>
               ))}
-            </select>
+            </ChoiceSelect>
           </label>
           <button
             type="button"

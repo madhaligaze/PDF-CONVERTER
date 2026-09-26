@@ -356,7 +356,7 @@ export function EmployeeCard({
                 value={employee.department_id ?? ""}
                 kind="select"
                 options={[{ value: "", label: "Без отдела" }, ...departments.map((d) => ({ value: d.id, label: `${d.code} · ${d.title}` }))]}
-                shown={department ? `${department.code} · ${department.title}` : "Без отдела"}
+                shown={department ? `${department.code} · ${department.title}` : undefined}
                 editable={manage}
                 onSave={(v) => save({ department_id: v || null })()}
               />

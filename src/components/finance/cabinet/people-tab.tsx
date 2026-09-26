@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 
+import { ChoiceSelect } from "@/components/choice-select";
 import { can } from "@/components/finance/access";
 import { type Department, type EmployeeRow, type Me, peopleApi } from "@/components/finance/api";
 import { EmployeeCard } from "@/components/finance/cabinet/employee-card";
@@ -279,14 +280,13 @@ function PersonForm({
         </label>
         <label className="auth-field">
           <span className="eyebrow">Отдел</span>
-          <select className="input-field" value={dept} onChange={(e) => setDept(e.target.value)}>
-            <option value="">Без отдела</option>
+          <ChoiceSelect className="input-field" value={dept} onChange={setDept} placeholder="Без отдела" clearable>
             {departments.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.code} · {item.title}
               </option>
             ))}
-          </select>
+          </ChoiceSelect>
         </label>
         <label className="auth-field">
           <span className="eyebrow">Должность</span>

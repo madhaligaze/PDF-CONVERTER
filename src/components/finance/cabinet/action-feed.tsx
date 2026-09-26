@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { ChoiceSelect } from "@/components/choice-select";
 import { type AuditItem, type AuditQuery, type EmployeeRow, peopleApi } from "@/components/finance/api";
 import { dayTitle, formatTime } from "@/components/finance/format";
 import { ConfirmDialog } from "@/components/finance/ui/confirm-dialog";
@@ -151,19 +152,21 @@ export function ActionFeed({ fixed, full = false, people = [], days = 7, onOpenC
             onChange={(event) => setSearch(event.target.value)}
             aria-label="Поиск по журналу"
           />
-          <select
-            className="input-field cab-feed-select"
+          <ChoiceSelect
+            className="input-field"
+            wrapClassName="cab-feed-select"
             value={who}
-            onChange={(event) => setWho(event.target.value)}
+            onChange={setWho}
             aria-label="Чьи действия"
+            placeholder="Все сотрудники"
+            clearable
           >
-            <option value="">Все сотрудники</option>
             {people.map((person) => (
               <option key={person.id} value={person.id}>
                 {person.full_name}
               </option>
             ))}
-          </select>
+          </ChoiceSelect>
           <select
             className="input-field cab-feed-select"
             value={period}

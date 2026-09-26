@@ -574,10 +574,53 @@ select.input-field optgroup {
   background-color: var(--bg-raised);
   color: var(--text-primary);
 }
-/* Подсказка обязательного выбора («Выберите счёт», `PlaceholderOption`) — не
-   значение: в закрытом поле приглушена, иначе читалась бы выбранным счётом.
-   Пункты раскрытого списка красятся выше явно и приглушение не наследуют. */
-select.input-field:has(> option[data-placeholder]:checked) { color: var(--text-muted); }
+/* Пустое значение списка («Выберите счёт», «Без категории», «Все счета» —
+   `PlaceholderOption`, `ChoiceSelect`) — не значение: в закрытом поле
+   приглушено, иначе читалось бы выбранным счётом или статьёй. Пункты
+   раскрытого списка приглушение не наследуют. */
+select:has(> option[data-placeholder]:checked) { color: var(--text-muted); }
+select:has(> option[data-placeholder]:checked) > option:not([data-placeholder]) { color: var(--text-primary); }
+
+/* Поле выбора — src/components/choice-select.tsx: у необязательного поля с
+   выбранным значением крестик «очистить» между текстом и стрелкой. */
+.choice { position: relative; display: block; min-width: 0; }
+.choice[data-clear] > select { padding-right: 3.5rem; }
+.choice-clear {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 1.75rem;
+  margin: auto 0;
+  width: 1.5rem;
+  height: 1.5rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.choice-clear:hover { color: var(--text-primary); background: var(--bg-hover); }
+.choice-clear:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 1px; }
+/* Своя кнопка-список текстом (`ChoicePop`): крестик — рядом в строке. */
+.choice-clear.choice-clear-inline {
+  position: static;
+  display: inline-grid;
+  vertical-align: middle;
+  margin: 0 0 0 0.25rem;
+  width: 1.25rem;
+  height: 1.25rem;
+}
+/* Пустое у кнопки-списка — приглушено; «не назначен» остаётся цветом отказа. */
+.fin-link-btn[data-empty="true"] { color: var(--text-muted); }
+/* Под палец — не меньше 28px. */
+@media (pointer: coarse) {
+  .choice-clear { width: 1.75rem; height: 1.75rem; right: 1.625rem; }
+  .choice-clear.choice-clear-inline { width: 1.75rem; height: 1.75rem; }
+  .choice[data-clear] > select { padding-right: 3.75rem; }
+}
 
 /* ─── Badges ──────────────────────────────────────────────────── */
 .badge {
@@ -5603,6 +5646,7 @@ textarea.ifield-input { resize: vertical; field-sizing: content; min-height: 4.5
 .cab-line-text[data-empty="true"] { color: var(--text-muted); }
 .cab-line-text.fin-mono, .cab-line-static.fin-mono { font-size: 0.875rem; }
 .cab-line-static { color: var(--fin-text); overflow-wrap: anywhere; }
+.cab-line-static[data-empty="true"] { color: var(--text-muted); }
 .cab-input { max-width: 28rem; padding: 0.4rem 0.6rem; }
 .cab-phone { display: block; max-width: 20rem; }
 .cab-line-error { display: block; margin-top: 0.25rem; font-size: 0.75rem; }

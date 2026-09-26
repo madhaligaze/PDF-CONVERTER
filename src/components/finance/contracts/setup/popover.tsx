@@ -26,6 +26,8 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
+import { CloseIcon } from "@/components/icons";
+
 type FloatingProps = {
   anchor: RefObject<HTMLElement | null>;
   onClose: () => void;
@@ -157,11 +159,19 @@ export function ChoicePop({
   autoOpen = false,
   onClosed,
 }: ChoiceProps) {
+  // Пункт со значением "" — «пустое разрешено», а не значение: в список он не
+  // идёт (стандарт `ChoiceSelect`), его подпись — то, что написано, пока
+  // ничего не выбрано, а вернуться к пустому — крестиком у кнопки. До 27.09
+  // «—» и «не назначен» стояли в списке наравне с фазами и отделами.
+  const blank = options.find((item) => item.value === "");
+  const choices = blank ? options.filter((item) => item.value !== "") : options;
+  const none = !value;
+  const emptyText = blank && blank.label !== "—" ? blank.label : empty;
   const [open, setOpen] = useState(autoOpen);
-  const [active, setActive] = useState(() => Math.max(0, options.findIndex((item) => item.value === value)));
+  const [active, setActive] = useState(() => Math.max(0, choices.findIndex((item) => item.value === value)));
   const button = useRef<HTMLButtonElement>(null);
   const id = useId();
-  const current = options.find((item) => item.value === value);
+  const current = none ? undefined : choices.find((item) => item.value === value);
 
   // Стрелками по длинному списку (сорок предметов) выбранная строка не должна
   // уходить за край слоя.
@@ -174,7 +184,7 @@ export function ChoicePop({
     onClosed?.();
   };
   const pick = (index: number) => {
-    const option = options[index];
+    const option = choices[index];
     close();
     button.current?.focus({ preventScroll: true });
     if (option && option.value !== value) onPick(option.value);
@@ -182,7 +192,7 @@ export function ChoicePop({
   const onKey = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      setActive((index) => Math.min(options.length - 1, index + 1));
+      setActive((index) => Math.min(choices.length - 1, index + 1));
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
       setActive((index) => Math.max(0, index - 1));
@@ -200,20 +210,35 @@ export function ChoicePop({
         ref={button}
         type="button"
         className={`fin-link-btn ${className ?? ""}`}
-        data-fail={fail || current?.fail ? "true" : undefined}
+        data-fail={fail || current?.fail || (none && blank?.fail) ? "true" : undefined}
+        data-empty={!current && text === undefined ? "true" : undefined}
         aria-haspopup="listbox"
         aria-expanded={open}
         // Кнопка «+ условие» ничего не выбрала — её имя не должно кончаться «: —».
-        aria-label={current ? `${label}: ${current.label}` : text !== undefined ? label : `${label}: ${empty}`}
+        aria-label={current ? `${label}: ${current.label}` : text !== undefined ? label : `${label}: ${emptyText}`}
         disabled={disabled}
         onClick={() => {
-          setActive(Math.max(0, options.findIndex((item) => item.value === value)));
+          setActive(Math.max(0, choices.findIndex((item) => item.value === value)));
           if (open) close();
           else setOpen(true);
         }}
       >
-        {text ?? current?.label ?? empty}
+        {text ?? current?.label ?? emptyText}
       </button>
+      {blank && current && !disabled ? (
+        <button
+          type="button"
+          className="choice-clear choice-clear-inline"
+          aria-label={`Очистить: ${label}`}
+          title="Очистить"
+          onClick={() => {
+            close();
+            onPick("");
+          }}
+        >
+          <CloseIcon size={12} />
+        </button>
+      ) : null}
       {open ? (
         <Floating
           anchor={button}
@@ -224,7 +249,7 @@ export function ChoicePop({
           activeId={`${id}-${active}`}
           focusSelf
         >
-          {options.map((option, index) => (
+          {choices.map((option, index) => (
             <div
               key={option.value}
               id={`${id}-${index}`}

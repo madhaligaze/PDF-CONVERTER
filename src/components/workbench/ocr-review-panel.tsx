@@ -1,3 +1,4 @@
+import { ChoiceSelect } from "@/components/choice-select";
 import type { OCRReviewPayload } from "@/components/workbench/types";
 import { SectionCard } from "@/components/workbench/section-card";
 
@@ -142,16 +143,18 @@ export function OcrReviewPanel({
                 <label key={field.key} className="text-xs" style={{ color: "var(--text-secondary)" }}>
                   {field.label}
                   {field.required ? <span className="ml-0.5" style={{ color: "var(--accent-rose)" }}>*</span> : null}
-                  <select
-                    className="input-field mt-1"
+                  <ChoiceSelect
+                    className="input-field"
+                    wrapClassName="mt-1"
                     value={columnMapping[field.key] ?? ""}
-                    onChange={(e) => onColumnMappingChange(field.key, e.target.value)}
+                    onChange={(value) => onColumnMappingChange(field.key, value)}
+                    placeholder="Не сопоставлено"
+                    clearable
                   >
-                    <option value="">Не сопоставлено</option>
                     {Array.from({ length: columnCount }).map((_, i) => (
                       <option key={i} value={String(i)}>Стб. {i + 1}</option>
                     ))}
-                  </select>
+                  </ChoiceSelect>
                 </label>
               ))}
             </div>
