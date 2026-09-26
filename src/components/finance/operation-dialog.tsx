@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { CloseIcon } from "@/components/icons";
+import { useScrollLock } from "@/components/use-scroll-lock";
 import {
   type Dictionaries,
   type Operation,
@@ -79,6 +81,11 @@ export function OperationDialog({ kind, plan, dictionaries, operation, onClose, 
   // уже сузил `kind`, и сравнение там выглядит как заведомо ложное.
   const focusOn: "from" | "to" = kind === "income" ? "to" : "from";
 
+  // Страница под окном стоит. Общим замком, а не `overflow: hidden` на body:
+  // у `html` стоит `overflow-x: clip`, и запрет с body до окна браузера не
+  // доходит — журнал под формой прокручивался колесом (проверено 27.09).
+  useScrollLock(true);
+
   // Первое поле в фокусе: форму открывают с клавиатуры и заполняют не глядя.
   useEffect(() => {
     firstField.current?.focus();
@@ -130,20 +137,16 @@ export function OperationDialog({ kind, plan, dictionaries, operation, onClose, 
     }
   };
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6"
-      style={{ background: "rgba(0,0,0,0.55)" }}
+      className="fin-dialog-scrim"
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div
-        className="fin-card w-full sm:max-w-lg max-h-[92dvh] overflow-y-auto p-4 sm:p-5"
-        style={{ boxShadow: "var(--shadow-float)" }}
-        role="dialog"
-        aria-label={TITLES[kind]}
-      >
+      <div className="fin-dialog" role="dialog" aria-modal="true" aria-label={TITLES[kind]}>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>
             {operation ? "Правка операции" : TITLES[kind]}
@@ -390,6 +393,7 @@ export function OperationDialog({ kind, plan, dictionaries, operation, onClose, 
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

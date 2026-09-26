@@ -4627,6 +4627,71 @@ html, body { overflow-x: clip; }
   color: var(--fin-text);
 }
 
+/* Окно операции. `.fin-card` прозрачная нарочно — это участок плиты, не слой.
+   На ней сумма и дата лежали поверх строк договора и читались вместе с ними.
+   Здесь слой свой: плотная поверхность, страница за ней темнее и чуть размыта.
+   Журнал остаётся на месте, но перестаёт спорить с формой. */
+.fin-dialog-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0;
+  background: rgba(6, 7, 6, 0.5);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  animation: fin-scrim-in var(--dur-fast) var(--ease-out);
+}
+@keyframes fin-scrim-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+/* Выключенные «эффекты прозрачности» Windows только поднимают
+   prefers-reduced-transparency. Композитор blur при этом рисует, и снимать
+   его нельзя: без размытия строки договора остаются резкими. */
+:root[data-theme="light"] .fin-dialog-scrim {
+  background: rgba(14, 16, 15, 0.32);
+}
+@media (min-width: 640px) {
+  .fin-dialog-scrim { align-items: center; padding: 1.5rem; }
+}
+.fin-dialog {
+  width: 100%;
+  max-height: 92dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1rem;
+  padding-bottom: calc(1rem + var(--safe-b));
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  border: 1px solid var(--border-base);
+  border-radius: var(--ios-sheet-radius) var(--ios-sheet-radius) 0 0;
+  box-shadow: var(--shadow-float);
+  animation: fin-dialog-in var(--dur-base) var(--ease-out);
+}
+@keyframes fin-dialog-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (min-width: 640px) {
+  .fin-dialog {
+    max-width: 32rem;
+    padding: 1.25rem;
+    border-radius: var(--radius-card);
+  }
+}
+/* Поля на поднятой плите. `--input-bg` в тёмной теме почти прозрачный:
+   на прозрачной карточке сквозь него читался журнал. Здесь у поля свой
+   тёмный колодец, на шаг ниже плиты окна. */
+.fin-dialog .input-field { background-color: var(--bg-base); }
+@media (max-width: 639.98px) {
+  .fin-dialog input,
+  .fin-dialog textarea,
+  .fin-dialog select { font-size: max(16px, 1rem); }
+}
+
 /* Лист Univer занимает всю оставшуюся высоту; замер — use-fill-height. */
 .fin-sheet { border-radius: var(--radius-card); overflow: hidden; border: 1px solid var(--fin-line); }
 

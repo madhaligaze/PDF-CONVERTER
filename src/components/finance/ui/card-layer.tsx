@@ -20,6 +20,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { gsap, prefersReducedMotion, useGSAP } from "@/components/motion/gsap";
+import { lockScroll } from "@/components/use-scroll-lock";
 
 type Props = {
   open: boolean;
@@ -61,12 +62,12 @@ export function CardLayer({ open, onClose, dock = "center", label, children }: P
     };
     window.addEventListener("keydown", onKey);
     const narrow = window.matchMedia("(max-width: 639px)").matches;
-    const lock = modal || narrow;
-    const previous = document.body.style.overflow;
-    if (lock) document.body.style.overflow = "hidden";
+    // Общим замком: `overflow: hidden` на body страницу не держал (у `html`
+    // стоит `overflow-x: clip`), и на телефоне список под карточкой ехал.
+    const unlock = modal || narrow ? lockScroll() : null;
     return () => {
       window.removeEventListener("keydown", onKey);
-      if (lock) document.body.style.overflow = previous;
+      unlock?.();
       const back = returnFocus.current;
       if (back instanceof HTMLElement && document.contains(back)) back.focus({ preventScroll: true });
     };
