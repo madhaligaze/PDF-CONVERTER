@@ -13,10 +13,9 @@
  * предке сделали бы его контейнером для `position: fixed` и сломали замеры
  * холста (правило проекта о GSAP). Слой вопроса поэтому — портал в `body`.
  *
- * Стрелка списка — как в Excel: только у выбранной ячейки со справочником, а
- * не в каждой ячейке колонки. Открывает список щелчком или Alt+↓; печать в
- * ячейке остаётся печатью. Двигается по событиям листа, без вечного цикла
- * кадров; на прокрутке колесом прячется и встаёт, когда лист остановился.
+ * Выпадающие списки — общий стандарт листов (`univer/lists.ts`): стрелку у
+ * выбранной ячейки, Alt+↓ и печать без списка даёт `UniverSheet`; здесь
+ * только прячем стрелку, пока над ячейкой висит вопрос.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -53,7 +52,6 @@ type Props = {
 };
 
 type Note = { text: string; fail: boolean; at: number };
-type Arrow = { left: number; top: number; size: number };
 
 function stillAsking(group: AskGroup): { id: string; key: string }[] {
   const edits = getRegistry().edits;
@@ -73,9 +71,6 @@ export function RegistrySheet({ onOpenCard, openId }: Props) {
   const openRef = useRef(openId);
   const onOpenRef = useRef(onOpenCard);
   const pop = useRef<HTMLDivElement>(null);
-  const [arrow, setArrow] = useState<Arrow | null>(null);
-  const arrowFrame = useRef(0);
-  const arrowIdle = useRef(0);
 
   useEffect(() => {
     onOpenRef.current = onOpenCard;
@@ -102,31 +97,6 @@ export function RegistrySheet({ onOpenCard, openId }: Props) {
       document.removeEventListener("visibilitychange", refresh);
     };
   }, []);
-
-  /** Стрелка — на выбранную ячейку со списком; не одна ячейка или правка — убрать. */
-  const placeArrow = useCallback(() => {
-    window.cancelAnimationFrame(arrowFrame.current);
-    arrowFrame.current = window.requestAnimationFrame(() => {
-      const found = binding.current?.activeList();
-      if (!found || !found.visible) {
-        setArrow(null);
-        return;
-      }
-      const height = found.bottom - found.top;
-      const size = Math.round(Math.max(14, Math.min(20, height - 4)));
-      const next = { left: Math.round(found.right - size - 2), top: Math.round(found.top + (height - size) / 2), size };
-      setArrow((prev) => (prev && prev.left === next.left && prev.top === next.top && prev.size === next.size ? prev : next));
-    });
-  }, []);
-
-  useEffect(() => {
-    window.addEventListener("resize", placeArrow);
-    return () => {
-      window.removeEventListener("resize", placeArrow);
-      window.cancelAnimationFrame(arrowFrame.current);
-      window.clearTimeout(arrowIdle.current);
-    };
-  }, [placeArrow]);
 
   const ready = state.phase === "ready" && state.schema !== null;
   const structure = useMemo(() => (state.schema ? structureKey(state.schema) : ""), [state.schema]);
@@ -157,7 +127,6 @@ export function RegistrySheet({ onOpenCard, openId }: Props) {
             activeView.current = view;
           },
           rebuild: () => setGeneration((value) => value + 1),
-          cell: () => placeArrow(),
         },
         box.current,
       );
@@ -173,7 +142,7 @@ export function RegistrySheet({ onOpenCard, openId }: Props) {
         if (binding.current === next) binding.current = null;
       };
     },
-    [built, box, placeArrow],
+    [built, box],
   );
 
   useEffect(() => {
@@ -298,12 +267,6 @@ export function RegistrySheet({ onOpenCard, openId }: Props) {
         ref={box}
         className="creg-sheet-wrap"
         style={{ height }}
-        onWheelCapture={() => {
-          // Прокрутка колесом: стрелка прячется и встаёт, когда лист остановился.
-          setArrow(null);
-          window.clearTimeout(arrowIdle.current);
-          arrowIdle.current = window.setTimeout(placeArrow, 160);
-        }}
         onKeyDownCapture={(event) => {
           // Alt+Enter — карточка договора активной строки (в редакторе ячейки
           // Alt+Enter остаётся переводом строки).
@@ -313,17 +276,17 @@ export function RegistrySheet({ onOpenCard, openId }: Props) {
               event.stopPropagation();
             }
           }
-          // Alt+↓ — список ячейки, как в Excel.
-          if (event.altKey && event.key === "ArrowDown" && binding.current && !binding.current.isEditing()) {
-            if (binding.current.openList()) {
-              event.preventDefault();
-              event.stopPropagation();
-            }
-          }
         }}
       >
         {built ? (
-          <UniverSheet key={built.unitId} data={built.snapshot} onReady={onReady} listEdit={false} formatting={false} />
+          <UniverSheet
+            key={built.unitId}
+            data={built.snapshot}
+            onReady={onReady}
+            listEdit={false}
+            formatting={false}
+            listArrow={!ask}
+          />
         ) : state.phase === "error" ? (
           <p className="creg-sheet-note fin-fail" role="status" style={{ margin: "1rem" }}>
             {state.error || "Реестр не прочитался"} ·{" "}
@@ -344,24 +307,6 @@ export function RegistrySheet({ onOpenCard, openId }: Props) {
       <p className={note?.fail ? "creg-sheet-note fin-fail" : "creg-sheet-note"} role="status" aria-live="polite">
         {note?.text ?? ""}
       </p>
-      {arrow && !ask
-        ? createPortal(
-            <button
-              type="button"
-              className="creg-list-arrow"
-              aria-label="Открыть список"
-              title="Список · Alt+↓"
-              style={{ left: arrow.left, top: arrow.top, width: arrow.size, height: arrow.size }}
-              onPointerDown={(event) => event.preventDefault()}
-              onClick={() => binding.current?.openList()}
-            >
-              <svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true">
-                <path d="M1 1 L5 5 L9 1" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>,
-            document.body,
-          )
-        : null}
       {ask && spot && count
         ? createPortal(
             <div ref={pop}>

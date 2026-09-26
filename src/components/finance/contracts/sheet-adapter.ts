@@ -58,12 +58,16 @@ import {
   type RegistryState,
 } from "@/components/finance/contracts/store";
 import { parseDay, plural } from "@/components/finance/format";
+import { type CellRect, cellRect } from "@/components/univer/cell-rect";
+import { HEADER_STYLE, PAPER, ROW_H, fitWidth, headerHeight, sampled } from "@/components/univer/columns";
+import { LIST_MUTATION, type ListRange, listRule } from "@/components/univer/lists";
 import { guardSheets } from "@/components/univer/protect";
 import type { UniverApi, WorkbookSnapshot } from "@/components/univer/sheet";
 import {
   DATE_PATTERN,
   MONEY_PATTERN,
   WHOLE_PATTERN,
+  WRAP_CLIP,
   cssHex,
   dateOf,
   excelWidthPx,
@@ -87,7 +91,6 @@ function liveValue(state: RegistryState, id: string, key: string): unknown {
   return key === "paid" ? summary?.paid : key === "remaining" ? summary?.remaining : undefined;
 }
 
-const ROW_H = 24;
 const TITLE_H = 30;
 /** Пустые строки под последним блоком: вниз листа не упираются. */
 const TAIL_ROWS = 40;
@@ -162,83 +165,13 @@ function kindOf(key: string, field: RegistryField | null): ColumnKind {
   }
 }
 
-/**
- * Высота шапки блока — по самой длинной подписи.
- *
- * Подписи шапки взяты из файла как есть: «Текущее состояние (действующий/
- * недействующий/ на исполении/ исполнен/ не состоялся)» в колонке шириной в
- * сто пикселей. В одну строку такая подпись обрезалась бы на «Текущее сост»,
- * и человек не узнал бы свою колонку. Строки считаются переносом по словам
- * тем же шрифтом, что у шапки: прикидка «шесть пикселей на букву» насчитывала
- * пять строк там, где их шесть, и подпись статуса срезалась сверху и снизу.
- */
-function headerLines(label: string, width: number): number {
-  const room = Math.max(24, width - 10);
-  let lines = 1;
-  let used = 0;
-  for (const word of label.split(/\s+/).filter(Boolean)) {
-    const size = textWidth(word, HEAD_FONT);
-    const gap = used ? textWidth(" ", HEAD_FONT) : 0;
-    if (used && used + gap + size > room) {
-      lines += 1;
-      used = size;
-    } else {
-      used += gap + size;
-    }
-  }
-  return lines;
-}
-
-function headerHeight(columns: SheetColumn[]): number {
-  let lines = 1;
-  for (const column of columns) lines = Math.max(lines, Math.min(8, headerLines(column.label, column.width)));
-  return 12 + lines * 15;
-}
-
-// ── Ширина колонки по содержимому ────────────────────────────────────────────
-
-/** Шрифт ячеек Univer по умолчанию (Arial 11pt) и шапки (9pt) — ими и мерим. */
-const CELL_FONT = "14.667px Arial";
-const HEAD_FONT = "12px Arial";
-/** Поля ячейки слева и справа и запас на округление. */
-const CELL_PAD = 14;
-/** Сколько строк блока мерить: на десяти тысячах договоров хватает выборки. */
-const MEASURE_ROWS = 1500;
-/**
- * Предел ширины по типу колонки. Ширина из файла — нижняя граница: колонку,
- * которую человек сделал широкой в Excel, лист не сужает; узкую — расширяет
- * до содержимого, но не дальше предела, иначе одно примечание на абзац делало
- * бы колонку во весь экран.
- */
+/** Предел ширины по типу колонки (см. `fitWidth` в общем корне листов). */
 const WIDTH_CAP: Record<ColumnKind, number> = {
   ordinal: 44, text: 320, money: 160, date: 112, party: 320, list: 280,
   people: 240, department: 120, choice: 160, bool: 80, url: 240,
 };
 
 const NUMBER_CAP = 220;
-
-let measureCanvas: CanvasRenderingContext2D | null | undefined;
-const measureMemo = new Map<string, number>();
-
-function textWidth(text: string, font: string): number {
-  if (!text) return 0;
-  const key = `${font}|${text}`;
-  let width = measureMemo.get(key);
-  if (width === undefined) {
-    if (measureCanvas === undefined) {
-      measureCanvas = typeof document !== "undefined" ? document.createElement("canvas").getContext("2d") : null;
-    }
-    if (measureCanvas) {
-      measureCanvas.font = font;
-      width = measureCanvas.measureText(text).width;
-    } else {
-      width = text.length * 7.5;
-    }
-    if (measureMemo.size > 20000) measureMemo.clear();
-    measureMemo.set(key, width);
-  }
-  return width;
-}
 
 const EMPTY_BLOCK: ViewBlock = {
   title: "",
@@ -451,20 +384,6 @@ function rawOf(column: SheetColumn, cell: unknown): string {
 
 export type Palette = { dark: boolean; flash: string; fail: string; failBg: string };
 
-/**
- * Бумага листа — постоянные светлые цвета: в тёмной теме Univer сам
- * перекрашивает их своей матрицей. Токены раздела (вспышка, отказ) читаются из
- * CSS и в тёмной теме отдаются заранее перевёрнутыми — см. `invertLikeUniver`.
- */
-const PAPER = {
-  headBg: "#efede5",
-  headText: "#5a5d55",
-  titleBg: "#e5e2d7",
-  line: "#cfcbbf",
-  muted: "#a3a69e",
-  soft: "#7d8078",
-};
-
 export function paletteNow(): Palette {
   const dark = isDarkTheme();
   const canvas = (hex: string) => (dark ? invertLikeUniver(hex) : hex);
@@ -477,8 +396,6 @@ export function paletteNow(): Palette {
 }
 
 type Style = Record<string, unknown>;
-/** `WrapStrategy.CLIP`. */
-const WRAP_CLIP = 2;
 type Part = "title" | "header" | "body" | "empty";
 
 /**
@@ -488,18 +405,8 @@ type Part = "title" | "header" | "body" | "empty";
  */
 function cellStyle(part: Part, column: SheetColumn | null, fmt: Face["fmt"], flags: string, pal: Palette): Style | null {
   if (part === "title") return { bg: { rgb: PAPER.titleBg }, bl: 1, vt: 2 };
-  if (part === "header") {
-    // Шапка — наша, а не из файла: жёлтые и голубые заливки Excel спорили бы с
-    // единственным цветом листа — розовой ячейкой ошибки.
-    return {
-      bg: { rgb: PAPER.headBg },
-      cl: { rgb: PAPER.headText },
-      vt: 2,
-      tb: 3,
-      fs: 9,
-      bd: { b: { s: 1, cl: { rgb: PAPER.line } } },
-    };
-  }
+  // Шапка — общий стиль листов (`univer/columns.ts`).
+  if (part === "header") return { ...HEADER_STYLE };
   const style: Style = {};
   if (column?.kind === "ordinal") {
     style.ht = 2;
@@ -508,12 +415,9 @@ function cellStyle(part: Part, column: SheetColumn | null, fmt: Face["fmt"], fla
   } else if (column?.readOnly) {
     style.cl = { rgb: PAPER.soft };
   }
-  // Значение не выходит за свою колонку. По умолчанию Univer, как Excel,
-  // выпускает текст в пустую соседнюю ячейку: хвост «Предмета доп.
-  // соглашения» стоял в колонке «Дата расторжения» и читался её значением.
-  // А ячейку со списком без явного переноса он переносит по словам — «Omar
-  // Development &» над «Consulting» в строке высотой 24. Полный текст — в
-  // строке формул и в карточке; ширину колонки подгоняет `fitLayout`.
+  // Значение не выходит за свою колонку и не переносится — стандарт ячеек
+  // листов (`WRAP_CLIP` в общем корне). Полный текст — в строке формул и в
+  // карточке; ширину колонки подгоняет `fitLayout`.
   if (column && column.kind !== "ordinal") style.tb = WRAP_CLIP;
   if (fmt === "money") Object.assign(style, { n: { pattern: MONEY_PATTERN }, ht: 3 });
   if (fmt === "whole") Object.assign(style, { n: { pattern: WHOLE_PATTERN }, ht: 3 });
@@ -849,31 +753,13 @@ function noteOf(sheet: string, row: number, column: number, text: string) {
 // проверкой данных Univer на строки блока, потому что колонка F в двух блоках
 // одного листа — разные поля.
 //
-// Что решено и почему:
-// * **список — подсказка, судья — сервер.** Правило не запрещает ввод
-//   (`WARNING`, а не `STOP`): «дей» + Enter сервер узнаёт как «Действующий»,
-//   а незнакомое в закрытом списке отклоняет с объяснением у ячейки. Запрет
-//   Univer ответил бы своим окном, без слов о том, где список пополняют;
-// * **без плашек и стрелок в каждой ячейке** (`TEXT`): режим по умолчанию
-//   красит значения цветными плашками, а цвет в листе — только отказ.
-//   Стрелка — у выбранной ячейки, как в Excel (`registry-sheet.tsx`);
-// * **правило живёт по строкам блока** и пересчитывается, когда строки
-//   переложились или поменялся справочник: мутацией, мимо прав листа и мимо
-//   «Отменить».
+// Как список выглядит и ведёт себя (текст без капсулы, подсказка, а не
+// запрет, стрелка у выбранной ячейки, печать без списка) — общий стандарт
+// листов, `univer/lists.ts`. Здесь — что предлагать и на каких строках:
+// **правило живёт по строкам блока** и пересчитывается, когда строки
+// переложились или поменялся справочник.
 
 const DV_RESOURCE = "SHEET_DATA_VALIDATION_PLUGIN";
-const DV = {
-  add: "data-validation.mutation.addRule",
-  remove: "data-validation.mutation.removeRule",
-  show: "sheet.operation.show-data-validation-dropdown",
-  hide: "sheet.operation.hide-data-validation-dropdown",
-};
-/** `DataValidationRenderMode.TEXT`. */
-const RENDER_TEXT = 0;
-/** `DataValidationErrorStyle.WARNING` — ввод не запрещается. */
-const ERROR_WARNING = 2;
-/** `DeviceInputEventType.Keyboard`. */
-const KEYBOARD = 4;
 
 export type Choices = { values: string[]; closed: boolean };
 
@@ -926,7 +812,7 @@ export function choicesOf(column: SheetColumn, state: RegistryState, ownSide: Bl
 }
 
 type RuleSpec = { uid: string; sig: string; rule: Record<string, unknown> };
-type Range = { startRow: number; endRow: number; startColumn: number; endColumn: number };
+type Range = ListRange;
 
 /**
  * Строка — покупка по этой стороне: напротив стоит наше юрлицо, а здесь — нет.
@@ -1015,23 +901,7 @@ function rulesOf(model: SheetModel, state: RegistryState, extra?: ReadonlyMap<st
       const uid = `creg-dv-${model.layout.key}-${block}-${index}`;
       const added = extra?.get(uid) ?? [];
       const values = added.length ? [...choices.values, ...added.filter((item) => !choices.values.includes(item))] : choices.values;
-      const formula1 = JSON.stringify(values);
-      const type = "list";
-      out.push({
-        uid,
-        sig: `${type}|${JSON.stringify(ranges)}|${formula1}`,
-        rule: {
-          uid,
-          type,
-          formula1,
-          ranges,
-          allowBlank: true,
-          showDropDown: true,
-          showErrorMessage: false,
-          errorStyle: ERROR_WARNING,
-          renderMode: RENDER_TEXT,
-        },
-      });
+      out.push({ uid, sig: `list|${JSON.stringify(ranges)}|${JSON.stringify(values)}`, rule: listRule(uid, values, ranges) });
     });
   }
   return out;
@@ -1053,30 +923,25 @@ function fitLayout(layout: ViewLayout, buckets: Map<string, string[]>, ctx: Rend
   if (!schema) return layout;
   const valueCtx: Ctx = { schema, parties: state.parties, people: state.people };
   const blocks = layout.blocks.map((block) => {
-    const all = buckets.get(`${layout.key}#${block.index}`) ?? [];
-    const step = Math.max(1, Math.ceil(all.length / MEASURE_ROWS));
-    const ids = step > 1 ? all.filter((_, index) => index % step === 0) : all;
+    const ids = sampled(buckets.get(`${layout.key}#${block.index}`) ?? []);
     const columns = block.columns.map((column) => {
       if (column.kind === "ordinal") return column;
-      const widths: number[] = [];
+      const texts: string[] = [];
       for (const id of ids) {
         const contract = state.byId.get(id);
         const value = LIVE_KEYS.has(column.key) ? liveValue(state, id, column.key) : contract?.values[column.key];
         const face = faceOf(column, value, contract, valueCtx);
-        // Univer рисует текст чуть шире, чем мерит канва (сглаживание, округление
-        // по пикселям): без запаса у «№ 333-2023-BBC-BUH» съедалась последняя буква.
-        if (face.v !== null) widths.push(textWidth(faceText(face), CELL_FONT) * 1.05);
+        if (face.v !== null) texts.push(faceText(face));
       }
-      widths.sort((a, b) => a - b);
       // Номер договора — текст, но идентификатор: его читают целиком. Предел
       // уже, чем у текста: у BBC есть «номера» в полстроки, и по ним колонка
       // номера становилась шире «Заказчика».
       const number = column.key === "number";
-      const share = !number && (column.kind === "text" || column.kind === "url") ? 0.9 : 1;
-      const content = widths.length ? widths[Math.min(widths.length - 1, Math.floor((widths.length - 1) * share))] + CELL_PAD : 0;
-      const word = Math.max(0, ...column.label.split(/\s+/).map((part) => textWidth(part, HEAD_FONT))) + 12;
-      const cap = number ? NUMBER_CAP : WIDTH_CAP[column.kind];
-      const width = Math.round(Math.max(column.width, Math.min(Math.max(content, word), cap)));
+      const width = fitWidth(texts, column.label, {
+        min: column.width,
+        cap: number ? NUMBER_CAP : WIDTH_CAP[column.kind],
+        share: !number && (column.kind === "text" || column.kind === "url") ? 0.9 : 1,
+      });
       return width === column.width ? column : { ...column, width };
     });
     return { ...block, columns, headerHeight: headerHeight(columns) };
@@ -1244,8 +1109,6 @@ export function buildRegistry(state: RegistryState, pal: Palette): Built | null 
 
 // ── Связка с живым листом ────────────────────────────────────────────────────
 
-export type CellRect = { left: number; top: number; right: number; bottom: number; visible: boolean };
-
 export type AskGroup = {
   sheet: string;
   items: { id: string; key: string }[];
@@ -1262,8 +1125,6 @@ export type BindingEvents = {
   sheet: (view: string) => void;
   /** Лист поменяли в обход нас (вставили строку) — собрать книгу заново. */
   rebuild: () => void;
-  /** Выбор, правка, лист или масштаб сменились — стрелке списка пора на место. */
-  cell?: () => void;
 };
 
 const M = {
@@ -1359,28 +1220,11 @@ export class RegistryBinding {
     listen(
       api.addEvent?.(
         api.Event.SheetEditStarted,
-        (event: { worksheet?: UniverApi; row: number; column: number; eventType?: number }) => {
+        (event: { worksheet?: UniverApi; row: number; column: number }) => {
+          // Печать в ячейке со списком — печать, а не выбор: это делает общий
+          // корень листов (`univer/lists.ts`).
           const sheet = event.worksheet?.getSheetId?.() ?? "";
           this.editing = { sheet, row: event.row, col: event.column };
-          this.events.cell?.();
-          // Печать в ячейке со списком — это печать, а не выбор. Univer
-          // открывает список вместе с редактором, и строка поиска списка
-          // забирает фокус на второй-третьей букве: «Дей» оставалось в ячейке,
-          // «ствующий» уходило в поиск (урок журнала, `table-view.tsx`).
-          // Правка с клавиатуры остаётся ячейке, мышью список открывается как
-          // прежде. Закрываем и сразу, и после его отрисовки.
-          if (event.eventType === KEYBOARD && this.listAt(sheet, event.row, event.column)) {
-            const hide = () => {
-              try {
-                void this.api.executeCommand?.(DV.hide, {});
-              } catch {
-                /* списка нет — нечего закрывать */
-              }
-            };
-            hide();
-            window.setTimeout(hide, 0);
-            window.setTimeout(hide, 60);
-          }
         },
       ),
     );
@@ -1391,7 +1235,6 @@ export class RegistryBinding {
         window.setTimeout(() => {
           this.editing = null;
           this.afterEdit();
-          this.events.cell?.();
         }, 30);
       }),
     );
@@ -1399,13 +1242,11 @@ export class RegistryBinding {
       api.addEvent?.(api.Event.ActiveSheetChanged, (event: { activeSheet?: UniverApi }) => {
         const sheet = event.activeSheet?.getSheetId?.();
         if (sheet) this.onSheetEntered(sheet);
-        this.events.cell?.();
       }),
     );
     listen(
       api.addEvent?.(api.Event.SelectionChanged, (event: { worksheet?: UniverApi; selections?: { startRow: number }[] }) => {
         this.onSelection(event.worksheet?.getSheetId?.() ?? "", event.selections?.[0]?.startRow);
-        this.events.cell?.();
       }),
     );
     listen(
@@ -1421,14 +1262,6 @@ export class RegistryBinding {
         }
       }),
     );
-    // Масштаб и прокрутка двигают ячейку под стрелкой списка. Подписка на
-    // прокрутку может оказаться пустой, пока лист не нарисован (см.
-    // `viewportScroll`), — поэтому стрелка прячется ещё и на колесе мыши
-    // (`registry-sheet.tsx`).
-    for (const name of ["SheetZoomChanged", "Scroll"]) {
-      const kind = api.Event?.[name];
-      if (kind) listen(api.addEvent?.(kind, () => this.events.cell?.()));
-    }
     // Тема приложения сменилась — лист следует за ней.
     if (typeof MutationObserver !== "undefined") {
       const observer = new MutationObserver(() => this.retheme());
@@ -1733,9 +1566,9 @@ export class RegistryBinding {
     const next = new Map(want.map((spec) => [spec.uid, spec.sig]));
     const drop = [...have.keys()].filter((uid) => next.get(uid) !== have.get(uid));
     const unit = { unitId: this.unitId, subUnitId: sheet };
-    if (drop.length) this.exec(DV.remove, { ...unit, ruleId: drop });
+    if (drop.length) this.exec(LIST_MUTATION.remove, { ...unit, ruleId: drop });
     for (const spec of want) {
-      if (have.get(spec.uid) !== spec.sig) this.exec(DV.add, { ...unit, rule: spec.rule });
+      if (have.get(spec.uid) !== spec.sig) this.exec(LIST_MUTATION.add, { ...unit, rule: spec.rule });
     }
     this.rules.set(sheet, next);
   }
@@ -1772,23 +1605,6 @@ export class RegistryBinding {
     const uid = `creg-dv-${sheet}-${found.block}-${column}`;
     this.extra.set(uid, [...new Set([...(this.extra.get(uid) ?? []), ...fresh])]);
     this.syncValidation(model);
-  }
-
-  /** Alt+↓ и стрелка у ячейки: открыть список активной ячейки. */
-  openList(): boolean {
-    const ws = this.api.getActiveWorkbook?.()?.getActiveSheet?.();
-    const range = ws?.getActiveRange?.();
-    if (!ws || !range) return false;
-    const sheet = ws.getSheetId();
-    const row = range.getRow();
-    const column = range.getColumn();
-    if (!this.listAt(sheet, row, column)) return false;
-    try {
-      void this.api.executeCommand?.(DV.show, { unitId: this.unitId, subUnitId: sheet, row, column });
-      return true;
-    } catch {
-      return false;
-    }
   }
 
   // ── Хранилище → лист ──
@@ -2417,52 +2233,9 @@ export class RegistryBinding {
 
   // ── Слой вопроса над ячейкой ──
 
-  private canvas(): HTMLCanvasElement | null {
-    let best: HTMLCanvasElement | null = null;
-    let area = 0;
-    for (const node of this.host?.querySelectorAll("canvas") ?? []) {
-      const box = node.getBoundingClientRect();
-      if (box.width * box.height > area) {
-        area = box.width * box.height;
-        best = node;
-      }
-    }
-    return best;
-  }
-
   /**
-   * Прокрутка основной области листа в координатах холста — по состоянию
-   * прокрутки и накопленным высотам строк и ширинам колонок.
-   *
-   * Подписка `onScroll` здесь не годится: связка запускается сразу после
-   * создания книги, когда отрисовки ещё нет, и Univer тихо возвращает пустую
-   * подписку. Прокрутка оставалась нулевой, слой вопроса считал ячейку
-   * суммы (колонка M, правее экрана) невидимой и закрывал вопрос в тот же
-   * кадр — правка снималась, как по Esc, и человек видел, что сумма просто не
-   * меняется.
-   */
-  private viewportScroll(ws: UniverApi): { x: number; y: number } {
-    try {
-      const state = ws.getScrollState?.() as
-        | { sheetViewStartRow?: number; sheetViewStartColumn?: number; offsetX?: number; offsetY?: number }
-        | undefined;
-      const skeleton = ws.getSkeleton?.() as
-        | { rowHeightAccumulation?: number[]; columnWidthAccumulation?: number[] }
-        | undefined;
-      const startRow = state?.sheetViewStartRow ?? 0;
-      const startColumn = state?.sheetViewStartColumn ?? 0;
-      const rowTop = startRow > 0 ? skeleton?.rowHeightAccumulation?.[startRow - 1] ?? 0 : 0;
-      const columnLeft = startColumn > 0 ? skeleton?.columnWidthAccumulation?.[startColumn - 1] ?? 0 : 0;
-      return { x: columnLeft + (state?.offsetX ?? 0), y: rowTop + (state?.offsetY ?? 0) };
-    } catch {
-      return { x: 0, y: 0 };
-    }
-  }
-
-  /**
-   * Где на экране ячейка вопроса. Тот же расчёт, что у всплывающих слоёв
-   * самого Univer: координата ячейки на холсте минус прокрутка, в масштабе,
-   * от угла холста. `visible: false` — ячейка ушла из видимой части листа.
+   * Где на экране ячейка вопроса — расчётом общего корня листов
+   * (`univer/cell-rect.ts`). `visible: false` — ячейка ушла из видимой части.
    */
   rectOf(group: AskGroup): CellRect | null {
     const model = this.models.get(group.sheet);
@@ -2470,58 +2243,7 @@ export class RegistryBinding {
     if (!model || row === undefined) return null;
     const column = model.layout.blocks[model.slots[row].block]?.columns.findIndex((item) => item.key === group.anchor.key) ?? -1;
     if (column < 0) return null;
-    return this.cellRect(group.sheet, row, column);
-  }
-
-  /**
-   * Выбранная ячейка со списком и где она на экране — для стрелки списка.
-   * `null` — выбрано не одна ячейка, у ячейки нет списка или идёт правка.
-   */
-  activeList(): (CellRect & { closed: boolean }) | null {
-    if (this.editing) return null;
-    const ws = this.api.getActiveWorkbook?.()?.getActiveSheet?.();
-    const range = ws?.getActiveRange?.();
-    if (!ws || !range) return null;
-    if ((range.getHeight?.() ?? 1) > 1 || (range.getWidth?.() ?? 1) > 1) return null;
-    const sheet = ws.getSheetId();
-    const row = range.getRow();
-    const column = range.getColumn();
-    const found = this.listAt(sheet, row, column);
-    if (!found || !this.ctx.state.schema?.access.edit) return null;
-    const rect = this.cellRect(sheet, row, column);
-    return rect ? { ...rect, closed: found.choices.closed } : null;
-  }
-
-  private cellRect(sheet: string, row: number, column: number): CellRect | null {
-    const ws = this.api.getActiveWorkbook?.()?.getActiveSheet?.();
-    if (!ws || ws.getSheetId() !== sheet) return null;
-    const canvas = this.canvas();
-    let cell: { startX: number; startY: number; endX: number; endY: number } | null = null;
-    try {
-      cell = ws.getRange(row, column, 1, 1).getCell?.() ?? null;
-    } catch {
-      cell = null;
-    }
-    if (!canvas || !cell) return null;
-    const box = canvas.getBoundingClientRect();
-    const cssWidth = parseFloat(canvas.style.width) || box.width;
-    const zoom = Number(ws.getZoom?.() ?? 1) || 1;
-    const scale = (box.width / cssWidth) * zoom;
-    const scroll = this.viewportScroll(ws);
-    const left = (cell.startX - scroll.x) * scale + box.left;
-    const right = (cell.endX - scroll.x) * scale + box.left;
-    const top = (cell.startY - scroll.y) * scale + box.top;
-    const bottom = (cell.endY - scroll.y) * scale + box.top;
-    let visible = bottom > box.top && top < box.bottom && right > box.left && left < box.right;
-    try {
-      const range = ws.getVisibleRange?.() as { startRow: number; endRow: number; startColumn: number; endColumn: number } | null;
-      if (range) {
-        visible = visible && row >= range.startRow && row <= range.endRow && column >= range.startColumn && column <= range.endColumn;
-      }
-    } catch {
-      /* без видимого диапазона — по холсту */
-    }
-    return { left, top, right, bottom, visible };
+    return cellRect(this.api, this.host, group.sheet, row, column);
   }
 
   /** После ответа на вопрос фокус возвращается в лист. */

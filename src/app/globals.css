@@ -4647,6 +4647,23 @@ html, body { overflow-x: clip; }
    и в тёмной теме пункты были тёмным по чёрному. Бесцветная плашка берёт цвет
    текста списка — светлый в тёмной теме, тёмный в светлой. */
 [data-u-comp="sheets-dropdown-list"] [style*="background: transparent"] { color: inherit !important; font-size: 0.8125rem; }
+/* Стрелка списка у выбранной ячейки (как в Excel), а не капсула или стрелка в
+   каждой ячейке колонки — src/components/univer/lists.ts. Над листом «На весь
+   экран» (80) — поэтому 81. */
+.usheet-list-arrow {
+  position: fixed;
+  z-index: 81;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.usheet-list-arrow:hover { color: var(--text-primary); background: var(--bg-hover); }
+.usheet-list-arrow:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 1px; }
 
 /* ─── Телефон ─── */
 @media (max-width: 639.98px) {
@@ -5290,22 +5307,6 @@ textarea.ifield-input { resize: vertical; field-sizing: content; min-height: 4.5
 
 /* ─── Лист Univer реестра ─── */
 .creg-sheet-wrap { position: relative; border: 1px solid var(--fin-line); border-radius: 8px; overflow: hidden; }
-/* Стрелка списка у выбранной ячейки (как в Excel), а не в каждой ячейке
-   колонки. Над листом «На весь экран» (80) — поэтому 81. */
-.creg-list-arrow {
-  position: fixed;
-  z-index: 81;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: 3px;
-  background: transparent;
-  color: var(--fin-text-soft);
-  cursor: pointer;
-}
-.creg-list-arrow:hover { color: var(--fin-text); background: var(--fin-hover); }
-.creg-list-arrow:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 1px; }
 .creg-sheet-note { min-height: 1.25rem; margin: 0.25rem 0 0.5rem; font-size: 0.8125rem; color: var(--fin-text-soft); }
 /* Отказ под листом — цветом отказа. Без этой строки правило выше, стоящее
    позже `.fin-fail`, перебивало его, и «не заведено: …» читалось серым. */

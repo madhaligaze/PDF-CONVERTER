@@ -28,8 +28,10 @@ import { IMenuManagerService } from "@univerjs/preset-sheets-core";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { type ListArrow, type ListWatch, openList, watchLists } from "@/components/univer/lists";
 import { isDarkTheme } from "@/components/univer/sheet-model";
 import { speedUp } from "@/components/univer/speed";
+import { lockScroll } from "@/components/use-scroll-lock";
 import { registerRuNumfmtLocale } from "@/components/web-excel/numfmt-locale";
 
 import "@univerjs/preset-sheets-core/lib/index.css";
@@ -98,6 +100,12 @@ type Props = {
    * данными: отмену, поиск, фильтр и сортировку.
    */
   formatting?: boolean;
+  /**
+   * Стрелка списка у выбранной ячейки. `false` — пока раздел держит над
+   * ячейкой свой слой (вопрос реестра «опечатка или с даты»): стрелка легла
+   * бы поверх него.
+   */
+  listArrow?: boolean;
 };
 
 /** Пункты ленты, которые остаются у листа без оформления (`formatting={false}`). */
@@ -183,7 +191,10 @@ const RENDERED = 2;
  *   те же, что у «Начало» и «Вставки». Esc сворачивает; страница под листом
  *   не прокручивается;
  * * **скорость прокрутки** — `speed.ts`: ячейка считается один раз на кадр,
- *   а не семь-восемь, и без лишних разборов строк.
+ *   а не семь-восемь, и без лишних разборов строк;
+ * * **выпадающие списки** — `lists.ts`: раздел ставит правило `listRule`, а
+ *   значение текстом без капсулы, стрелка у выбранной ячейки, Alt+↓ и печать
+ *   без списка — здесь, у каждого листа одинаково.
  */
 const FULL_TEXT = "На весь экран";
 const COLLAPSE_TEXT = "Свернуть";
@@ -248,11 +259,15 @@ export function blankWorkbook(name = "Новая таблица"): WorkbookSnaps
 }
 
 export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverSheet(
-  { data, onReady, extras = false, fullscreen = true, listEdit = true, formatting = true, onShown },
+  { data, onReady, extras = false, fullscreen = true, listEdit = true, formatting = true, listArrow = true, onShown },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [full, setFull] = useState(false);
+  const [arrow, setArrow] = useState<ListArrow | null>(null);
+  const listArrowRef = useRef(listArrow);
+  listArrowRef.current = listArrow;
+  const listsRef = useRef<ListWatch | null>(null);
   /** Узел в ряду вкладок ленты, куда порталом встаёт «На весь экран». */
   const [tabSlot, setTabSlot] = useState<{ host: HTMLElement; className: string } | null>(null);
   // Через ref, чтобы обработчик, пересозданный родителем, не пересоздавал
@@ -337,6 +352,16 @@ export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverS
     // `onReady` берётся из пропа по той же причине, что и `data`: компонент
     // монтируется один раз на книгу, новая приходит пересозданием через `key`.
     const detach = onReadyRef.current?.(univerAPI);
+    const lists = watchLists(univerAPI, containerRef.current, {
+      arrow: (next) =>
+        setArrow((prev) =>
+          prev === next || (prev && next && prev.left === next.left && prev.top === next.top && prev.size === next.size)
+            ? prev
+            : next,
+        ),
+      allowed: () => listArrowRef.current,
+    });
+    listsRef.current = lists;
 
     // «Лист виден»: стадия Rendered и два кадра — первый холст уже на экране.
     let shownFrame = 0;
@@ -370,6 +395,8 @@ export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverS
       cancelAnimationFrame(shownFrame);
       themeObserver.disconnect();
       system?.removeEventListener?.("change", retheme);
+      lists.stop();
+      listsRef.current = null;
       try {
         stopTrim?.();
         lifecycle?.dispose?.();
@@ -440,22 +467,27 @@ export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverS
     };
   }, [fullscreen]);
 
+  // Раздел открыл или закрыл свой слой над ячейкой — стрелке пора на место.
+  useEffect(() => {
+    listsRef.current?.refresh();
+  }, [listArrow]);
+
   useEffect(() => {
     // Univer меряет холст по событию resize: без толчка после смены размера
     // лист остаётся прежней ширины внутри нового окна.
     const nudge = window.setTimeout(() => window.dispatchEvent(new Event("resize")), 60);
     if (!full) return () => window.clearTimeout(nudge);
     // Пока лист во весь экран, страница под ним не едет: колесо двигает
-    // таблицу, а не то, что осталось снизу.
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    // таблицу, а не то, что осталось снизу. Общим замком приложения —
+    // `overflow: hidden` на body страницу не держит (у `html` `overflow-x: clip`).
+    const unlock = lockScroll();
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape" && !event.defaultPrevented) setFull(false);
     };
     window.addEventListener("keydown", onKey);
     return () => {
       window.clearTimeout(nudge);
-      document.body.style.overflow = previous;
+      unlock();
       window.removeEventListener("keydown", onKey);
     };
   }, [full]);
@@ -480,6 +512,25 @@ export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverS
               {full ? COLLAPSE_TEXT : FULL_TEXT}
             </button>,
             tabSlot.host,
+          )
+        : null}
+      {arrow
+        ? createPortal(
+            <button
+              type="button"
+              className="usheet-list-arrow"
+              aria-label="Открыть список"
+              title="Список · Alt+↓"
+              style={{ left: arrow.left, top: arrow.top, width: arrow.size, height: arrow.size }}
+              // Фокус остаётся в листе: иначе Enter после выбора ушёл бы кнопке.
+              onPointerDown={(event) => event.preventDefault()}
+              onClick={() => apiRef.current && openList(apiRef.current)}
+            >
+              <svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true">
+                <path d="M1 1 L5 5 L9 1" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>,
+            document.body,
           )
         : null}
     </div>

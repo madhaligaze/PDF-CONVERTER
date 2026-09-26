@@ -2,9 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { HEADER_STYLE, PAPER, ROW_H, fitWidth, headerHeight, sampled } from "@/components/univer/columns";
+import { listRule, putLists } from "@/components/univer/lists";
 import { type PollOutcome, pollWhileVisible } from "@/components/univer/live";
 import { guardSheets } from "@/components/univer/protect";
 import { UniverSheet, type UniverApi, type WorkbookSnapshot } from "@/components/univer/sheet";
+import { DATE_PATTERN, MONEY_PATTERN, WRAP_CLIP, dateOf, serialOf } from "@/components/univer/sheet-model";
 import { useFillHeight } from "@/components/univer/use-fill-height";
 import { writeCells } from "@/components/univer/write";
 import {
@@ -42,32 +45,8 @@ import {
 const SPARE_ROWS = 100;
 const HEADER_ROW = 0;
 
-/**
- * Префикс `[$-419]` — русская локаль ПРЯМО В ОБРАЗЦЕ формата.
- *
- * Движок форматов Univer берёт локаль не из книги, а из самого образца. Без
- * префикса тот же `#,##0.00` даёт «95,323.00» вместо «95 323,00»: цифры на
- * месте, разделители чужие — худший вид расхождения, потому что число
- * выглядит правильным.
- */
-const RU = "[$-419]";
-
-/** Эпоха дат Excel. Полдень не добавляем: он округляет дату вверх. */
-const EPOCH = Date.UTC(1899, 11, 30);
-
-function serialOf(text: string): number | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text.trim());
-  if (!match) return null;
-  const [, year, month, day] = match;
-  const at = Date.UTC(Number(year), Number(month) - 1, Number(day));
-  return Number.isFinite(at) ? Math.round((at - EPOCH) / 86400000) : null;
-}
-
-function dateOf(serial: number): string {
-  const at = new Date(EPOCH + Math.round(serial) * 86400000);
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${at.getUTCFullYear()}-${pad(at.getUTCMonth() + 1)}-${pad(at.getUTCDate())}`;
-}
+/** Стиль текста колонки: серый — правка здесь не сохранится. */
+const textStyle = (column: GridColumn) => (column.editable ? "text" : "readonly");
 
 /**
  * Ячейка листа для значения колонки.
@@ -75,18 +54,22 @@ function dateOf(serial: number): string {
  * Одна функция на сборку листа и на запись ответа сервера обратно: иначе
  * значение, пришедшее после правки, выглядело бы иначе, чем то же значение
  * при открытии листа, — дата текстом вместо даты, сумма без разрядов.
+ *
+ * Стиль есть и у пустой ячейки: в нём обрезка (`WRAP_CLIP`), и значение,
+ * выбранное в пустой ячейке из списка, иначе переносилось бы по словам до
+ * ответа сервера.
  */
 function cellFor(column: GridColumn, raw: string): Record<string, unknown> {
-  if (!raw) return { v: "" };
+  if (!raw) return { v: "", s: textStyle(column) };
   if (column.kind === "money") {
     const asNumber = Number(String(raw).replace(/\s/g, "").replace(",", "."));
-    return Number.isFinite(asNumber) ? { v: asNumber, s: "money" } : { v: String(raw) };
+    return Number.isFinite(asNumber) ? { v: asNumber, s: "money" } : { v: String(raw), s: textStyle(column) };
   }
   if (column.kind === "date") {
     const serial = serialOf(String(raw));
-    return serial === null ? { v: String(raw) } : { v: serial, t: 2, s: "date" };
+    return serial === null ? { v: String(raw), s: textStyle(column) } : { v: serial, t: 2, s: "date" };
   }
-  return column.editable ? { v: String(raw) } : { v: String(raw), s: "readonly" };
+  return { v: String(raw), s: textStyle(column) };
 }
 
 /** Значение ячейки в том виде, в каком его ждёт сервер. */
@@ -117,6 +100,42 @@ function same(column: GridColumn, raw: unknown, known: string): boolean {
   return a === b;
 }
 
+/**
+ * Предел ширины по виду колонки — те же, что у таких же колонок реестра:
+ * справочники (счёт, статья, контрагент) и «только чтение» (вид, состояние)
+ * читаются целиком, свободный текст — девять значений из десяти.
+ */
+const WIDTH_CAP: Record<string, number> = { date: 112, money: 160, enum: 280, readonly: 160 };
+const TEXT_CAP = 320;
+
+/** Значение так, как его рисует лист, — для замера ширины колонки. */
+function faceOf(column: GridColumn, raw: string): string {
+  if (!raw) return "";
+  const cell = cellFor(column, raw);
+  if (typeof cell.v === "number" && column.kind === "money") {
+    return cell.v.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  if (typeof cell.v === "number" && column.kind === "date") return raw.split("-").reverse().join(".");
+  return String(cell.v ?? "");
+}
+
+/**
+ * Ширины колонок — по содержимому, общим правилом листов (`fitWidth`):
+ * ширина с сервера — нижняя граница. Раньше она была и верхней, и «Вид»
+ * шириной 90 резал «Поступление» до «Поступлени».
+ */
+function fitColumns(payload: GridPayload): Array<{ label: string; width: number }> {
+  const rows = sampled(payload.rows);
+  return payload.columns.map((column) => ({
+    label: column.title,
+    width: fitWidth(
+      rows.map((row) => faceOf(column, String(row.cells[column.key] ?? ""))),
+      column.title,
+      { min: column.width, cap: WIDTH_CAP[column.kind] ?? TEXT_CAP, share: column.kind in WIDTH_CAP ? 1 : 0.9 },
+    ),
+  }));
+}
+
 function buildWorkbook(payload: GridPayload): WorkbookSnapshot {
   const cellData: Record<number, Record<number, Record<string, unknown>>> = {};
 
@@ -126,17 +145,21 @@ function buildWorkbook(payload: GridPayload): WorkbookSnapshot {
   });
   cellData[HEADER_ROW] = head;
 
-  payload.rows.forEach((row, index) => {
+  // Каждая ячейка до последней запасной строки — со стилем (см. `cellFor`);
+  // у пустой — только стиль, без значения.
+  for (let index = 0; index < payload.rows.length + SPARE_ROWS; index += 1) {
+    const row = payload.rows[index];
     const line: Record<number, Record<string, unknown>> = {};
     payload.columns.forEach((column, columnIndex) => {
-      const raw = row.cells[column.key] ?? "";
-      if (raw) line[columnIndex] = cellFor(column, String(raw));
+      const raw = String(row?.cells[column.key] ?? "");
+      line[columnIndex] = raw ? cellFor(column, raw) : { s: textStyle(column) };
     });
-    if (Object.keys(line).length) cellData[index + 1] = line;
-  });
+    cellData[index + 1] = line;
+  }
 
+  const fitted = fitColumns(payload);
   const columnData: Record<number, { w: number }> = {};
-  payload.columns.forEach((column, index) => {
+  fitted.forEach((column, index) => {
     columnData[index] = { w: column.width };
   });
 
@@ -146,17 +169,16 @@ function buildWorkbook(payload: GridPayload): WorkbookSnapshot {
     locale: "ruRU",
     sheetOrder: ["journal"],
     styles: {
-      head: {
-        bl: 1,
-        bg: { rgb: "#f1f3f5" },
-        vt: 2,
-        bd: { b: { s: 1, cl: { rgb: "#c9ced6" } } },
-      },
-      money: { ht: 3, n: { pattern: `${RU}#,##0.00` } },
-      date: { n: { pattern: `${RU}DD.MM.YYYY` } },
-      // Нередактируемые колонки серым: правка в них не сохранится, и человек
-      // обязан понять это до того, как напечатает.
-      readonly: { cl: { rgb: "#8b8f98" } },
+      // Шапка — общий стиль листов, как у реестра (`univer/columns.ts`).
+      head: HEADER_STYLE,
+      // Значение не выходит за свою колонку и не переносится — стандарт
+      // ячеек листов, тот же, что у реестра (`WRAP_CLIP` в общем корне).
+      text: { tb: WRAP_CLIP },
+      money: { ht: 3, n: { pattern: MONEY_PATTERN }, tb: WRAP_CLIP },
+      date: { n: { pattern: DATE_PATTERN }, tb: WRAP_CLIP },
+      // Нередактируемые колонки приглушены: правка в них не сохранится, и
+      // человек обязан понять это до того, как напечатает.
+      readonly: { cl: { rgb: PAPER.soft }, tb: WRAP_CLIP },
     },
     sheets: {
       journal: {
@@ -164,7 +186,9 @@ function buildWorkbook(payload: GridPayload): WorkbookSnapshot {
         name: "Журнал",
         rowCount: payload.rows.length + SPARE_ROWS + 1,
         columnCount: Math.max(payload.columns.length, 1),
+        defaultRowHeight: ROW_H,
         cellData,
+        rowData: { [HEADER_ROW]: { h: headerHeight(fitted) } },
         columnData,
         freeze: { xSplit: 0, ySplit: 1, startRow: 1, startColumn: 0 },
       },
@@ -185,32 +209,26 @@ function buildWorkbook(payload: GridPayload): WorkbookSnapshot {
  * и запретить ввести её значило бы заставить идти в справочник посреди
  * заполнения. Счёт — исключение, но его строгость обеспечивает сервер: он
  * откажет с объяснением, а не создаст счёт из опечатки.
+ *
+ * Как список выглядит и ведёт себя — общий стандарт листов
+ * (`univer/lists.ts`), тот же, что у реестра. До 27.09 журнал ставил правило
+ * Univer по умолчанию, и значения в колонке рисовались цветными капсулами.
+ * Список только там, где правка открыта: колонка «только чтение» или лист без
+ * права правки предлагали бы выбор, который не запишется.
  */
-async function applyDropdowns(api: UniverApi, payload: GridPayload): Promise<void> {
-  const sheet = api.getActiveWorkbook?.()?.getActiveSheet?.();
-  if (!sheet || typeof api.newDataValidation !== "function") return;
+function listRules(payload: GridPayload, canEdit: boolean): Array<Record<string, unknown>> {
+  if (!canEdit) return [];
   const rows = payload.rows.length + SPARE_ROWS;
-
-  for (let index = 0; index < payload.columns.length; index += 1) {
-    const column = payload.columns[index];
-    if (column.kind !== "enum" || !column.source) continue;
+  const out: Array<Record<string, unknown>> = [];
+  payload.columns.forEach((column, index) => {
+    if (column.kind !== "enum" || !column.source || !column.editable) return;
     const list = payload.options?.[column.source] ?? [];
-    if (!list.length) continue;
-    try {
-      const rule = api
-        .newDataValidation()
-        .requireValueInList(list, false, true)
-        .setOptions({ allowBlank: true, showErrorMessage: false })
-        .build();
-      await sheet.getRange(1, index, rows, 1).setDataValidation(rule);
-    } catch (exc) {
-      // Список — удобство, а не условие работы листа. Но молчать нельзя:
-      // именно так они однажды тихо исчезли на журнале в две тысячи строк, и
-      // проверка увидела это раньше человека только потому, что смотрела в
-      // консоль.
-      console.warn(`список для колонки «${column.title}» не встал:`, exc);
-    }
-  }
+    if (!list.length) return;
+    out.push(
+      listRule(`journal-list-${column.key}`, list, [{ startRow: 1, endRow: rows, startColumn: index, endColumn: index }]),
+    );
+  });
+  return out;
 }
 
 /**
@@ -342,7 +360,7 @@ export function TableView({
     // с чужими.
     const mine = current.current;
     if (!mine) return;
-    void applyDropdowns(api, mine.payload);
+    putLists(api, SHEET_ID, listRules(mine.payload, canEditRef.current));
     const { columns } = mine.payload;
 
     const active = () => api.getActiveWorkbook()?.getActiveSheet();
@@ -366,7 +384,7 @@ export function TableView({
       try {
         const line: Record<number, Record<string, unknown> | null> = {};
         columns.forEach((column, index) => {
-          line[index] = row ? cellFor(column, row.cells[column.key] ?? "") : null;
+          line[index] = cellFor(column, row?.cells[column.key] ?? "");
         });
         if (!writeCells(api, SHEET_ID, { [sheetRow]: line })) {
           console.warn(`строка ${shown(sheetRow)} не перерисовалась`);
@@ -696,40 +714,13 @@ export function TableView({
     );
     if (values?.dispose) disposers.push(() => values.dispose());
 
-    /**
-     * Печать в ячейке со списком — это печать, а не выбор.
-     *
-     * Univer открывает выпадающий список, как только в такой ячейке открылся
-     * редактор, и настройки, чтобы этого не делать, у него нет. Строка поиска
-     * списка забирает фокус на второй-третьей букве: «Ба» оставалось в
-     * ячейке, «нковский счёт» уходило в поиск, и Enter не записывал ничего.
-     * Человек из Excel печатает название и жмёт Enter — поэтому правку,
-     * начатую с клавиатуры, мы оставляем ячейке и список закрываем; сервер
-     * узнаёт счёт и статью по началу названия. Мышью список открывается как
-     * прежде — стрелкой в ячейке.
-     */
-    const KEYBOARD = 4; // DeviceInputEventType.Keyboard
-    const edits = api.addEvent?.(
-      api.Event.SheetEditStarted,
-      (event: { row: number; column: number; eventType?: number }) => {
-        // Пока человек печатает в строке, правка коллеги её не перетирает —
-        // она ждёт закрытия редактора (см. SheetEditEnded ниже).
-        editingRow = event.row;
-        if (event.eventType !== KEYBOARD || columns[event.column]?.kind !== "enum") return;
-        const hide = () => {
-          try {
-            api.executeCommand?.("sheet.operation.hide-data-validation-dropdown", {});
-          } catch {
-            /* нет списка — нечего и закрывать */
-          }
-        };
-        // Список открывается в той же подписке на редактор, что и событие, —
-        // закрываем и сразу, и следующим тактом, после его отрисовки.
-        hide();
-        window.setTimeout(hide, 0);
-        window.setTimeout(hide, 60);
-      },
-    );
+    // Печать в ячейке со списком остаётся печатью (сервер узнаёт счёт и
+    // статью по началу названия) — это делает общий корень листов.
+    const edits = api.addEvent?.(api.Event.SheetEditStarted, (event: { row: number }) => {
+      // Пока человек печатает в строке, правка коллеги её не перетирает —
+      // она ждёт закрытия редактора (см. SheetEditEnded ниже).
+      editingRow = event.row;
+    });
     if (edits?.dispose) disposers.push(() => edits.dispose());
 
     const ended = api.addEvent?.(api.Event.SheetEditEnded, () => {

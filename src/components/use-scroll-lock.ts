@@ -69,20 +69,37 @@ function release() {
 
   // Возврат ровно туда, где стояли: `position: fixed` уже сбросил прокрутку в
   // ноль, поэтому без этого закрытие модалки выбрасывало бы наверх страницы.
-  window.scrollTo({ top: savedScrollY, behavior: "auto" });
+  // Именно `instant`: `auto` значит «как в CSS», а у `html` стоит
+  // `scroll-behavior: smooth` — страница прыгала наверх и на глазах ехала
+  // обратно (найдено 27.09 на окне операции).
+  window.scrollTo({ top: savedScrollY, behavior: "instant" });
+}
+
+/**
+ * Заблокировать прокрутку фона; возвращает снятие. Для слоёв, которые решают
+ * о замке внутри своего эффекта (карточка: на телефоне всегда, на широком —
+ * только модальная). Снятие можно звать дважды — второй раз ничего не делает.
+ *
+ * `overflow: hidden` на body здесь не замена: у `html` стоит `overflow-x:
+ * clip`, и запрет с body до окна браузера не доходит — страница под слоем
+ * прокручивалась колесом.
+ */
+export function lockScroll(): () => void {
+  locks += 1;
+  if (locks === 1) engage();
+  let done = false;
+  return () => {
+    if (done) return;
+    done = true;
+    locks -= 1;
+    if (locks === 0) release();
+  };
 }
 
 /** Держит прокрутку фона заблокированной, пока `active` истинно. */
 export function useScrollLock(active: boolean) {
   useEffect(() => {
     if (!active) return;
-
-    locks += 1;
-    if (locks === 1) engage();
-
-    return () => {
-      locks -= 1;
-      if (locks === 0) release();
-    };
+    return lockScroll();
   }, [active]);
 }
