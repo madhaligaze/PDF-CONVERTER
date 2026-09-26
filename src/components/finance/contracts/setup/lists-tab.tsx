@@ -16,6 +16,11 @@
  * сводят с другим); базовые четыре смысла не убираются, не меняют смысл и не
  * сводятся в другое. Значение своего списка уходит в архив свободно — подпись
  * в договорах держится `archived_values` схемы.
+ *
+ * «Похоже на …» — двойник, найденный сервером («Абонентское обслуживаниее»
+ * рядом с «Абонентское обслуживание»): в «списке или своём» новое значение
+ * заводится из напечатанного, и опечатка делит отчёт надвое. Свести — тем же
+ * сведением, что по отметкам; «разные» — пара больше не подсказывается.
  */
 import { useMemo, useState } from "react";
 
@@ -78,13 +83,20 @@ export function ListsTab() {
             onClick={() => setCurrent(item.key)}
           >
             <span className="setup-side-title">{item.title}</span>
-            <span className="setup-side-count">{schema.lists[item.key]?.length ?? 0}</span>
+            <span className="setup-side-count">
+              {schema.lists[item.key]?.length ?? 0}
+              {twins(schema.lists[item.key]) ? ` · похожих ${twins(schema.lists[item.key])}` : ""}
+            </span>
           </button>
         ))}
       </nav>
       {field ? <ValuesPane key={field.key} field={field} /> : null}
     </div>
   );
+}
+
+function twins(values: ListValue[] | undefined): number {
+  return (values ?? []).filter((item) => item.similar).length;
 }
 
 type Ask =
@@ -187,9 +199,10 @@ function ValuesPane({ field }: { field: RegistryField }) {
 
       {values.map((value) => {
         const count = counts.get(value.id) ?? 0;
-        const errors = ["name", "meaning", "billing", "economic", "roles-executor", "roles-customer", "archive"]
+        const errors = ["name", "meaning", "billing", "economic", "roles-executor", "roles-customer", "archive", "distinct"]
           .map((slot) => action.error(`${slot}:${value.id}`))
           .filter(Boolean);
+        const twin = value.similar ? values.find((item) => item.id === value.similar) : undefined;
         const statusValue = value.meaning.handover ? "handover" : value.meaning.phase ?? "";
         const roles = value.meaning.roles ?? {};
         return (
@@ -329,6 +342,30 @@ function ValuesPane({ field }: { field: RegistryField }) {
             {errors.length ? (
               <span className="setup-vnote setup-error" role="alert">
                 {errors[0]}
+              </span>
+            ) : null}
+            {twin && !errors.length ? (
+              <span className="setup-vnote">
+                похоже на «{twin.value}» ·{" "}
+                <button
+                  type="button"
+                  className="fin-link-btn"
+                  disabled={action.busy("merge")}
+                  onClick={() => setAsk({ kind: "merge", keep: twin, drop: value, count })}
+                >
+                  свести в «{twin.value}»
+                </button>{" "}
+                ·{" "}
+                <button
+                  type="button"
+                  className="fin-link-btn"
+                  disabled={action.busy(`distinct:${value.id}`)}
+                  onClick={() =>
+                    void action.run(`distinct:${value.id}`, () => contractsApi.setup.updateValue(value.id, { distinct: twin.id }))
+                  }
+                >
+                  это разные
+                </button>
               </span>
             ) : null}
           </div>

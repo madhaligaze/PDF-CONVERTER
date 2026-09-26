@@ -141,8 +141,8 @@
 .setup-fields-head,
 .setup-field {
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr) 11rem 6rem 7.5rem 5.5rem 4.5rem;
-  grid-template-areas: "move title type kind req hide drop";
+  grid-template-columns: 72px minmax(0, 1fr) 7.5rem 11rem 7.5rem 5.5rem 4.5rem;
+  grid-template-areas: "move title type fill req hide drop";
   align-items: center;
   column-gap: 0.75rem;
   padding: 0 0.25rem;
@@ -163,7 +163,8 @@
 .setup-field-title .setup-inline { flex: 1 1 auto; }
 .setup-field-flag { flex: none; font-size: 0.75rem; color: var(--text-muted); }
 .setup-field-type { grid-area: type; min-width: 0; }
-.setup-field-kind { grid-area: kind; font-size: 0.8125rem; color: var(--text-muted); white-space: nowrap; }
+.setup-field-kind { font-size: 0.8125rem; color: var(--text-muted); white-space: nowrap; }
+.setup-field-fill { grid-area: fill; min-width: 0; font-size: 0.8125rem; }
 .setup-field-req { grid-area: req; }
 .setup-field-req .setup-field-kind { grid-area: auto; }
 .setup-field-hide { grid-area: hide; font-size: 0.8125rem; }
@@ -173,10 +174,12 @@
 @container (max-width: 719px) {
   .setup-fields-head { display: none; }
   .setup-field {
-    grid-template-columns: 72px minmax(0, 1fr) auto auto;
+    /* Колонки фиксированной ширины: у каждой строки своя сетка, и с «auto»
+       «Спрятать» стоял то под способом заполнения, то левее — по тексту строки. */
+    grid-template-columns: 72px minmax(0, 1fr) 5.5rem 4.5rem;
     grid-template-areas:
       "move title title title"
-      "move type type kind"
+      "move type fill fill"
       "move req hide drop";
     row-gap: 0.125rem;
     padding-block: 0.5rem;

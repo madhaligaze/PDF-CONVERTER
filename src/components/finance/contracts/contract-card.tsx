@@ -13,8 +13,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   type Amendment,
+  type ContractPayments,
   type HistoryItem,
   type ParsedPiece,
+  type PaymentItem,
   type RegistryField,
   contractsApi,
 } from "@/components/finance/api";
@@ -33,7 +35,8 @@ import {
 import {
   create,
   edit as editField,
-  ensurePeople,
+  ensurePayments,
+  ensureStaff,
   put,
   refreshOne,
   remove,
@@ -68,7 +71,7 @@ export function ContractCard({ id, open, dock = "center", draftContext, onClose,
   const [removing, setRemoving] = useState(false);
 
   useEffect(() => {
-    if (open) void ensurePeople();
+    if (open) void ensureStaff();
   }, [open]);
 
   const onDraft = useCallback(
@@ -168,6 +171,7 @@ export function ContractCard({ id, open, dock = "center", draftContext, onClose,
             <Amendments contractId={contract.id} seq={contract.seq} />
             <SourceText contractId={contract.id} seq={contract.seq} />
             <Snapshot contractId={contract.id} />
+            <Payments contractId={contract.id} seq={contract.seq} />
             <History contractId={contract.id} seq={contract.seq} />
           </>
         ) : null}
@@ -599,6 +603,125 @@ function Snapshot({ contractId }: { contractId: string }) {
           {snap.remaining ? contractMoney(snap.remaining) : "—"}
         </span>
       </div>
+    </Section>
+  );
+}
+
+const PAYMENT_ACTIONS: Record<PaymentItem["how"], { label: string; action: "link" | "unlink" | "auto" }> = {
+  open: { label: "Отнести к этому договору", action: "link" },
+  auto: { label: "Не по этому договору", action: "unlink" },
+  manual: { label: "Как по выписке", action: "auto" },
+};
+
+/**
+ * Оплаты по выписке: платежи журнала, которые система отнесла к договору, и
+ * спорные — подходящие и к нему, и к другому договору клиента. Спорный в
+ * «Оплачено» не входит, пока человек не отнесёт его сам (`payments.py`).
+ * Раздела нет, пока ни одного платежа не нашлось, и у того, кому журнал не
+ * открыт: суммы оплат — это деньги компании.
+ */
+function Payments({ contractId, seq }: { contractId: string; seq: number }) {
+  const schema = useRegistry((s) => s.schema);
+  const canEdit = Boolean(schema?.access.edit);
+  const visible = Boolean(schema?.fields.some((field) => field.key === "paid"));
+  const [data, setData] = useState<{ id: string; value: ContractPayments } | null>(null);
+  // Снятые «не по этому договору» остаются строкой с «Вернуть», пока карточка открыта.
+  const [dropped, setDropped] = useState<PaymentItem[]>([]);
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  useEffect(() => {
+    if (!visible) return;
+    let alive = true;
+    contractsApi.payments
+      .of(contractId)
+      .then((value) => alive && setData({ id: contractId, value }))
+      .catch(() => alive && setData({ id: contractId, value: { summary: null, items: [] } }));
+    return () => {
+      alive = false;
+    };
+  }, [contractId, seq, visible]);
+  const value = data?.id === contractId ? data.value : null;
+  const gone = dropped.filter((item) => !value?.items.some((other) => other.operation_id === item.operation_id));
+  if (!visible || !value || (!value.items.length && !gone.length)) return null;
+
+  const decide = async (item: PaymentItem, action: "link" | "unlink" | "auto") => {
+    setBusy(item.operation_id);
+    setError("");
+    try {
+      const next = await contractsApi.payments.decide(contractId, item.operation_id, action);
+      setData({ id: contractId, value: next });
+      setDropped((list) =>
+        action === "unlink" ? [...list, item] : list.filter((other) => other.operation_id !== item.operation_id),
+      );
+      void ensurePayments(true);
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "Не записалось");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const summary = value.summary;
+  const rows: { item: PaymentItem; gone: boolean }[] = [
+    ...value.items.map((item) => ({ item, gone: false })),
+    ...gone.map((item) => ({ item, gone: true })),
+  ];
+  return (
+    <Section title="Оплаты по выписке" count={value.items.length}>
+      {summary?.paid ? (
+        <div className="snapshot" style={{ marginBottom: "0.5rem" }}>
+          <span>
+            <span className="eyebrow">Оплачено</span>
+            <br />
+            <span style={{ color: "var(--fin-text)" }}>{contractMoney(summary.paid)}</span>
+          </span>
+          {summary.remaining !== null ? (
+            <span>
+              <span className="eyebrow">Остаток</span>
+              <br />
+              <span style={{ color: "var(--fin-text)" }}>{contractMoney(summary.remaining)}</span>
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+      {rows.map(({ item, gone: isGone }) => {
+        const action = isGone ? { label: "Вернуть", action: "auto" as const } : PAYMENT_ACTIONS[item.how];
+        const place = [item.counterparty, item.account].filter(Boolean).join(" · ");
+        return (
+          <div key={item.operation_id} className="amend-row" data-muted={isGone || item.how === "open" ? "true" : undefined}>
+            <span className="amend-when fin-mono">{formatDay(item.paid_at)}</span>
+            <span>
+              {isGone ? <s>{contractMoney(item.amount)}</s> : contractMoney(item.amount)}
+              {place ? <span className="fin-soft"> · {place}</span> : null}
+              {item.comment ? (
+                <>
+                  <br />
+                  <span className="fin-soft">{item.comment}</span>
+                </>
+              ) : null}
+            </span>
+            <span style={{ whiteSpace: "nowrap", textAlign: "right" }}>
+              {isGone ? <span className="annot">не по договору</span> : null}
+              {!isGone && item.how === "open" ? <span className="annot">спорный</span> : null}
+              {!isGone && item.how === "manual" ? <span className="annot">вручную</span> : null}
+              {canEdit ? (
+                <>
+                  {" "}
+                  <button
+                    type="button"
+                    className="fin-link-btn"
+                    disabled={busy === item.operation_id}
+                    onClick={() => void decide(item, action.action)}
+                  >
+                    {action.label}
+                  </button>
+                </>
+              ) : null}
+            </span>
+          </div>
+        );
+      })}
+      {error ? <p className="ifield-error">{error}</p> : null}
     </Section>
   );
 }

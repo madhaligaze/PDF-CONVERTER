@@ -57,7 +57,7 @@ import {
   getRegistry,
   type RegistryState,
 } from "@/components/finance/contracts/store";
-import { parseDay, plural, shortName } from "@/components/finance/format";
+import { parseDay, plural } from "@/components/finance/format";
 import { guardSheets } from "@/components/univer/protect";
 import type { UniverApi, WorkbookSnapshot } from "@/components/univer/sheet";
 import {
@@ -79,6 +79,13 @@ import {
 export const ORDINAL_KEY = "row_number";
 /** «Как было в файле» — снимок на день выгрузки, только чтение. */
 const SNAPSHOT_KEYS = new Set(["paid_snapshot", "remaining_snapshot"]);
+/** «По выписке» — из журнала операций, приходят сводкой оплат, а не с договором. */
+const LIVE_KEYS = new Set(["paid", "remaining"]);
+
+function liveValue(state: RegistryState, id: string, key: string): unknown {
+  const summary = state.payments?.[id];
+  return key === "paid" ? summary?.paid : key === "remaining" ? summary?.remaining : undefined;
+}
 
 const ROW_H = 24;
 const TITLE_H = 30;
@@ -106,6 +113,8 @@ export type BlockLayout = {
   showTitle: boolean;
   columns: SheetColumn[];
   headerHeight: number;
+  /** Сторона, где у договоров блока стоит наше юрлицо (подстановка блока `own_side`). */
+  ownSide: "executor" | "customer" | null;
 };
 
 export type ViewLayout = {
@@ -214,7 +223,9 @@ export function layoutOf(schema: RegistrySchema, view: RegistryView): ViewLayout
     const showTitle = source.length > 1
       ? Boolean(title)
       : Boolean(title) && title.toLowerCase() !== view.title.trim().toLowerCase();
-    return { index, title, showTitle, columns, headerHeight: headerHeight(columns) };
+    const own = block.defaults?.own_side;
+    const ownSide = own === "executor" || own === "customer" ? own : null;
+    return { index, title, showTitle, columns, headerHeight: headerHeight(columns), ownSide };
   });
   const width = Math.max(1, ...blocks.map((block) => block.columns.length));
   const readOnlyCols: number[] = [];
@@ -241,6 +252,7 @@ export function structureKey(schema: RegistrySchema): string {
       layout.title,
       layout.blocks.map((block) => [
         block.title,
+        block.ownSide,
         block.columns.map((column) => [column.key, column.label, column.width, column.readOnly]),
       ]),
     ]),
@@ -305,14 +317,12 @@ function faceOf(column: SheetColumn, value: unknown, contract: Contract | undefi
       }
       return { v: listText(ctx.schema, column.key, value) || String(value), fmt: "" };
     case "people": {
+      // Полным именем, как в справочнике, а не «Наталья П.»: выпадающий
+      // список сверяет ячейку со справочником, а короткое имя, скопированное в
+      // соседнюю строку, раньше заводило нового сотрудника «Наталья П.».
       const ids = Array.isArray(value) ? value : [value];
       return {
-        v: ids
-          .map((item) => {
-            const person = ctx.people[String(item)];
-            return person ? shortName(person.name) : String(item);
-          })
-          .join(", "),
+        v: ids.map((item) => ctx.people[String(item)]?.name ?? String(item)).join(", "),
         fmt: "",
       };
     }
@@ -406,6 +416,9 @@ export function paletteNow(): Palette {
 }
 
 type Style = Record<string, unknown>;
+/** `WrapStrategy.CLIP`. */
+const WRAP_CLIP = 2;
+const LIST_KINDS = new Set<ColumnKind>(["list", "people", "department", "party", "choice", "bool"]);
 type Part = "title" | "header" | "body" | "empty";
 
 /**
@@ -435,6 +448,9 @@ function cellStyle(part: Part, column: SheetColumn | null, fmt: Face["fmt"], fla
   } else if (column?.readOnly) {
     style.cl = { rgb: PAPER.soft };
   }
+  // Ячейка со списком без явного переноса Univer переносит по словам («Omar
+  // Development &» над «Consulting» в строке высотой 24): обрезать явно.
+  if (column && LIST_KINDS.has(column.kind)) style.tb = WRAP_CLIP;
   if (fmt === "money") Object.assign(style, { n: { pattern: MONEY_PATTERN }, ht: 3 });
   if (fmt === "whole") Object.assign(style, { n: { pattern: WHOLE_PATTERN }, ht: 3 });
   if (fmt === "date") style.n = { pattern: DATE_PATTERN };
@@ -659,7 +675,8 @@ function render(model: SheetModel, row: number, ctx: RenderCtx): Rendered {
       if (away) texts.push(away);
     } else {
       const pending = edits?.get(column.key);
-      const value = pending && pending.state !== "conflict" ? pending.value : contract?.values[column.key];
+      const stored = LIVE_KEYS.has(column.key) ? liveValue(state, id, column.key) : contract?.values[column.key];
+      const value = pending && pending.state !== "conflict" ? pending.value : stored;
       faces[index] = faceOf(column, value, contract, valueCtx);
       if (pending?.state === "failed") {
         mark += "F";
@@ -761,6 +778,201 @@ function noteOf(sheet: string, row: number, column: number, text: string) {
   };
 }
 
+// ── Выпадающие списки ────────────────────────────────────────────────────────
+//
+// Колонка со справочником выбирается, а не печатается («Настройки реестра»
+// BBC): статус, отдел, ответственный, наше юрлицо, вид и предмет. Правило —
+// проверкой данных Univer на строки блока, потому что колонка F в двух блоках
+// одного листа — разные поля.
+//
+// Что решено и почему:
+// * **список — подсказка, судья — сервер.** Правило не запрещает ввод
+//   (`WARNING`, а не `STOP`): «дей» + Enter сервер узнаёт как «Действующий»,
+//   а незнакомое в закрытом списке отклоняет с объяснением у ячейки. Запрет
+//   Univer ответил бы своим окном, без слов о том, где список пополняют;
+// * **без плашек и стрелок в каждой ячейке** (`TEXT`): режим по умолчанию
+//   красит значения цветными плашками, а цвет в листе — только отказ.
+//   Стрелка — у выбранной ячейки, как в Excel (`registry-sheet.tsx`);
+// * **правило живёт по строкам блока** и пересчитывается, когда строки
+//   переложились или поменялся справочник: мутацией, мимо прав листа и мимо
+//   «Отменить».
+
+const DV_RESOURCE = "SHEET_DATA_VALIDATION_PLUGIN";
+const DV = {
+  add: "data-validation.mutation.addRule",
+  remove: "data-validation.mutation.removeRule",
+  show: "sheet.operation.show-data-validation-dropdown",
+  hide: "sheet.operation.hide-data-validation-dropdown",
+};
+/** `DataValidationRenderMode.TEXT`. */
+const RENDER_TEXT = 0;
+/** `DataValidationErrorStyle.WARNING` — ввод не запрещается. */
+const ERROR_WARNING = 2;
+/** `DeviceInputEventType.Keyboard`. */
+const KEYBOARD = 4;
+
+export type Choices = { values: string[]; closed: boolean };
+
+/**
+ * Что предлагает выпадающий список колонки; `null` — списка у колонки нет.
+ *
+ * Список наших юрлиц встаёт на колонку нашей стороны: в блоке, где она
+ * задана (`ownSide` — «Заказчик ГК»: наше ТОО в колонке заказчика), — на неё;
+ * иначе — на сторону, закрытую настройкой на наши юрлица.
+ */
+export function choicesOf(column: SheetColumn, state: RegistryState, ownSide: BlockLayout["ownSide"] = null): Choices | null {
+  const field = column.field;
+  const schema = state.schema;
+  if (!field || !schema || column.readOnly) return null;
+  let values: string[] = [];
+  switch (column.kind) {
+    case "list":
+      values = (schema.lists[column.key] ?? []).map((item) => item.value);
+      break;
+    case "department":
+      values = schema.departments.map((item) => item.code);
+      break;
+    case "people":
+      // Один человек из списка. Множественный список Univer пишет в ячейку
+      // JSON («["Жанара","Нурболат"]») и считает «Елжас, Тимур» ошибкой из-за
+      // пробела после запятой; двое ответственных — у шести договоров из
+      // 423, их правят вводом через запятую или в карточке.
+      values = (state.staff ?? Object.values(state.people)).map((person) => person.name);
+      break;
+    case "party":
+      // Контрагентов тысячи, и их ищет сервер по написанию: список — только
+      // когда сторона закрыта на наши юрлица.
+      if (ownSide ? column.key !== ownSide : field.fill !== "own") return null;
+      values = schema.own_entities.map((item) => item.name);
+      break;
+    case "choice":
+      values = (field.choices ?? []).map((item) => item.label);
+      break;
+    case "bool":
+      values = ["Да", "Нет"];
+      break;
+    default:
+      return null;
+  }
+  const unique = [...new Set(values.map((item) => item.trim()).filter(Boolean))];
+  if (!unique.length) return null;
+  const closed =
+    column.kind === "choice" || column.kind === "bool" || column.kind === "party" || field.fill === "list";
+  return { values: unique, closed };
+}
+
+type RuleSpec = { uid: string; sig: string; rule: Record<string, unknown> };
+type Range = { startRow: number; endRow: number; startColumn: number; endColumn: number };
+
+/**
+ * Строка — покупка по этой стороне: напротив стоит наше юрлицо, а здесь — нет.
+ * Исполнитель покупки законно чужой (сервер: `_OTHER_SIDE`), и список наших
+ * юрлиц на его ячейке отмечал бы красным углом верную запись.
+ */
+function isPurchaseRow(model: SheetModel, row: number, key: string, state: RegistryState): boolean {
+  const slot = model.slots[row];
+  if (slot?.kind !== "row" || !slot.id) return false;
+  const contract = state.byId.get(slot.id);
+  if (!contract) return false;
+  const other = key === "executor" ? "customer" : "executor";
+  const own = (side: string) => Boolean(state.parties[String(contract.values[side] ?? "")]?.own);
+  return own(other) && !own(key);
+}
+
+/** В строке несколько значений (ответственных, пунктов списка) — одиночный список их не покажет. */
+function isCrowdRow(model: SheetModel, row: number, key: string, state: RegistryState): boolean {
+  const slot = model.slots[row];
+  if (slot?.kind !== "row" || !slot.id) return false;
+  const value = state.byId.get(slot.id)?.values[key];
+  return Array.isArray(value) && value.length > 1;
+}
+
+/** Строки, где у колонки списка не должно быть: покупка по стороне, несколько людей. */
+function skipRow(model: SheetModel, row: number, column: SheetColumn, block: BlockLayout, state: RegistryState): boolean {
+  if (column.kind === "party") return !block.ownSide && isPurchaseRow(model, row, column.key, state);
+  if (column.kind === "people" || column.field?.type === "multi_list") return isCrowdRow(model, row, column.key, state);
+  return false;
+}
+
+/** Строки `top…bottom` без пропущенных — отрезками подряд; хвост листа — одним. */
+function rangesWithout(model: SheetModel, top: number, bottom: number, column: number, skip: (row: number) => boolean): Range[] {
+  const out: Range[] = [];
+  let start = -1;
+  const last = Math.min(bottom, model.slots.length - 1);
+  for (let row = top; row <= last; row += 1) {
+    if (!skip(row)) {
+      if (start < 0) start = row;
+      continue;
+    }
+    if (start >= 0) out.push({ startRow: start, endRow: row - 1, startColumn: column, endColumn: column });
+    start = -1;
+  }
+  if (bottom > last) {
+    out.push({ startRow: start >= 0 ? start : last + 1, endRow: bottom, startColumn: column, endColumn: column });
+  } else if (start >= 0) {
+    out.push({ startRow: start, endRow: bottom, startColumn: column, endColumn: column });
+  }
+  return out;
+}
+
+/** Строки блока, на которые ложится его правило: от шапки до начала следующего блока. */
+function blockRows(model: SheetModel): Map<number, { top: number; bottom: number }> {
+  const first = new Map<number, number>();
+  const header = new Map<number, number>();
+  model.slots.forEach((slot, row) => {
+    if (!first.has(slot.block)) first.set(slot.block, row);
+    if (slot.kind === "header") header.set(slot.block, row);
+  });
+  const out = new Map<number, { top: number; bottom: number }>();
+  model.layout.blocks.forEach((_, block) => {
+    const head = header.get(block);
+    if (head === undefined) return;
+    const next = first.get(block + 1);
+    // Хвост листа под последним блоком — его карман: печать там заводит
+    // договор последнего блока (`blockAt`), и список там тоже нужен.
+    const bottom = next !== undefined ? next - 1 : model.rowCount - 1;
+    if (bottom > head) out.set(block, { top: head + 1, bottom });
+  });
+  return out;
+}
+
+function rulesOf(model: SheetModel, state: RegistryState, extra?: ReadonlyMap<string, readonly string[]>): RuleSpec[] {
+  const out: RuleSpec[] = [];
+  for (const [block, { top, bottom }] of blockRows(model)) {
+    const layout = model.layout.blocks[block];
+    layout.columns.forEach((column, index) => {
+      const choices = choicesOf(column, state, layout.ownSide);
+      if (!choices) return;
+      const ranges: Range[] =
+        (column.kind === "party" && !layout.ownSide) || column.kind === "people" || column.field?.type === "multi_list"
+          ? rangesWithout(model, top, bottom, index, (row) => skipRow(model, row, column, layout, state))
+          : [{ startRow: top, endRow: bottom, startColumn: index, endColumn: index }];
+      if (!ranges.length) return;
+      const uid = `creg-dv-${model.layout.key}-${block}-${index}`;
+      const added = extra?.get(uid) ?? [];
+      const values = added.length ? [...choices.values, ...added.filter((item) => !choices.values.includes(item))] : choices.values;
+      const formula1 = JSON.stringify(values);
+      const type = "list";
+      out.push({
+        uid,
+        sig: `${type}|${JSON.stringify(ranges)}|${formula1}`,
+        rule: {
+          uid,
+          type,
+          formula1,
+          ranges,
+          allowBlank: true,
+          showDropDown: true,
+          showErrorMessage: false,
+          errorStyle: ERROR_WARNING,
+          renderMode: RENDER_TEXT,
+        },
+      });
+    });
+  }
+  return out;
+}
+
 // ── Сборка книги ─────────────────────────────────────────────────────────────
 
 export type Built = {
@@ -769,6 +981,8 @@ export type Built = {
   models: Map<string, SheetModel>;
   ctx: RenderCtx;
   first: string;
+  /** Правила выпадающих списков, уже лежащие в снимке: лист → правило → отпечаток. */
+  rules: Map<string, Map<string, string>>;
 };
 
 /**
@@ -817,6 +1031,8 @@ export function buildRegistry(state: RegistryState, pal: Palette): Built | null 
   const models = new Map<string, SheetModel>();
   const sheets: Record<string, unknown> = {};
   const notes: Record<string, Record<number, Record<number, unknown>>> = {};
+  const validation: Record<string, Record<string, unknown>[]> = {};
+  const rules = new Map<string, Map<string, string>>();
   for (const layout of layouts) {
     const slots: Slot[] = [];
     layout.blocks.forEach((block) => {
@@ -887,6 +1103,9 @@ export function buildRegistry(state: RegistryState, pal: Palette): Built | null 
         : {}),
     };
     models.set(layout.key, model);
+    const specs = rulesOf(model, state);
+    if (specs.length) validation[layout.key] = specs.map((spec) => spec.rule);
+    rules.set(layout.key, new Map(specs.map((spec) => [spec.uid, spec.sig])));
   }
 
   const unitId = `creg-${Date.now().toString(36)}`;
@@ -895,6 +1114,7 @@ export function buildRegistry(state: RegistryState, pal: Palette): Built | null 
     models,
     ctx,
     first: layouts[0]?.key ?? "",
+    rules,
     snapshot: {
       id: unitId,
       name: "Реестр договоров",
@@ -902,12 +1122,17 @@ export function buildRegistry(state: RegistryState, pal: Palette): Built | null 
       sheetOrder: layouts.map((layout) => layout.key),
       styles,
       sheets,
-      resources: [{ name: "SHEET_NOTE_PLUGIN", data: JSON.stringify(notes) }],
+      resources: [
+        { name: "SHEET_NOTE_PLUGIN", data: JSON.stringify(notes) },
+        { name: DV_RESOURCE, data: JSON.stringify(validation) },
+      ],
     },
   };
 }
 
 // ── Связка с живым листом ────────────────────────────────────────────────────
+
+export type CellRect = { left: number; top: number; right: number; bottom: number; visible: boolean };
 
 export type AskGroup = {
   sheet: string;
@@ -925,6 +1150,8 @@ export type BindingEvents = {
   sheet: (view: string) => void;
   /** Лист поменяли в обход нас (вставили строку) — собрать книгу заново. */
   rebuild: () => void;
+  /** Выбор, правка, лист или масштаб сменились — стрелке списка пора на место. */
+  cell?: () => void;
 };
 
 const M = {
@@ -981,6 +1208,10 @@ export class RegistryBinding {
   private followed: string | null = null;
   private disposers: Array<() => void> = [];
   private alive = true;
+  /** Правила выпадающих списков на листе: лист → правило → отпечаток. */
+  private rules: Map<string, Map<string, string>>;
+  /** Своё значение, напечатанное в открытом списке, до прихода его в справочник. */
+  private extra = new Map<string, string[]>();
 
   constructor(
     private readonly api: UniverApi,
@@ -991,6 +1222,7 @@ export class RegistryBinding {
     this.models = built.models;
     this.ctx = built.ctx;
     this.unitId = built.unitId;
+    this.rules = built.rules;
   }
 
   // ── Жизненный цикл ──
@@ -1013,9 +1245,32 @@ export class RegistryBinding {
     };
     listen(api.onCommandExecuted?.((command: { id: string; params?: unknown }) => this.onCommand(command)));
     listen(
-      api.addEvent?.(api.Event.SheetEditStarted, (event: { worksheet?: UniverApi; row: number; column: number }) => {
-        this.editing = { sheet: event.worksheet?.getSheetId?.() ?? "", row: event.row, col: event.column };
-      }),
+      api.addEvent?.(
+        api.Event.SheetEditStarted,
+        (event: { worksheet?: UniverApi; row: number; column: number; eventType?: number }) => {
+          const sheet = event.worksheet?.getSheetId?.() ?? "";
+          this.editing = { sheet, row: event.row, col: event.column };
+          this.events.cell?.();
+          // Печать в ячейке со списком — это печать, а не выбор. Univer
+          // открывает список вместе с редактором, и строка поиска списка
+          // забирает фокус на второй-третьей букве: «Дей» оставалось в ячейке,
+          // «ствующий» уходило в поиск (урок журнала, `table-view.tsx`).
+          // Правка с клавиатуры остаётся ячейке, мышью список открывается как
+          // прежде. Закрываем и сразу, и после его отрисовки.
+          if (event.eventType === KEYBOARD && this.listAt(sheet, event.row, event.column)) {
+            const hide = () => {
+              try {
+                void this.api.executeCommand?.(DV.hide, {});
+              } catch {
+                /* списка нет — нечего закрывать */
+              }
+            };
+            hide();
+            window.setTimeout(hide, 0);
+            window.setTimeout(hide, 60);
+          }
+        },
+      ),
     );
     listen(
       api.addEvent?.(api.Event.SheetEditEnded, () => {
@@ -1024,6 +1279,7 @@ export class RegistryBinding {
         window.setTimeout(() => {
           this.editing = null;
           this.afterEdit();
+          this.events.cell?.();
         }, 30);
       }),
     );
@@ -1031,12 +1287,14 @@ export class RegistryBinding {
       api.addEvent?.(api.Event.ActiveSheetChanged, (event: { activeSheet?: UniverApi }) => {
         const sheet = event.activeSheet?.getSheetId?.();
         if (sheet) this.onSheetEntered(sheet);
+        this.events.cell?.();
       }),
     );
     listen(
-      api.addEvent?.(api.Event.SelectionChanged, (event: { worksheet?: UniverApi; selections?: { startRow: number }[] }) =>
-        this.onSelection(event.worksheet?.getSheetId?.() ?? "", event.selections?.[0]?.startRow),
-      ),
+      api.addEvent?.(api.Event.SelectionChanged, (event: { worksheet?: UniverApi; selections?: { startRow: number }[] }) => {
+        this.onSelection(event.worksheet?.getSheetId?.() ?? "", event.selections?.[0]?.startRow);
+        this.events.cell?.();
+      }),
     );
     listen(
       api.addEvent?.(api.Event.CellClicked, (event: { worksheet?: UniverApi; row: number; column: number }) => {
@@ -1051,6 +1309,14 @@ export class RegistryBinding {
         }
       }),
     );
+    // Масштаб и прокрутка двигают ячейку под стрелкой списка. Подписка на
+    // прокрутку может оказаться пустой, пока лист не нарисован (см.
+    // `viewportScroll`), — поэтому стрелка прячется ещё и на колесе мыши
+    // (`registry-sheet.tsx`).
+    for (const name of ["SheetZoomChanged", "Scroll"]) {
+      const kind = api.Event?.[name];
+      if (kind) listen(api.addEvent?.(kind, () => this.events.cell?.()));
+    }
     // Тема приложения сменилась — лист следует за ней.
     if (typeof MutationObserver !== "undefined") {
       const observer = new MutationObserver(() => this.retheme());
@@ -1337,7 +1603,80 @@ export class RegistryBinding {
     const addMerges = [];
     for (let row = from; row < next.length; row += 1) if (next[row].kind === "title") addMerges.push(mergeRange(row, width));
     if (addMerges.length) this.exec(M.addMerge, { ...unit, ranges: addMerges });
+    // Строки блоков сдвинулись — правила списков встают на новые строки.
+    this.syncValidation(model);
     this.clearUndo();
+  }
+
+  // ── Выпадающие списки ──
+
+  /**
+   * Правила списков листа — по нынешней раскладке и справочникам. Меняются
+   * только разошедшиеся: убрать старое, поставить новое.
+   */
+  private syncValidation(model: SheetModel): void {
+    const sheet = model.layout.key;
+    const want = rulesOf(model, this.ctx.state, this.extra);
+    const have = this.rules.get(sheet) ?? new Map<string, string>();
+    const next = new Map(want.map((spec) => [spec.uid, spec.sig]));
+    const drop = [...have.keys()].filter((uid) => next.get(uid) !== have.get(uid));
+    const unit = { unitId: this.unitId, subUnitId: sheet };
+    if (drop.length) this.exec(DV.remove, { ...unit, ruleId: drop });
+    for (const spec of want) {
+      if (have.get(spec.uid) !== spec.sig) this.exec(DV.add, { ...unit, rule: spec.rule });
+    }
+    this.rules.set(sheet, next);
+  }
+
+  /** Колонка и её список под ячейкой; `null` — у ячейки списка нет. */
+  listAt(sheet: string, row: number, column: number): { spec: SheetColumn; choices: Choices; block: number } | null {
+    const model = this.models.get(sheet);
+    if (!model) return null;
+    const slot = model.slots[row];
+    if (slot && (slot.kind === "title" || slot.kind === "header" || slot.kind === "gone")) return null;
+    const block = this.blockAt(model, row);
+    const layout = model.layout.blocks[block];
+    const spec = layout?.columns[column];
+    if (!spec) return null;
+    const choices = choicesOf(spec, this.ctx.state, layout.ownSide);
+    if (!choices) return null;
+    if (skipRow(model, row, spec, layout, this.ctx.state)) return null;
+    return { spec, choices, block };
+  }
+
+  /**
+   * Своё значение в открытом списке («список или своё») становится вариантом
+   * сразу: иначе, пока справочник не перечитан, Univer отмечал бы ячейку
+   * красным углом «нет в списке» — цветом отказа на правке, которая принята.
+   */
+  private extendList(sheet: string, row: number, column: number, raw: string): void {
+    const found = this.listAt(sheet, row, column);
+    const model = this.models.get(sheet);
+    if (!found || !model || found.choices.closed || !raw) return;
+    const multiple = found.spec.kind === "people" || found.spec.field?.type === "multi_list";
+    const parts = multiple ? raw.split(/[,;\n]+/) : [raw];
+    const fresh = parts.map((part) => part.trim()).filter((part) => part && !found.choices.values.includes(part));
+    if (!fresh.length) return;
+    const uid = `creg-dv-${sheet}-${found.block}-${column}`;
+    this.extra.set(uid, [...new Set([...(this.extra.get(uid) ?? []), ...fresh])]);
+    this.syncValidation(model);
+  }
+
+  /** Alt+↓ и стрелка у ячейки: открыть список активной ячейки. */
+  openList(): boolean {
+    const ws = this.api.getActiveWorkbook?.()?.getActiveSheet?.();
+    const range = ws?.getActiveRange?.();
+    if (!ws || !range) return false;
+    const sheet = ws.getSheetId();
+    const row = range.getRow();
+    const column = range.getColumn();
+    if (!this.listAt(sheet, row, column)) return false;
+    try {
+      void this.api.executeCommand?.(DV.show, { unitId: this.unitId, subUnitId: sheet, row, column });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   // ── Хранилище → лист ──
@@ -1358,6 +1697,15 @@ export class RegistryBinding {
       a !== b && Object.keys(b).some((key) => a[key] !== undefined && a[key].name !== b[key].name);
     const full = next.schema !== prev.schema || renamed(prev.parties, next.parties) || renamed(prev.people, next.people);
     if (next.schema !== prev.schema && next.schema) this.ctx.places = placesOf(next.schema);
+    // Справочник поменялся (новое значение, сотрудник, наше юрлицо) — списки
+    // листа следом, даже если ни один договор не менялся.
+    const dictionaries =
+      next.schema !== prev.schema || next.staff !== prev.staff || (next.staff === null && next.people !== prev.people);
+    if (dictionaries) {
+      // Пришедшее в справочник больше не нужно держать своим.
+      if (next.schema !== prev.schema) this.extra.clear();
+      for (const model of this.models.values()) this.syncValidation(model);
+    }
     let changed: Set<string> | null = null;
     if (!full) {
       changed = new Set<string>();
@@ -1369,7 +1717,33 @@ export class RegistryBinding {
         for (const id of next.departed.keys()) changed.add(id);
         for (const id of prev.departed.keys()) changed.add(id);
       }
+      if (next.payments !== prev.payments) {
+        // Сводка оплат пришла заново — перерисовать только строки, у которых
+        // «Оплачено/Остаток» правда поменялись.
+        const ids = new Set([...Object.keys(prev.payments ?? {}), ...Object.keys(next.payments ?? {})]);
+        for (const id of ids) {
+          const before = prev.payments?.[id];
+          const after = next.payments?.[id];
+          if (before?.paid !== after?.paid || before?.remaining !== after?.remaining) changed.add(id);
+        }
+      }
       if (!changed.size) return;
+      // Сменилась сторона или состав ответственных — строка могла выйти из
+      // списка колонки или вернуться в него (покупка, несколько людей).
+      const sides =
+        !dictionaries &&
+        [...changed].some((id) => {
+          const before = prev.byId.get(id)?.values;
+          const after = next.byId.get(id)?.values;
+          const crowd = (value: unknown) => Array.isArray(value) && value.length > 1;
+          const keys = new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})]);
+          return (
+            before?.executor !== after?.executor ||
+            before?.customer !== after?.customer ||
+            [...keys].some((key) => crowd(before?.[key]) !== crowd(after?.[key]))
+          );
+        });
+      if (sides) for (const model of this.models.values()) this.syncValidation(model);
     }
     for (const model of this.models.values()) {
       this.structure(model, changed);
@@ -1587,7 +1961,9 @@ export class RegistryBinding {
         const spec = block.columns[column];
         if (spec.readOnly) continue;
         const raw = rawOf(spec, this.cellAt(ws, row, column));
-        if (raw) values[spec.key] = raw;
+        if (!raw) continue;
+        values[spec.key] = raw;
+        this.extendList(sheet, row, column, raw);
       }
       const isPocket = slot?.kind === "pocket" && slot.block === newBlock && !fresh.length;
       if (isPocket && slot) {
@@ -1666,7 +2042,9 @@ export class RegistryBinding {
       }
       if (state) state.canon[column] = typed;
       this.touch([{ id, key: spec.key }]);
-      edit(id, spec.key, rawOf(spec, cell));
+      const raw = rawOf(spec, cell);
+      this.extendList(model.layout.key, row, column, raw);
+      edit(id, spec.key, raw);
       if (getRegistry().edits.get(id)?.get(spec.key)?.state === "asking") asks.push({ id, key: spec.key });
     }
     if (revert) restore.push(row);
@@ -1974,14 +2352,37 @@ export class RegistryBinding {
    * самого Univer: координата ячейки на холсте минус прокрутка, в масштабе,
    * от угла холста. `visible: false` — ячейка ушла из видимой части листа.
    */
-  rectOf(group: AskGroup): { left: number; top: number; right: number; bottom: number; visible: boolean } | null {
-    const ws = this.api.getActiveWorkbook?.()?.getActiveSheet?.();
-    if (!ws || ws.getSheetId() !== group.sheet) return null;
+  rectOf(group: AskGroup): CellRect | null {
     const model = this.models.get(group.sheet);
     const row = model?.rowOf.get(group.anchor.id);
     if (!model || row === undefined) return null;
     const column = model.layout.blocks[model.slots[row].block]?.columns.findIndex((item) => item.key === group.anchor.key) ?? -1;
     if (column < 0) return null;
+    return this.cellRect(group.sheet, row, column);
+  }
+
+  /**
+   * Выбранная ячейка со списком и где она на экране — для стрелки списка.
+   * `null` — выбрано не одна ячейка, у ячейки нет списка или идёт правка.
+   */
+  activeList(): (CellRect & { closed: boolean }) | null {
+    if (this.editing) return null;
+    const ws = this.api.getActiveWorkbook?.()?.getActiveSheet?.();
+    const range = ws?.getActiveRange?.();
+    if (!ws || !range) return null;
+    if ((range.getHeight?.() ?? 1) > 1 || (range.getWidth?.() ?? 1) > 1) return null;
+    const sheet = ws.getSheetId();
+    const row = range.getRow();
+    const column = range.getColumn();
+    const found = this.listAt(sheet, row, column);
+    if (!found || !this.ctx.state.schema?.access.edit) return null;
+    const rect = this.cellRect(sheet, row, column);
+    return rect ? { ...rect, closed: found.choices.closed } : null;
+  }
+
+  private cellRect(sheet: string, row: number, column: number): CellRect | null {
+    const ws = this.api.getActiveWorkbook?.()?.getActiveSheet?.();
+    if (!ws || ws.getSheetId() !== sheet) return null;
     const canvas = this.canvas();
     let cell: { startX: number; startY: number; endX: number; endY: number } | null = null;
     try {

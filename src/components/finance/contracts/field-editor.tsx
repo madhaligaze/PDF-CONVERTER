@@ -11,15 +11,17 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import type { Party, RegistryField, RegistrySchema } from "@/components/finance/api";
+import { type Party, type RegistryField, type RegistrySchema, contractsApi } from "@/components/finance/api";
 import { ChangeMode } from "@/components/finance/contracts/change-mode";
 import { Combo, PartyPicker, type ComboOption } from "@/components/finance/contracts/pickers";
 import { departmentText, listText } from "@/components/finance/contracts/schema";
+import { isSimilar } from "@/components/finance/contracts/similar";
 import {
   answer,
   cancel,
   edit as editField,
   insist,
+  reloadSchema,
   useRegistry,
   type Edit,
 } from "@/components/finance/contracts/store";
@@ -126,7 +128,20 @@ export function InlineField({ contractId, field, label, labelNote, wide, suffix,
 
   let control: ReactNode;
   if (editing && !readOnly) {
-    control = <Editor field={field} value={stored} ownParties={Object.values(parties).filter((p) => p.own)} onCommit={commit} onCancel={() => setEditing(false)} placeholder={placeholder ?? label ?? field.title} />;
+    // Наша сторона закрыта на наши юрлица, но у покупки наше ТОО — заказчик, и
+    // исполнитель законно чужой (правило сервера `_OTHER_SIDE`).
+    const other = field.key === "executor" ? "customer" : field.key === "customer" ? "executor" : "";
+    const otherOwn = Boolean(other && parties[String(contract?.values[other] ?? "")]?.own);
+    control = (
+      <Editor
+        field={field}
+        value={stored}
+        otherOwn={otherOwn}
+        onCommit={commit}
+        onCancel={() => setEditing(false)}
+        placeholder={placeholder ?? label ?? field.title}
+      />
+    );
   } else if (field.type === "url" && typeof value === "string" && value) {
     control = (
       <div style={{ display: "flex", alignItems: "baseline", gap: "0.75rem" }}>
@@ -202,33 +217,79 @@ export function InlineField({ contractId, field, label, labelNote, wide, suffix,
   );
 }
 
+/**
+ * Завести значение закрытого списка прямо из выбора — только тому, кто
+ * настраивает реестр. Значение заводится в настройке тем же запросом, что во
+ * вкладке «Списки», схема перечитывается, и в поле уходит уже идентификатор:
+ * иначе карточка на секунду показала бы его вместо подписи.
+ */
+async function addToList(field: RegistryField, text: string): Promise<string> {
+  const created =
+    field.type === "department"
+      ? await contractsApi.setup.addDepartment({ code: text })
+      : await contractsApi.setup.addValue(field.key, text);
+  await reloadSchema();
+  return created.id;
+}
+
 function Editor({
   field,
   value,
-  ownParties,
+  otherOwn = false,
   onCommit,
   onCancel,
   placeholder,
 }: {
   field: RegistryField;
   value: unknown;
-  ownParties: Party[];
+  otherOwn?: boolean;
   onCommit: (value: unknown) => void;
   onCancel: () => void;
   placeholder: string;
 }) {
   const schema = useRegistry((s) => s.schema);
   const people = useRegistry((s) => s.people);
+  const staff = useRegistry((s) => s.staff);
+  const [failure, setFailure] = useState("");
+  // Напечатано почти то же, что уже есть в списке, — сначала вопрос.
+  const [twin, setTwin] = useState<{ text: string; option: ComboOption } | null>(null);
+  const canSetup = Boolean(schema?.access.setup);
+  // Сбой «добавить в список» показывается под полем, а выбор остаётся открытым.
+  const guarded = (run: () => Promise<void>) => {
+    setFailure("");
+    run().catch((exc) => setFailure(exc instanceof Error ? exc.message : "Не добавилось"));
+  };
 
   if (field.type === "party") {
+    const own: Party[] = (schema?.own_entities ?? []).map((item) => ({
+      id: item.id,
+      name: item.name,
+      own: true,
+      code: item.code,
+      bin: item.bin,
+    }));
     return (
-      <PartyPicker
-        slot={field.key === "customer" ? "customer" : "executor"}
-        label={placeholder}
-        own={ownParties}
-        onPick={(choice) => onCommit("id" in choice ? choice.id : choice.name)}
-        onCancel={onCancel}
-      />
+      <>
+        <PartyPicker
+          slot={field.key === "customer" ? "customer" : "executor"}
+          label={placeholder}
+          own={own}
+          ownOnly={field.fill === "own" && !otherOwn}
+          onCreateOwn={
+            canSetup
+              ? (name) =>
+                  guarded(async () => {
+                    const created = await contractsApi.setup.addEntity({ name });
+                    await reloadSchema();
+                    onCommit(created.id);
+                  })
+              : undefined
+          }
+          onPick={(choice) => onCommit("id" in choice ? choice.id : choice.name)}
+          onCancel={onCancel}
+        />
+        {failure ? <div className="ifield-error">{failure}</div> : null}
+      </>
     );
   }
   if (field.type === "list" || field.type === "department" || field.type === "choice" || field.type === "bool") {
@@ -245,19 +306,67 @@ function Editor({
         { id: "false", label: "Нет" },
       ];
     }
+    const listy = field.type === "list" || field.type === "department";
+    const closed = listy && field.fill === "list";
+    const create = (text: string) => {
+      if (closed) guarded(async () => onCommit(await addToList(field, text)));
+      else onCommit(text);
+    };
+    if (twin) {
+      return (
+        <div className="ifield-note" style={{ color: "var(--fin-text)" }}>
+          Это «{twin.option.label}»?{" "}
+          <button type="button" className="fin-link-btn" onClick={() => onCommit(twin.option.id)}>
+            Да, оно
+          </button>{" "}
+          ·{" "}
+          <button type="button" className="fin-link-btn" onClick={() => create(twin.text)}>
+            Нет, новое «{twin.text}»
+          </button>{" "}
+          ·{" "}
+          <button type="button" className="fin-link-btn" onClick={onCancel}>
+            Отмена
+          </button>
+        </div>
+      );
+    }
     return (
-      <Combo
-        options={options}
-        placeholder={placeholder}
-        allowCreate={field.type === "list" || field.type === "department"}
-        onPick={(option) => onCommit(field.type === "bool" ? option.id === "true" : option.id)}
-        onCreate={(text) => onCommit(text)}
-        onCancel={onCancel}
-      />
+      <>
+        <Combo
+          options={options}
+          placeholder={placeholder}
+          allowCreate={listy && (!closed || canSetup)}
+          createLabel={closed ? (text) => `+ Добавить «${text}» в список` : undefined}
+          emptyText={
+            closed
+              ? field.type === "department"
+                ? "Такого отдела нет — отделы заводят в личном кабинете"
+                : "Нет в списке — список пополняют в настройке реестра"
+              : undefined
+          }
+          onPick={(option) => onCommit(field.type === "bool" ? option.id === "true" : option.id)}
+          onCreate={(text) => {
+            const option = listy ? options.find((item) => isSimilar(item.label, text)) : undefined;
+            if (option) setTwin({ text, option });
+            else create(text);
+          }}
+          onCancel={onCancel}
+        />
+        {failure ? <div className="ifield-error">{failure}</div> : null}
+      </>
     );
   }
   if (field.type === "person") {
-    return <PeopleEditor value={Array.isArray(value) ? (value as string[]) : []} people={people} onCommit={onCommit} onCancel={onCancel} />;
+    return (
+      <PeopleEditor
+        value={Array.isArray(value) ? (value as string[]) : []}
+        people={people}
+        staff={staff}
+        closed={field.fill === "list"}
+        onCommit={onCommit}
+        onCancel={onCancel}
+      />
+    );
   }
   return <TextEditor field={field} value={value} onCommit={onCommit} onCancel={onCancel} placeholder={placeholder} />;
 }
@@ -334,20 +443,32 @@ function TextEditor({
   );
 }
 
+/**
+ * Ответственные. Выбор — из справочника сотрудников личного кабинета, а не
+ * из тех, кто уже стоит в договорах: иначе человека, только что заведённого в
+ * «Людях», выбрать было нельзя, а напечатанное «Асхат» заводило второго
+ * «Асхата» рядом с «Асхатом Ибраевым».
+ */
 function PeopleEditor({
   value,
   people,
+  staff,
+  closed,
   onCommit,
   onCancel,
 }: {
   value: string[];
   people: Readonly<Record<string, { id: string; name: string }>>;
+  staff: readonly { id: string; name: string }[] | null;
+  closed: boolean;
   onCommit: (value: unknown) => void;
   onCancel: () => void;
 }) {
   const [chosen, setChosen] = useState<string[]>(value);
   const [adding, setAdding] = useState(value.length === 0);
-  const options: ComboOption[] = Object.values(people)
+  // Пока справочник не прочитан — те, кто уже стоит в договорах.
+  const pool = staff ?? Object.values(people);
+  const options: ComboOption[] = pool
     .filter((person) => !chosen.includes(person.id))
     .map((person) => ({ id: person.id, label: person.name }));
   const save = (next: string[]) => {
@@ -378,6 +499,8 @@ function PeopleEditor({
         <Combo
           options={options}
           placeholder="Сотрудник"
+          allowCreate={!closed}
+          emptyText={closed ? "Нет среди сотрудников — их заводят в личном кабинете, «Люди»" : undefined}
           onPick={(option) => {
             setAdding(false);
             save([...chosen, option.id]);

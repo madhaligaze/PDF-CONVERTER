@@ -956,7 +956,42 @@ export type RegistryField = {
   hidden: boolean;
   position: number;
   choices?: { value: string; label: string }[];
+  /**
+   * Как поле заполняют руками — только у полей со списком: `list` — только из
+   * списка, `hint` — из списка или своё, `own` — сторона только из наших
+   * юрлиц. Нет ключа — поле пишется как есть.
+   */
+  fill?: FieldFill;
+  /** Какие способы можно выбрать у этого поля в настройке. */
+  fills?: FieldFill[];
 };
+
+export type FieldFill = "list" | "hint" | "own";
+
+/** Оплаты договора по журналу: суммы строками, как все деньги API. */
+export type PaymentSummary = {
+  paid: string | null;
+  /** Только у договора на всю сумму: сумма минус оплачено. */
+  remaining: string | null;
+  count: number;
+  last_at: string | null;
+  /** Спорные платежи: подходят и к этому договору, и к другому. */
+  open: number;
+};
+
+export type PaymentItem = {
+  operation_id: string;
+  paid_at: string;
+  amount: string;
+  kind: "income" | "expense";
+  counterparty: string;
+  account: string;
+  comment: string;
+  /** `auto` — разнесла система, `manual` — человек, `open` — спорный. */
+  how: "auto" | "manual" | "open";
+};
+
+export type ContractPayments = { summary: PaymentSummary | null; items: PaymentItem[] };
 
 export type ListValue = {
   id: string;
@@ -969,8 +1004,12 @@ export type ListValue = {
     system?: string;
     roles?: { executor?: string; customer?: string };
     kind?: string;
+    /** «Это разные»: значения, которые не двойники этого. */
+    distinct?: string[];
   };
   position: number;
+  /** Более раннее похожее значение того же списка — возможный двойник. */
+  similar?: string;
 };
 
 export type FilterCondition = { field: string; op: string; value: unknown };
@@ -1173,6 +1212,16 @@ export const contractsApi = {
       request<{ parties: Party[] }>(`${C}/parties/similar${qs({ name, bin })}`),
   },
   people: () => request<{ people: PersonRef[] }>(`${C}/people`),
+  payments: {
+    /** «Оплачено/Остаток по выписке» видимых договоров; 403 — журнал не открыт. */
+    all: () => request<{ contracts: Record<string, PaymentSummary> }>(`${C}/payments`),
+    of: (id: string) => request<ContractPayments>(`${C}/${id}/payments`),
+    decide: (id: string, operationId: string, action: "link" | "unlink" | "auto") =>
+      request<ContractPayments>(`${C}/${id}/payments`, {
+        method: "POST",
+        body: JSON.stringify({ operation_id: operationId, action }),
+      }),
+  },
   exportUrl: (views?: string[]) => `${API}${C}/export.xlsx${qs({ views: views?.join(",") })}`,
   imports: {
     upload: (file: File) => {

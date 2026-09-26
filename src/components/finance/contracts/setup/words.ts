@@ -5,7 +5,7 @@
  * ECONOMIC_ROLES; `setup.py`: CUSTOM_TYPES). Подписи — строчными: это части
  * фразы и пометки `{ деньги }`, а не заголовки.
  */
-import type { Contract, FieldType, RegistrySchema } from "@/components/finance/api";
+import type { Contract, FieldFill, FieldType, RegistrySchema } from "@/components/finance/api";
 
 export const TYPE_WORDS: Record<FieldType, string> = {
   text: "текст",
@@ -21,6 +21,17 @@ export const TYPE_WORDS: Record<FieldType, string> = {
   department: "отдел",
   choice: "выбор",
 };
+
+/**
+ * Способ заполнения поля — как его заполняют в листе и карточке. Подпись
+ * зависит от типа: у стороны «список» — это наши юрлица, у сотрудника —
+ * справочник людей из личного кабинета.
+ */
+export function fillWord(type: FieldType, fill: FieldFill): string {
+  if (type === "party") return fill === "own" ? "только наши юрлица" : "любая сторона";
+  if (type === "person") return fill === "list" ? "только из сотрудников" : "сотрудник или новый";
+  return fill === "list" ? "только из списка" : "список или своё";
+}
 
 /** Типы, которые можно дать своему полю. `party` и `choice` — только системные. */
 export const CUSTOM_TYPES: FieldType[] = [

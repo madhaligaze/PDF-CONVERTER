@@ -20,6 +20,8 @@ type ComboProps = {
   initial?: string;
   allowCreate?: boolean;
   createLabel?: (text: string) => string;
+  /** Что сказать, когда напечатанного нет, а заводить новое нельзя. */
+  emptyText?: string;
   onPick: (option: ComboOption) => void;
   onCreate?: (text: string) => void;
   onCancel: () => void;
@@ -33,6 +35,7 @@ export function Combo({
   initial = "",
   allowCreate = true,
   createLabel = (text) => `+ Завести «${text}»`,
+  emptyText = "Ничего не нашлось",
   onPick,
   onCreate,
   onCancel,
@@ -134,7 +137,7 @@ export function Combo({
             </div>
           );
         })}
-        {!shown.length && !canCreate ? <div className="fin-pop-group fin-muted">Ничего не нашлось</div> : null}
+        {!shown.length && !canCreate ? <div className="fin-pop-group fin-muted">{emptyText}</div> : null}
         {canCreate ? (
           <button
             type="button"
@@ -163,17 +166,22 @@ type PartyPickerProps = {
   slot: "executor" | "customer";
   label: string;
   own: Party[];
+  /** Поле закрыто на наши юрлица: контрагентов в выборе нет. */
+  ownOnly?: boolean;
+  /** Завести наше юрлицо прямо из выбора — только тому, кто настраивает реестр. */
+  onCreateOwn?: (name: string) => void;
   onPick: (choice: PartyChoice) => void;
   onCancel: () => void;
 };
 
 /** Наши юрлица — первой группой в первом слоте, после контрагентов — во втором. */
-export function PartyPicker({ slot, label, own, onPick, onCancel }: PartyPickerProps) {
+export function PartyPicker({ slot, label, own, ownOnly = false, onCreateOwn, onPick, onCancel }: PartyPickerProps) {
   const [found, setFound] = useState<Party[]>([]);
   const [similar, setSimilar] = useState<{ name: string; candidates: Party[] } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const search = (text: string) => {
+    if (ownOnly) return;
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(async () => {
       try {
@@ -205,6 +213,25 @@ export function PartyPicker({ slot, label, own, onPick, onCancel }: PartyPickerP
     group: "Контрагенты",
   }));
   const options = slot === "executor" ? [...ownOptions, ...otherOptions] : [...otherOptions, ...ownOptions];
+
+  if (ownOnly) {
+    return (
+      <Combo
+        options={ownOptions.map((option) => ({ ...option, group: undefined }))}
+        placeholder={label}
+        allowCreate={Boolean(onCreateOwn)}
+        createLabel={(text) => `+ Завести «${text}» нашим юрлицом`}
+        emptyText={
+          own.length
+            ? "Не наше юрлицо — здесь только наши"
+            : "Наших юрлиц ещё нет — их заводят в настройке реестра"
+        }
+        onPick={(option) => onPick({ id: option.id })}
+        onCreate={(text) => onCreateOwn?.(text)}
+        onCancel={onCancel}
+      />
+    );
+  }
 
   if (similar) {
     const first = similar.candidates[0];

@@ -8,10 +8,13 @@
  * сервера схема перечитывается, и лист перестраивается сам.
  *
  * Системное поле можно переименовать и спрятать, но не убрать: на нём держатся
- * начисления, долги и отборы листов. Кнопка «Убрать» у него есть: запрос уходит
- * на сервер, и его отказ одной строкой встаёт под полем ровно тогда, когда
- * человек попробовал. Заранее написанное объяснение у каждой строки читали бы
- * один раз, а свой текст на клиенте однажды разошёлся бы с правилом сервера.
+ * начисления, долги и отборы листов. Поэтому «Убрать» есть только у своего
+ * поля: у системного эта кнопка всегда кончалась отказом сервера.
+ *
+ * «Заполнение» — как поле заполняют в листе и карточке (по «Настройкам
+ * реестра» BBC): только из списка, список или своё, у стороны — только наши
+ * юрлица. Из этого лист ставит выпадающий список, а сервер решает, заводить ли
+ * новое значение из напечатанного.
  */
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 
@@ -23,9 +26,9 @@ import { ConfirmDialog } from "@/components/finance/ui/confirm-dialog";
 import { InlineText } from "@/components/finance/contracts/setup/inline-text";
 import { ChoicePop } from "@/components/finance/contracts/setup/popover";
 import { useSetupAction } from "@/components/finance/contracts/setup/use-setup-action";
-import { CUSTOM_TYPES, TYPE_WORDS, hasValue } from "@/components/finance/contracts/setup/words";
+import { CUSTOM_TYPES, TYPE_WORDS, fillWord, hasValue } from "@/components/finance/contracts/setup/words";
 
-const READ_ONLY = new Set(["paid_snapshot", "remaining_snapshot"]);
+const READ_ONLY = new Set(["paid_snapshot", "remaining_snapshot", "paid", "remaining"]);
 
 type Ask =
   | { kind: "archive"; field: RegistryField; count: number }
@@ -109,7 +112,7 @@ export function FieldsTab() {
         <span />
         <span className="eyebrow">Поле</span>
         <span className="eyebrow">Тип</span>
-        <span />
+        <span className="eyebrow">Заполнение</span>
         <span />
         <span />
         <span />
@@ -123,6 +126,7 @@ export function FieldsTab() {
             action.error(`required:${field.key}`),
             action.error(`hidden:${field.key}`),
             action.error(`type:${field.key}`),
+            action.error(`fill:${field.key}`),
             action.error(`archive:${field.key}`),
           ].filter(Boolean);
           return (
@@ -166,6 +170,7 @@ export function FieldsTab() {
                     void action.run(`title:${field.key}`, () => contractsApi.setup.updateField(field.key, { title: next }))
                   }
                 />
+                {field.system ? null : <span className="setup-field-flag">своё</span>}
                 {field.hidden ? <span className="setup-field-flag">спрятано</span> : null}
               </span>
               <span className="setup-field-type">
@@ -186,7 +191,17 @@ export function FieldsTab() {
                   </span>
                 )}
               </span>
-              <span className="setup-field-kind">{field.system ? "системное" : "своё"}</span>
+              <span className="setup-field-fill">
+                {field.fill && field.fills && field.fills.length > 1 ? (
+                  <ChoicePop
+                    value={field.fill}
+                    options={field.fills.map((item) => ({ value: item, label: fillWord(field.type, item) }))}
+                    label={`Как заполняется «${field.title}»`}
+                    disabled={action.busy(`fill:${field.key}`)}
+                    onPick={(next) => patch(field, { fill: next }, "fill")}
+                  />
+                ) : null}
+              </span>
               <span className="setup-field-req">
                 {readOnly ? (
                   <span className="setup-field-kind">только чтение</span>
@@ -198,7 +213,10 @@ export function FieldsTab() {
                     disabled={action.busy(`required:${field.key}`)}
                     onClick={() => patch(field, { required: !field.required }, "required")}
                   >
-                    обязательное
+                    {/* Состояние — словом: одно «обязательное» на каждой строке,
+                        различавшееся только оттенком, читалось как «все поля
+                        обязательны», хотя не было ни одного. */}
+                    {field.required ? "обязательное" : "необязательное"}
                   </button>
                 )}
               </span>
@@ -213,25 +231,16 @@ export function FieldsTab() {
                 </button>
               </span>
               <span className="setup-field-drop">
-                <button
-                  type="button"
-                  className="fin-link-btn setup-quiet"
-                  disabled={action.busy(`archive:${field.key}`)}
-                  onClick={() => {
-                                    // Системное поле сервер не убирает — спрашиваем его сразу,
-                    // без диалога: отказ приходит его словами под строкой, и
-                    // правило живёт в одном месте, а не в двух текстах.
-                    if (field.system) {
-                      void action.run(`archive:${field.key}`, () =>
-                        contractsApi.setup.updateField(field.key, { archived: true }),
-                      );
-                      return;
-                    }
-                    setAsk({ kind: "archive", field, count });
-                  }}
-                >
-                  Убрать
-                </button>
+                {field.system ? null : (
+                  <button
+                    type="button"
+                    className="fin-link-btn setup-quiet"
+                    disabled={action.busy(`archive:${field.key}`)}
+                    onClick={() => setAsk({ kind: "archive", field, count })}
+                  >
+                    Убрать
+                  </button>
+                )}
               </span>
               {errors.length ? (
                 <span className="setup-field-note setup-error" role="alert">

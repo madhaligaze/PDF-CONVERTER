@@ -4642,6 +4642,11 @@ html, body { overflow-x: clip; }
   z-index: 80;
   background: var(--page-bg);
 }
+/* Пункт выпадающего списка Univer — «плашка» с тёмным текстом под светлую
+   заливку. У списков справочников заливки нет (цвет в листе — только отказ),
+   и в тёмной теме пункты были тёмным по чёрному. Бесцветная плашка берёт цвет
+   текста списка — светлый в тёмной теме, тёмный в светлой. */
+[data-u-comp="sheets-dropdown-list"] [style*="background: transparent"] { color: inherit !important; font-size: 0.8125rem; }
 
 /* ─── Телефон ─── */
 @media (max-width: 639.98px) {
@@ -5216,6 +5221,9 @@ textarea.ifield-input { resize: vertical; field-sizing: content; min-height: 4.5
 /* ─── Соглашения, текст из файла, «как было», история ─── */
 .amend-row { display: grid; grid-template-columns: 104px minmax(0, 1fr) auto; gap: 0.25rem 0.75rem; padding: 0.5rem 0; border-bottom: 1px solid var(--fin-line); font-size: 0.8125rem; }
 .amend-row s { color: var(--text-muted); text-decoration-thickness: 1px; }
+/* Спорный платёж и снятый «не по договору» в «Оплачено» не входят — строка
+   приглушена, а что с ней, сказано словом справа. */
+.amend-row[data-muted="true"] > span:nth-child(2) { color: var(--fin-text-soft); }
 .amend-when { font-family: var(--font-martian), ui-monospace, monospace; font-variation-settings: "wdth" 87.5; font-size: 0.75rem; color: var(--text-secondary); }
 .source-text { white-space: pre-wrap; font-size: 0.875rem; line-height: 1.5; }
 .source-text mark { background: none; color: inherit; text-decoration: underline; text-decoration-color: var(--fin-text); text-underline-offset: 3px; }
@@ -5282,7 +5290,26 @@ textarea.ifield-input { resize: vertical; field-sizing: content; min-height: 4.5
 
 /* ─── Лист Univer реестра ─── */
 .creg-sheet-wrap { position: relative; border: 1px solid var(--fin-line); border-radius: 8px; overflow: hidden; }
+/* Стрелка списка у выбранной ячейки (как в Excel), а не в каждой ячейке
+   колонки. Над листом «На весь экран» (80) — поэтому 81. */
+.creg-list-arrow {
+  position: fixed;
+  z-index: 81;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--fin-text-soft);
+  cursor: pointer;
+}
+.creg-list-arrow:hover { color: var(--fin-text); background: var(--fin-hover); }
+.creg-list-arrow:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 1px; }
 .creg-sheet-note { min-height: 1.25rem; margin: 0.25rem 0 0.5rem; font-size: 0.8125rem; color: var(--fin-text-soft); }
+/* Отказ под листом — цветом отказа. Без этой строки правило выше, стоящее
+   позже `.fin-fail`, перебивало его, и «не заведено: …» читалось серым. */
+.creg-sheet-note.fin-fail { color: var(--fin-fail); }
 
 @media (prefers-reduced-motion: reduce) {
   .creg-row-new::before { animation: none; opacity: 0; }

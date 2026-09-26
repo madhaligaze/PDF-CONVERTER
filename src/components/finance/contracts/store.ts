@@ -26,6 +26,7 @@ import {
   type ContractsAll,
   type OneContract,
   type Party,
+  type PaymentSummary,
   type PersonRef,
   type RegistrySchema,
   FinanceApiError,
@@ -57,7 +58,15 @@ export type RegistryState = {
   byId: ReadonlyMap<string, Contract>;
   order: readonly string[];
   parties: Readonly<Record<string, Party>>;
+  /** Подписи людей: из договоров и из справочника. */
   people: Readonly<Record<string, PersonRef>>;
+  /** Справочник ответственных — действующие сотрудники (`ensureStaff`); `null` — ещё не прочитан. */
+  staff: readonly PersonRef[] | null;
+  /**
+   * «Оплачено/Остаток по выписке» — договор → сводка (`ensurePayments`).
+   * `null` — не прочитано или журнал человеку не открыт.
+   */
+  payments: Readonly<Record<string, PaymentSummary>> | null;
   edits: ReadonlyMap<string, ReadonlyMap<string, Edit>>;
   live: { online: boolean; lastOkAt: number | null; failures: number };
   remote: readonly RemoteNote[];
@@ -86,6 +95,8 @@ const EMPTY: RegistryState = {
   order: [],
   parties: {},
   people: {},
+  staff: null,
+  payments: null,
   edits: new Map(),
   live: { online: true, lastOkAt: null, failures: 0 },
   remote: [],
@@ -189,7 +200,9 @@ function loadAll(schema: RegistrySchema, all: ContractsAll): void {
     byId,
     order: sortOrder(byId),
     parties: all.parties,
-    people: all.people,
+    // Справочник сотрудников держится поверх: полное чтение приносит только
+    // тех, кто стоит в договорах.
+    people: { ...Object.fromEntries((state.staff ?? []).map((person) => [person.id, person])), ...all.people },
   });
 }
 
@@ -559,20 +572,71 @@ export function put(one: OneContract): void {
   putOne(one, false);
 }
 
-let peopleLoaded = false;
+/** Сводка оплат старше этого — перечитывается при следующем обращении. */
+const PAYMENTS_TTL = 30_000;
+let paymentsAt = 0;
+let paymentsLoading: Promise<void> | null = null;
+/** Журнал не открыт (403) — не спрашивать заново до смены компании. */
+let paymentsClosedFor: string | null = null;
 
-/** Все сотрудники компании — для выбора ответственных, не только те, кто уже стоит в договорах. */
-export async function ensurePeople(): Promise<void> {
-  if (peopleLoaded) return;
-  try {
-    const result = await contractsApi.people();
-    const people: Record<string, PersonRef> = { ...state.people };
-    for (const person of result.people) people[person.id] = person;
-    peopleLoaded = true;
-    emit({ people });
-  } catch {
-    /* выбор покажет тех, кто уже есть в договорах */
-  }
+/**
+ * Оплаты по выписке читаются своим запросом, а не с договорами: они
+ * меняются от выписок и разнесения, а не от правки договора, и номер
+ * изменений реестра о них не знает.
+ */
+export function ensurePayments(force = false): Promise<void> {
+  const company = state.company;
+  if (!company || paymentsClosedFor === company) return Promise.resolve();
+  const fresh = state.payments !== null && Date.now() - paymentsAt < PAYMENTS_TTL;
+  if (!force && (paymentsLoading || fresh)) return paymentsLoading ?? Promise.resolve();
+  paymentsLoading = (async () => {
+    try {
+      const result = await contractsApi.payments.all();
+      if (state.company !== company) return;
+      paymentsAt = Date.now();
+      emit({ payments: result.contracts });
+    } catch (exc) {
+      if (exc instanceof FinanceApiError && exc.status === 403) paymentsClosedFor = company;
+    } finally {
+      paymentsLoading = null;
+    }
+  })();
+  return paymentsLoading;
+}
+
+/** Справочник старше этого — перечитывается при следующем выборе. */
+const STAFF_TTL = 20_000;
+let staffAt = 0;
+let staffLoading: Promise<void> | null = null;
+
+/**
+ * Справочник ответственных — действующие сотрудники из личного кабинета.
+ *
+ * Раньше он читался один раз за сессию и жил внутри `people`, а `people`
+ * переписывался каждым полным чтением реестра: сотрудник, заведённый в
+ * кабинете после открытия реестра, в выборе не появлялся до перезагрузки, а
+ * после загрузки Excel пропадали все, кто ещё не стоял в договорах.
+ */
+export function ensureStaff(force = false): Promise<void> {
+  // Смена компании сбрасывает `staff` в `null` — справочник читается заново.
+  const fresh = state.staff !== null && Date.now() - staffAt < STAFF_TTL;
+  if (!force && (staffLoading || fresh)) return staffLoading ?? Promise.resolve();
+  const company = state.company;
+  staffLoading = (async () => {
+    try {
+      const result = await contractsApi.people();
+      if (state.company !== company) return;
+      const people: Record<string, PersonRef> = { ...state.people };
+      for (const person of result.people) people[person.id] = person;
+      staffAt = Date.now();
+      emit({ people, staff: result.people });
+    } catch {
+      /* выбор покажет тех, кто уже есть в договорах */
+    } finally {
+      staffLoading = null;
+    }
+  })();
+  return staffLoading;
 }
 
 if (typeof window !== "undefined" && process.env.NODE_ENV !== "production") {

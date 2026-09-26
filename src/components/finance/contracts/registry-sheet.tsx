@@ -12,6 +12,11 @@
  * `ssr: false`. Рядом с листом — только прозрачность: `transform` и `filter` на
  * предке сделали бы его контейнером для `position: fixed` и сломали замеры
  * холста (правило проекта о GSAP). Слой вопроса поэтому — портал в `body`.
+ *
+ * Стрелка списка — как в Excel: только у выбранной ячейки со справочником, а
+ * не в каждой ячейке колонки. Открывает список щелчком или Alt+↓; печать в
+ * ячейке остаётся печатью. Двигается по событиям листа, без вечного цикла
+ * кадров; на прокрутке колесом прячется и встаёт, когда лист остановился.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -30,6 +35,8 @@ import {
   answer,
   boot,
   cancel,
+  ensurePayments,
+  ensureStaff,
   getRegistry,
   holdLive,
   useRegistry,
@@ -46,6 +53,7 @@ type Props = {
 };
 
 type Note = { text: string; fail: boolean; at: number };
+type Arrow = { left: number; top: number; size: number };
 
 function stillAsking(group: AskGroup): { id: string; key: string }[] {
   const edits = getRegistry().edits;
@@ -65,6 +73,9 @@ export function RegistrySheet({ onOpenCard, openId }: Props) {
   const openRef = useRef(openId);
   const onOpenRef = useRef(onOpenCard);
   const pop = useRef<HTMLDivElement>(null);
+  const [arrow, setArrow] = useState<Arrow | null>(null);
+  const arrowFrame = useRef(0);
+  const arrowIdle = useRef(0);
 
   useEffect(() => {
     onOpenRef.current = onOpenCard;
@@ -72,6 +83,50 @@ export function RegistrySheet({ onOpenCard, openId }: Props) {
 
   // Живой режим, пока лист открыт: чужие правки приходят опросом раз в 2 с.
   useEffect(() => holdLive(), []);
+  // Ответственные в списке ячейки — из справочника сотрудников кабинета.
+  useEffect(() => {
+    void ensureStaff();
+  }, []);
+  // «Оплачено/Остаток по выписке» меняют выписки и разнесение, а не правки
+  // договоров — опросу реестра о них неоткуда узнать. Раз в минуту, пока
+  // вкладка на виду, и сразу при возвращении на неё.
+  useEffect(() => {
+    void ensurePayments();
+    const refresh = () => {
+      if (document.visibilityState === "visible") void ensurePayments();
+    };
+    const timer = window.setInterval(refresh, 60_000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, []);
+
+  /** Стрелка — на выбранную ячейку со списком; не одна ячейка или правка — убрать. */
+  const placeArrow = useCallback(() => {
+    window.cancelAnimationFrame(arrowFrame.current);
+    arrowFrame.current = window.requestAnimationFrame(() => {
+      const found = binding.current?.activeList();
+      if (!found || !found.visible) {
+        setArrow(null);
+        return;
+      }
+      const height = found.bottom - found.top;
+      const size = Math.round(Math.max(14, Math.min(20, height - 4)));
+      const next = { left: Math.round(found.right - size - 2), top: Math.round(found.top + (height - size) / 2), size };
+      setArrow((prev) => (prev && prev.left === next.left && prev.top === next.top && prev.size === next.size ? prev : next));
+    });
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener("resize", placeArrow);
+    return () => {
+      window.removeEventListener("resize", placeArrow);
+      window.cancelAnimationFrame(arrowFrame.current);
+      window.clearTimeout(arrowIdle.current);
+    };
+  }, [placeArrow]);
 
   const ready = state.phase === "ready" && state.schema !== null;
   const structure = useMemo(() => (state.schema ? structureKey(state.schema) : ""), [state.schema]);
@@ -102,6 +157,7 @@ export function RegistrySheet({ onOpenCard, openId }: Props) {
             activeView.current = view;
           },
           rebuild: () => setGeneration((value) => value + 1),
+          cell: () => placeArrow(),
         },
         box.current,
       );
@@ -117,7 +173,7 @@ export function RegistrySheet({ onOpenCard, openId }: Props) {
         if (binding.current === next) binding.current = null;
       };
     },
-    [built, box],
+    [built, box, placeArrow],
   );
 
   useEffect(() => {
@@ -136,6 +192,24 @@ export function RegistrySheet({ onOpenCard, openId }: Props) {
     const timer = window.setTimeout(() => setLate(true), 400);
     return () => window.clearTimeout(timer);
   }, [ready]);
+
+  // Отказ сервера по правке ячейки («„имх“ нет в списке …») — строкой под
+  // листом сразу: у ячейки он виден только при наведении, а напечатавший
+  // смотрит в лист, а не водит мышью. Каждый отказ — один раз.
+  const shownFail = useRef(0);
+  useEffect(() => {
+    let latest: { at: number; text: string } | null = null;
+    for (const edits of state.edits.values()) {
+      for (const item of edits.values()) {
+        if (item.state !== "failed" || item.startedAt <= shownFail.current) continue;
+        if (!latest || item.startedAt > latest.at) latest = { at: item.startedAt, text: item.error || "Правка не сохранилась" };
+      }
+    }
+    if (!latest) return;
+    shownFail.current = latest.at;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- строка под листом следует за хранилищем правок
+    setNote({ text: latest.text, fail: true, at: Date.now() });
+  }, [state.edits]);
 
   // Строка под листом гаснет сама; отказ держится дольше — его читают.
   useEffect(() => {
@@ -224,6 +298,12 @@ export function RegistrySheet({ onOpenCard, openId }: Props) {
         ref={box}
         className="creg-sheet-wrap"
         style={{ height }}
+        onWheelCapture={() => {
+          // Прокрутка колесом: стрелка прячется и встаёт, когда лист остановился.
+          setArrow(null);
+          window.clearTimeout(arrowIdle.current);
+          arrowIdle.current = window.setTimeout(placeArrow, 160);
+        }}
         onKeyDownCapture={(event) => {
           // Alt+Enter — карточка договора активной строки (в редакторе ячейки
           // Alt+Enter остаётся переводом строки).
@@ -233,10 +313,17 @@ export function RegistrySheet({ onOpenCard, openId }: Props) {
               event.stopPropagation();
             }
           }
+          // Alt+↓ — список ячейки, как в Excel.
+          if (event.altKey && event.key === "ArrowDown" && binding.current && !binding.current.isEditing()) {
+            if (binding.current.openList()) {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+          }
         }}
       >
         {built ? (
-          <UniverSheet key={built.unitId} data={built.snapshot} onReady={onReady} />
+          <UniverSheet key={built.unitId} data={built.snapshot} onReady={onReady} listEdit={false} formatting={false} />
         ) : state.phase === "error" ? (
           <p className="creg-sheet-note fin-fail" role="status" style={{ margin: "1rem" }}>
             {state.error || "Реестр не прочитался"} ·{" "}
@@ -257,6 +344,24 @@ export function RegistrySheet({ onOpenCard, openId }: Props) {
       <p className={note?.fail ? "creg-sheet-note fin-fail" : "creg-sheet-note"} role="status" aria-live="polite">
         {note?.text ?? ""}
       </p>
+      {arrow && !ask
+        ? createPortal(
+            <button
+              type="button"
+              className="creg-list-arrow"
+              aria-label="Открыть список"
+              title="Список · Alt+↓"
+              style={{ left: arrow.left, top: arrow.top, width: arrow.size, height: arrow.size }}
+              onPointerDown={(event) => event.preventDefault()}
+              onClick={() => binding.current?.openList()}
+            >
+              <svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true">
+                <path d="M1 1 L5 5 L9 1" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>,
+            document.body,
+          )
+        : null}
       {ask && spot && count
         ? createPortal(
             <div ref={pop}>

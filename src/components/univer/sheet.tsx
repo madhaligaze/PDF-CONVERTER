@@ -23,6 +23,8 @@ import UniverPresetSheetsThreadCommentRuRU from "@univerjs/preset-sheets-thread-
 import { UniverSheetsDrawingPreset } from "@univerjs/presets/preset-sheets-drawing";
 import UniverPresetSheetsDrawingRuRU from "@univerjs/presets/preset-sheets-drawing/locales/ru-RU";
 import { createUniver, LocaleType, mergeLocales } from "@univerjs/presets";
+import { IConfigService } from "@univerjs/core";
+import { IMenuManagerService } from "@univerjs/preset-sheets-core";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -76,11 +78,86 @@ type Props = {
   /** Кнопка «На весь экран» в ленте. По умолчанию есть у каждого листа. */
   fullscreen?: boolean;
   /**
+   * Ссылка «Изменить» в выпадающем списке ячейки — открывает панель правил.
+   * В «Таблицах» списки свои и правятся здесь же; в реестре и журнале их
+   * ставит раздел по справочникам, и правило, поправленное в панели, молча
+   * разошлось бы с сервером до следующей пересборки листа.
+   */
+  listEdit?: boolean;
+  /**
    * Лист нарисован. Univer рисует не сразу после `createWorkbook`, а через
    * 300 мс (стадия `Rendered`), поэтому «книга создана» ещё не значит «видно».
    */
   onShown?: () => void;
+  /**
+   * Оформление, формулы и вставка в ленте. У листов, которые пишут в базу
+   * только значения (реестр договоров, журнал), жирный, заливка, границы,
+   * формула и ссылка молча пропадали при следующей перерисовке строки — лента
+   * предлагала то, чего лист не хранит. `false` оставляет то, что работает с
+   * данными: отмену, поиск, фильтр и сортировку.
+   */
+  formatting?: boolean;
 };
+
+/** Пункты ленты, которые остаются у листа без оформления (`formatting={false}`). */
+const DATA_ONLY_MENU = new Set([
+  "univer.command.undo",
+  "univer.command.redo",
+  "base-ui.operation.toggle-shortcut-panel",
+  "ui.operation.open-find-dialog",
+  "sheet.command.smart-toggle-filter",
+  "sheet.command.clear-filter-criteria",
+  "sheet.command.re-calc-filter",
+  "sheet.menu.sheets-sort",
+  "sheet.command.sort-range-asc",
+  "sheet.command.sort-range-asc-ext",
+  "sheet.command.sort-range-desc",
+  "sheet.command.sort-range-desc-ext",
+  "sheet.command.sort-range-custom",
+]);
+const RIBBON_TABS = ["ribbon.start", "ribbon.insert", "ribbon.formulas", "ribbon.data", "ribbon.view", "ribbon.others"];
+
+/**
+ * Спрятать в ленте всё, кроме работы с данными.
+ *
+ * Прячется то, что лента на самом деле содержит (обходом меню), а не список,
+ * выписанный под версию: пункт, добавленный следующей версией Univer, не
+ * проскочит в ленту реестра. Формулы и форматы чисел заводят свои пункты позже
+ * книги — поэтому обход повторяется на каждом изменении меню, а сигнал об
+ * изменении подаётся, только если нашлось новое (иначе своё же изменение
+ * запускало бы обход снова и снова).
+ */
+function keepDataOnly(univerAPI: UniverApi): () => void {
+  try {
+    const injector = univerAPI._injector;
+    const menus = injector.get(IMenuManagerService);
+    const config = injector.get(IConfigService);
+    const hidden: Record<string, { hidden: true }> = {};
+    type Node = { item?: { id: string }; children?: Node[] };
+    const sweep = () => {
+      const fresh: Record<string, { hidden: true }> = {};
+      const walk = (nodes: Node[] | undefined) => {
+        for (const node of nodes ?? []) {
+          const id = node.item?.id;
+          if (id && !DATA_ONLY_MENU.has(id) && !hidden[id]) fresh[id] = hidden[id] = { hidden: true };
+          if (node.children) walk(node.children);
+        }
+      };
+      for (const tab of RIBBON_TABS) walk(menus.getMenuByPositionKey(tab) as Node[]);
+      if (!Object.keys(fresh).length) return;
+      config.setConfig("menu", fresh, { merge: true });
+      // Лента перечитывает меню по сигналу изменения — пустое слияние его даёт.
+      menus.appendRootMenu({});
+    };
+    sweep();
+    const subscription = menus.menuChanged$.subscribe(() => queueMicrotask(sweep));
+    return () => subscription.unsubscribe();
+  } catch (exc) {
+    // Лишние кнопки — неудобство, а не повод не открыть лист.
+    console.warn("лента листа не урезана:", exc);
+    return () => {};
+  }
+}
 
 /**
  * `LifecycleStages.Rendered` из `@univerjs/core`. Не `Steady`: её Univer
@@ -108,10 +185,17 @@ const RENDERED = 2;
 const FULL_TEXT = "На весь экран";
 const COLLAPSE_TEXT = "Свернуть";
 
-/** Ряд вкладок ленты: элемент шапки Univer, у которого три и больше кнопок-детей. */
+/**
+ * Ряд вкладок ленты: `role="tablist"` шапки Univer. Прежний признак «три и
+ * больше кнопок» не находил ряд у листа без оформления — там вкладок две
+ * («Начало», «Данные»), и «На весь экран» пропадала. Он остаётся запасным для
+ * версии без роли.
+ */
 function findTabRow(root: HTMLElement): HTMLElement | null {
   const header = root.querySelector("header");
   if (!header) return null;
+  const list = header.querySelector<HTMLElement>('[role="tablist"]');
+  if (list) return list;
   for (const node of Array.from(header.querySelectorAll<HTMLElement>("div"))) {
     const buttons = Array.from(node.children).filter((child) => child.tagName === "BUTTON");
     if (buttons.length >= 3) return node;
@@ -124,8 +208,15 @@ function idleTabClass(row: HTMLElement): string {
   const buttons = Array.from(row.children).filter(
     (child): child is HTMLButtonElement => child instanceof HTMLButtonElement && !child.dataset.usheetFull,
   );
+  // По роли вкладки, а не по толщине шрифта: пока шрифт не догрузился, вес у
+  // всех вкладок одинаковый, и «На весь экран» брала классы выбранной —
+  // синюю заливку «Начала».
   const idle =
-    buttons.find((button) => Number(getComputedStyle(button).fontWeight) < 600) ?? buttons[buttons.length - 1];
+    buttons.find((button) => button.getAttribute("aria-selected") === "false") ??
+    (buttons.some((button) => button.hasAttribute("aria-selected"))
+      ? undefined
+      : buttons.find((button) => Number(getComputedStyle(button).fontWeight) < 600));
+  // Невыбранной вкладки ещё нет — подождать, а не взять классы выбранной.
   return idle?.className ?? "";
 }
 
@@ -154,7 +245,7 @@ export function blankWorkbook(name = "Новая таблица"): WorkbookSnaps
 }
 
 export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverSheet(
-  { data, onReady, extras = false, fullscreen = true, onShown },
+  { data, onReady, extras = false, fullscreen = true, listEdit = true, formatting = true, onShown },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -212,7 +303,7 @@ export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverS
         UniverSheetsSortPreset(),
         UniverSheetsFilterPreset(),
         UniverSheetsConditionalFormattingPreset(),
-        UniverSheetsDataValidationPreset(),
+        UniverSheetsDataValidationPreset({ showEditOnDropdown: listEdit }),
         UniverSheetsFindReplacePreset(),
         UniverSheetsNotePreset(),
         UniverSheetsHyperLinkPreset(),
@@ -234,6 +325,9 @@ export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverS
     // новая книга приходит не сменой пропа, а пересозданием компонента через
     // `key` у родителя, поэтому значение на монтировании — всегда нужное.
     univerAPI.createWorkbook(data ?? blankWorkbook());
+    // Меню плагинов листа заводятся вместе с книгой — урезать ленту можно
+    // только после неё.
+    const stopTrim = formatting ? null : keepDataOnly(univerAPI);
     // `onReady` берётся из пропа по той же причине, что и `data`: компонент
     // монтируется один раз на книгу, новая приходит пересозданием через `key`.
     const detach = onReadyRef.current?.(univerAPI);
@@ -271,6 +365,7 @@ export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverS
       themeObserver.disconnect();
       system?.removeEventListener?.("change", retheme);
       try {
+        stopTrim?.();
         lifecycle?.dispose?.();
         detach?.();
         univerAPI.dispose();
@@ -306,9 +401,12 @@ export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverS
       // Лист уже снят со страницы и ждёт размонтирования — не трогать.
       if (!root.isConnected) return;
       // Дешёвая проверка первой: Univer меняет DOM листа постоянно (редактор
-      // ячейки, всплывающие списки), а узел на месте почти всегда.
-      if (host?.isConnected && host.parentElement?.firstElementChild === host) return;
-      const row = findTabRow(root);
+      // ячейки, всплывающие списки), а узел на месте почти всегда. Классы
+      // пересчитываются и тогда: вкладки ленты дорисовываются после первой
+      // вставки, и класс, взятый с одной лишь выбранной «Начало», оставлял
+      // «На весь экран» синей навсегда.
+      const placed = host?.isConnected && host.parentElement?.firstElementChild === host;
+      const row = placed ? (host?.parentElement ?? null) : findTabRow(root);
       if (!row) return;
       if (!host) {
         host = document.createElement("span");
@@ -316,7 +414,9 @@ export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverS
         host.dataset.usheetSlot = "true";
       }
       if (row.firstChild !== host) row.insertBefore(host, row.firstChild);
-      const slot = { host, className: idleTabClass(row) };
+      const className = idleTabClass(row);
+      if (!className) return;
+      const slot = { host, className };
       setTabSlot((current) => (current?.host === slot.host && current.className === slot.className ? current : slot));
     };
     const schedule = () => {
