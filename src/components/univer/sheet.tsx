@@ -29,6 +29,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "re
 import { createPortal } from "react-dom";
 
 import { isDarkTheme } from "@/components/univer/sheet-model";
+import { speedUp } from "@/components/univer/speed";
 import { registerRuNumfmtLocale } from "@/components/web-excel/numfmt-locale";
 
 import "@univerjs/preset-sheets-core/lib/index.css";
@@ -180,7 +181,9 @@ const RENDERED = 2;
  * * **«На весь экран»** — вкладкой прямо в ряду вкладок ленты, с классами
  *   соседней вкладки Univer: шрифт, отступы, наведение и тёмная тема у неё
  *   те же, что у «Начало» и «Вставки». Esc сворачивает; страница под листом
- *   не прокручивается.
+ *   не прокручивается;
+ * * **скорость прокрутки** — `speed.ts`: ячейка считается один раз на кадр,
+ *   а не семь-восемь, и без лишних разборов строк.
  */
 const FULL_TEXT = "На весь экран";
 const COLLAPSE_TEXT = "Свернуть";
@@ -325,6 +328,9 @@ export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverS
     // новая книга приходит не сменой пропа, а пересозданием компонента через
     // `key` у родителя, поэтому значение на монтировании — всегда нужное.
     univerAPI.createWorkbook(data ?? blankWorkbook());
+    // После книги: плагины листа стартуют с первой книгой, до неё их служб в
+    // Univer ещё нет. Кадры движок начнёт рисовать позже — подписка их застанет.
+    const stopSpeed = speedUp(univerAPI);
     // Меню плагинов листа заводятся вместе с книгой — урезать ленту можно
     // только после неё.
     const stopTrim = formatting ? null : keepDataOnly(univerAPI);
@@ -368,6 +374,7 @@ export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverS
         stopTrim?.();
         lifecycle?.dispose?.();
         detach?.();
+        stopSpeed();
         univerAPI.dispose();
       } catch {
         /* повторный dispose при быстром размонтировании — не ошибка */
