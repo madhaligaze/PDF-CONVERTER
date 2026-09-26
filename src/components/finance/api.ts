@@ -425,6 +425,25 @@ export class FinanceApiError extends Error {
   }
 }
 
+/**
+ * Сигналы раме раздела: сеанс пропал (401) и право отобрано (403).
+ *
+ * Без них каждый экран разбирался сам: заблокированный сотрудник оставался в
+ * кабинете со своим именем и красным «Войдите в «Финансы»» во вкладке, а
+ * реестр после отзыва права минуту показывал все договоры с «Нет связи».
+ * Рама на 401 уводит ко входу, на 403 — перечитывает права.
+ */
+export const AUTH_LOST_EVENT = "finance:auth-lost";
+export const FORBIDDEN_EVENT = "finance:forbidden";
+/** Двери входа отвечают 401 на неверный пароль — это не потеря сеанса. */
+const LOGIN_PATHS = /^\/auth\/(login|register|phone\/)/;
+
+function signal(status: number, path: string): void {
+  if (typeof window === "undefined") return;
+  if (status === 401 && !LOGIN_PATHS.test(path)) window.dispatchEvent(new Event(AUTH_LOST_EVENT));
+  if (status === 403) window.dispatchEvent(new Event(FORBIDDEN_EVENT));
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API}${path}`, {
     credentials: "include",
@@ -432,6 +451,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
   });
   if (!response.ok) {
+    signal(response.status, path);
     let message = `Сервер ответил ${response.status}`;
     let payload: unknown;
     try {
@@ -651,8 +671,9 @@ export const financeApi = {
     }),
   phoneLogin: (body: { phone: string; password: string }) =>
     request<Me>("/auth/phone/login", { method: "POST", body: JSON.stringify(body) }),
+  /** Задать пароль и сразу войти — ответ как у `me`. */
   phoneSetPassword: (body: { phone: string; password: string }) =>
-    request<{ ok: boolean }>("/auth/phone/set-password", { method: "POST", body: JSON.stringify(body) }),
+    request<Me>("/auth/phone/set-password", { method: "POST", body: JSON.stringify(body) }),
   phoneForgot: (phone: string) =>
     request<{ ok: boolean }>("/auth/phone/forgot", { method: "POST", body: JSON.stringify({ phone }) }),
   switchCompany: (companyId: string) =>

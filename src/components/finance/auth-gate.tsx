@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { type Me, financeApi } from "@/components/finance/api";
-import { PhoneInput, formatPhone, phoneValue } from "@/components/finance/ui/phone-input";
+import { readParam, writeParams } from "@/components/finance/address";
+import { type Me, FinanceApiError, financeApi } from "@/components/finance/api";
+import { PHONE_NOT_MOBILE, PhoneInput, formatPhone, phoneDigits, phoneValue } from "@/components/finance/ui/phone-input";
 import { FadeIn } from "@/components/motion/fade-in";
 import { SplitReveal } from "@/components/motion/split-reveal";
 import { AuthStage, AuthWait } from "@/components/stage/auth-stage";
@@ -24,17 +25,18 @@ import { AuthStage, AuthWait } from "@/components/stage/auth-stage";
  * Ошибку показываем текстом сервера, а не своим «что-то пошло не так»: сервер
  * различает «неверная почта или пароль», «пароль короче восьми символов» и
  * «почта уже зарегистрирована», и каждое из трёх говорит человеку, что делать.
+ *
+ * Что изменилось после проверки 26.09 («Асхат»):
+ * - первое поле принимает и почту, и телефон — сотрудник, пришедший без
+ *   ссылки, не ищет «Войти как сотрудник»;
+ * - ссылка-приглашение `?phone=…` сразу спрашивает у сервера шаг и, если
+ *   учётка ждёт пароль, открывает «Придумайте пароль»;
+ * - шаг «пароль» у учётки, ждущей пароль, уводит к «Придумайте пароль»
+ *   (сервер отвечает 409), а не пишет «неверный пароль» на пароль, которого нет;
+ * - заданный пароль сразу впускает — третий ввод того же пароля ничего не
+ *   охранял.
  */
-type Step =
-  | "email"
-  | "register"
-  | "phone"
-  | "password"
-  | "set"
-  | "set-done"
-  | "forgot"
-  | "forgot-sent"
-  | "forgot-email";
+type Step = "email" | "register" | "phone" | "password" | "set" | "forgot" | "forgot-sent" | "forgot-email";
 
 const HEADINGS: Record<Step, string> = {
   email: "Вход в учёт компании",
@@ -42,11 +44,16 @@ const HEADINGS: Record<Step, string> = {
   phone: "Вход сотрудника",
   password: "Вход сотрудника",
   set: "Придумайте пароль",
-  "set-done": "Пароль задан, войдите с ним",
   forgot: "Сброс пароля",
   "forgot-sent": "Запрос отправлен администратору",
   "forgot-email": "Сброс пароля",
 };
+
+/** Похоже на номер, а не на почту: цифры и знаки номера, и цифр не меньше десяти. */
+function looksLikePhone(value: string): boolean {
+  const text = value.trim();
+  return !text.includes("@") && /^[+\d\s().-]+$/.test(text) && text.replace(/\D/g, "").length >= 10;
+}
 
 /** Кто входил по номеру, в следующий раз сразу видит номер. */
 const MODE_KEY = "fin_login_mode";
@@ -67,7 +74,7 @@ function rememberMode(mode: "phone" | "email") {
   }
 }
 
-export function AuthGate({ onReady }: { onReady: (me: Me) => void }) {
+export function AuthGate({ onReady, notice = "" }: { onReady: (me: Me) => void; notice?: string }) {
   const [step, setStepState] = useState<Step>("email");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -79,10 +86,8 @@ export function AuthGate({ onReady }: { onReady: (me: Me) => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [phoneHint, setPhoneHint] = useState("");
-
-  useEffect(() => {
-    if (readMode() === "phone") setStepState("phone");
-  }, []);
+  /** «Сеанс завершён» держится до первого действия человека. */
+  const [shownNotice, setShownNotice] = useState(notice);
 
   const setStep = (next: Step) => {
     setStepState(next);
@@ -95,6 +100,7 @@ export function AuthGate({ onReady }: { onReady: (me: Me) => void }) {
   const run = async (action: () => Promise<void>) => {
     setBusy(true);
     setError("");
+    setShownNotice("");
     try {
       await action();
     } catch (exc) {
@@ -104,9 +110,47 @@ export function AuthGate({ onReady }: { onReady: (me: Me) => void }) {
     }
   };
 
+  /** Первый шаг по номеру: сервер говорит, есть ли пароль. */
+  const startPhone = async (tenDigits: string) => {
+    const { step: next } = await financeApi.phoneStart(phoneValue(tenDigits));
+    setStep(next === "set_password" ? "set" : "password");
+  };
+
+  useEffect(() => {
+    // Ссылка-приглашение из карточки сотрудника: номер уже в адресе.
+    const invited = readParam("phone");
+    if (invited) {
+      writeParams({ phone: null });
+      const fromLink = phoneDigits(invited);
+      if (fromLink.length === 10 && fromLink[0] === "7") {
+        setDigits(fromLink);
+        setStepState("phone");
+        void run(() => startPhone(fromLink));
+        return;
+      }
+    }
+    if (readMode() === "phone") setStepState("phone");
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- адрес читается один раз при входе
+  }, []);
+
   const phone = phoneValue(digits);
   const phoneReady = digits.length === 10 && digits[0] === "7";
   const mismatch = again.length > 0 && (againTouched || again.length >= password.length) && again !== password;
+
+  /** Вход по номеру с паролем. Учётка ждёт пароль (409) — к «Придумайте пароль». */
+  const loginByPhone = async (tenDigits: string, secret: string) => {
+    try {
+      const me = await financeApi.phoneLogin({ phone: phoneValue(tenDigits), password: secret });
+      rememberMode("phone");
+      onReady(me);
+    } catch (exc) {
+      if (exc instanceof FinanceApiError && exc.status === 409) {
+        setStep("set");
+        return;
+      }
+      throw exc;
+    }
+  };
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -114,33 +158,49 @@ export function AuthGate({ onReady }: { onReady: (me: Me) => void }) {
     switch (step) {
       case "email":
         return run(async () => {
+          if (looksLikePhone(email)) {
+            // Сотрудник ввёл номер в первое поле — дальше дорога по номеру.
+            const fromField = phoneDigits(email);
+            if (fromField.length !== 10 || fromField[0] !== "7") throw new Error(PHONE_NOT_MOBILE);
+            setDigits(fromField);
+            const typed = password;
+            const { step: next } = await financeApi.phoneStart(phoneValue(fromField));
+            if (next === "set_password") {
+              setStep("set");
+              return;
+            }
+            if (!typed) {
+              setStep("password");
+              return;
+            }
+            setStep("password");
+            await loginByPhone(fromField, typed);
+            return;
+          }
           const me = await financeApi.login({ email, password });
           rememberMode("email");
           onReady(me);
         });
       case "register":
+        if (fullName.trim().length < 2) {
+          setError("Укажите своё имя");
+          return;
+        }
         return run(async () => onReady(await financeApi.register({ email, password, company, full_name: fullName })));
       case "phone":
         if (!phoneReady) return;
-        return run(async () => {
-          const { step: next } = await financeApi.phoneStart(phone);
-          setStep(next === "set_password" ? "set" : "password");
-        });
+        return run(() => startPhone(digits));
       case "password":
-      case "set-done":
-        return run(async () => {
-          const me = await financeApi.phoneLogin({ phone, password });
-          rememberMode("phone");
-          onReady(me);
-        });
+        return run(() => loginByPhone(digits, password));
       case "set":
         if (password !== again) {
           setAgainTouched(true);
           return;
         }
         return run(async () => {
-          await financeApi.phoneSetPassword({ phone, password });
-          setStep("set-done");
+          const me = await financeApi.phoneSetPassword({ phone, password });
+          rememberMode("phone");
+          onReady(me);
         });
       case "forgot":
         if (!phoneReady) return;
@@ -188,17 +248,20 @@ export function AuthGate({ onReady }: { onReady: (me: Me) => void }) {
             </label>
           ) : null}
 
+          {shownNotice && (step === "email" || step === "phone") ? <p className="auth-note">{shownNotice}</p> : null}
+
           {step === "email" || step === "register" ? (
             <>
               <label className="auth-field">
-                <span className="eyebrow">Почта</span>
+                <span className="eyebrow">{step === "email" ? "Почта или телефон" : "Почта"}</span>
                 <input
                   className="input-field"
-                  type="email"
+                  type={step === "email" ? "text" : "email"}
+                  inputMode={step === "email" ? "email" : undefined}
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
-                  placeholder="buh@company.kz"
-                  autoComplete="email"
+                  placeholder={step === "email" ? "buh@company.kz или +7 7__ ___ __ __" : "buh@company.kz"}
+                  autoComplete={step === "email" ? "username" : "email"}
                   required
                 />
               </label>
@@ -219,12 +282,13 @@ export function AuthGate({ onReady }: { onReady: (me: Me) => void }) {
 
           {step === "register" ? (
             <label className="auth-field">
-              <span className="eyebrow">Ваше имя (необязательно)</span>
+              <span className="eyebrow">Ваше имя</span>
               <input
                 className="input-field"
                 value={fullName}
                 onChange={(event) => setFullName(event.target.value)}
                 autoComplete="name"
+                required
               />
             </label>
           ) : null}
@@ -251,9 +315,9 @@ export function AuthGate({ onReady }: { onReady: (me: Me) => void }) {
             </label>
           ) : null}
 
-          {step === "password" || step === "set" || step === "set-done" ? numberLine : null}
+          {step === "password" || step === "set" ? numberLine : null}
 
-          {step === "password" || step === "set-done" ? (
+          {step === "password" ? (
             <PasswordField value={password} onChange={setPassword} autoComplete="current-password" autoFocus />
           ) : null}
 
@@ -292,6 +356,9 @@ export function AuthGate({ onReady }: { onReady: (me: Me) => void }) {
               Пароль администратора сбрасывает владелец компании в личном кабинете. Пароль владельца
               восстанавливается только на сервере.
             </p>
+          ) : null}
+          {step === "forgot-sent" ? (
+            <p className="auth-note">Когда пароль сбросят, введите номер снова — система попросит придумать новый.</p>
           ) : null}
 
           {error ? (
@@ -365,8 +432,7 @@ const ACTIONS: Record<Step, string> = {
   register: "Зарегистрировать компанию",
   phone: "Далее",
   password: "Войти",
-  set: "Задать пароль",
-  "set-done": "Войти",
+  set: "Задать пароль и войти",
   forgot: "Отправить запрос",
   "forgot-sent": "Ко входу",
   "forgot-email": "Ко входу",

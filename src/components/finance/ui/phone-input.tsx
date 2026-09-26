@@ -18,6 +18,18 @@ import { useLayoutEffect, useRef, useState } from "react";
  * с семёркой, и так же он приходит из автозаполнения; зашитая «7» превращала
  * бы «777…» в «7777…».
  *
+ * Код страны при наборе с клавиатуры. Номер в Казахстане пишут тремя
+ * способами — «+7 747…», «8 747…» и «7747…», — и префикс «+7 » в поле этого не
+ * отменяет: руки набирают, как привыкли. Раньше «+77474568661» давало
+ * `+7 (774) 745-68-66` — чужой номер, внешне правильный, и вход молча уходил
+ * мимо учётки (26.09, прод). Поэтому:
+ * - «+» в пустом поле — следующая «7» это код страны, а не первая цифра;
+ * - «8» первой цифрой — междугородняя восьмёрка: мобильный после +7 всегда
+ *   начинается с 7, и «8» первой цифрой номера не бывает;
+ * - одиннадцатая цифра — номер набран с кодом страны: первая уходит, остальные
+ *   сдвигаются. Лишняя цифра после верного номера случается реже, чем «7747…»
+ *   целиком, и сдвиг виден в поле сразу.
+ *
  * Значение наружу — десять цифр после +7; `phoneValue` собирает `+77011234567`.
  */
 const MASK = "+7 (7__) ___-__-__";
@@ -83,6 +95,8 @@ export function PhoneInput({
 }: Props) {
   const input = useRef<HTMLInputElement>(null);
   const [wrong, setWrong] = useState(false);
+  /** Набран «+» — следующая «7» будет кодом страны. */
+  const countryNext = useRef(false);
   const text = show(value);
 
   // Каретка — всегда после последней цифры, в том числе после отрисовки.
@@ -127,15 +141,22 @@ export function PhoneInput({
         }}
         onChange={(event) => {
           const raw = event.target.value;
-          const typed = raw.startsWith("+7") ? raw.slice(2).replace(/\D/g, "") : "";
-          // Одна набранная цифра — дописать (одиннадцатую не берём); иначе это
-          // вставка или автозаполнение, и номер разбирается целиком. Без этого
-          // различия одиннадцатая набранная цифра превращала бы «7…» в номер
-          // с кодом страны и съедала первую цифру.
-          const next =
-            typed.length === value.length + 1 && typed.startsWith(value)
-              ? typed.slice(0, 10)
-              : phoneDigits(raw);
+          const rest = raw.startsWith("+7") ? raw.slice(2) : raw;
+          const typed = raw.startsWith("+7") ? rest.replace(/\D/g, "") : "";
+          let next: string;
+          if (typed.length === value.length + 1 && typed.startsWith(value)) {
+            // Одна набранная цифра. Вставка и автозаполнение идут веткой ниже —
+            // там номер разбирается целиком.
+            const digit = typed[typed.length - 1];
+            if (!value && digit === "8") next = "";
+            else if (!value && digit === "7" && countryNext.current) next = "";
+            else if (value.length === 10) next = phoneDigits(`${value}${digit}`);
+            else next = typed;
+            countryNext.current = false;
+          } else {
+            next = phoneDigits(raw);
+          }
+          if (!next && rest.includes("+")) countryNext.current = true;
           if (next !== value) onChange(next);
           if (wrong && (!next || next[0] === "7")) setWrong(false);
         }}

@@ -13,6 +13,7 @@ import {
   contractsApi,
   peopleApi,
 } from "@/components/finance/api";
+import { ConfirmDialog } from "@/components/finance/ui/confirm-dialog";
 import { SelectLine } from "@/components/finance/ui/select-line";
 
 /**
@@ -83,7 +84,40 @@ export function LevelSwitch({
 
 type RowState = { sending?: boolean; error?: string };
 
-export function RightsMatrix({ kind, id, readOnly = false }: { kind: Kind; id: string; readOnly?: boolean }) {
+/**
+ * Наборы прав: девятнадцать строк по одной на каждого нового человека —
+ * работа, которую никто не доделывает, и сотрудник входит в пустой кабинет.
+ * Набор ставит уровни по всем разделам разом; поля договора не трогает.
+ * Уровень выше возможного для раздела урезается до возможного (отчёты —
+ * только «видит»).
+ */
+type Preset = { key: string; title: string; levels: (resource: string) => AccessLevel | null };
+
+const MONEY_EDIT = new Set(["journal", "table", "calendar", "invoices", "recurrences", "import", "sheets", "dictionaries", "rules"]);
+
+const PRESETS: Preset[] = [
+  { key: "contracts", title: "Договоры", levels: (r) => (r === "contracts" ? "edit" : "none") },
+  {
+    key: "money",
+    title: "Учёт денег",
+    levels: (r) =>
+      MONEY_EDIT.has(r) ? "edit" : r.startsWith("reports.") || r === "integrations" || r === "contracts" ? "view" : "none",
+  },
+  { key: "view", title: "Только просмотр", levels: (r) => (r === "people" || r === "audit" ? "none" : "view") },
+];
+
+export function RightsMatrix({
+  kind,
+  id,
+  readOnly = false,
+  onChanged,
+}: {
+  kind: Kind;
+  id: string;
+  readOnly?: boolean;
+  /** Права записаны — карточка пересчитывает «разделов не открыто». */
+  onChanged?: (data: SubjectAccess) => void;
+}) {
   const [catalog, setCatalog] = useState<AccessCatalog | null>(null);
   const [data, setData] = useState<SubjectAccess | null>(null);
   const [entities, setEntities] = useState<OwnEntity[]>([]);
@@ -91,6 +125,9 @@ export function RightsMatrix({ kind, id, readOnly = false }: { kind: Kind; id: s
   const [rows, setRows] = useState<Record<string, RowState>>({});
   const [fieldsOpen, setFieldsOpen] = useState(false);
   const [pickEntities, setPickEntities] = useState(false);
+  const [preset, setPreset] = useState<Preset | "inherit" | "none" | null>(null);
+  const [presetBusy, setPresetBusy] = useState(false);
+  const [presetError, setPresetError] = useState("");
 
   useEffect(() => {
     let alive = true;
@@ -115,6 +152,7 @@ export function RightsMatrix({ kind, id, readOnly = false }: { kind: Kind; id: s
       try {
         const next = await peopleApi.access.put(kind, id, { [resource]: change });
         setData(next);
+        onChanged?.(next);
         setRows((prev) => ({ ...prev, [resource]: {} }));
       } catch (exc) {
         setRows((prev) => ({
@@ -123,8 +161,37 @@ export function RightsMatrix({ kind, id, readOnly = false }: { kind: Kind; id: s
         }));
       }
     },
-    [kind, id],
+    [kind, id, onChanged],
   );
+
+  const applyPreset = useCallback(async () => {
+    if (!catalog || !preset) return;
+    const RANK: Record<AccessLevel, number> = { none: 0, view: 1, edit: 2 };
+    const changes: Record<string, GrantChange> = {};
+    for (const item of catalog.resources) {
+      if (preset === "inherit") {
+        changes[item.key] = null;
+        continue;
+      }
+      const wanted = preset === "none" ? "none" : preset.levels(item.key);
+      if (wanted === null) continue;
+      const top = item.levels.reduce<AccessLevel>((best, level) => (RANK[level] > RANK[best] ? level : best), "none");
+      changes[item.key] = RANK[wanted] > RANK[top] ? top : wanted;
+    }
+    setPresetBusy(true);
+    setPresetError("");
+    try {
+      const next = await peopleApi.access.put(kind, id, changes);
+      setData(next);
+      onChanged?.(next);
+      setPreset(null);
+    } catch (exc) {
+      setPresetError(exc instanceof Error ? exc.message : "Набор не записался");
+      setPreset(null);
+    } finally {
+      setPresetBusy(false);
+    }
+  }, [catalog, preset, kind, id, onChanged]);
 
   const groups = useMemo(() => {
     const out: { title: string; items: AccessCatalog["resources"] }[] = [];
@@ -146,10 +213,12 @@ export function RightsMatrix({ kind, id, readOnly = false }: { kind: Kind; id: s
   const own = data.grants;
   const dept = data.department_grants ?? {};
   const deptTitle = data.subject.department?.code ?? "";
+  /** У человека без отдела «у отдела: Нет» читалось как решение отдела, которого нет. */
+  const noDept = person && !data.subject.department;
 
   const choiceOf = (resource: string): Choice => {
     const grant = own[resource];
-    if (person) return grant ? grant.level : "inherit";
+    if (person) return grant ? grant.level : noDept ? (data.effective[resource] ?? "none") : "inherit";
     // Поле договора без записи — «как у договоров», а не «скрыто».
     if (!grant && resource.startsWith("contracts.field.")) return data.effective[resource] ?? contractsLevel;
     return grant?.level ?? "none";
@@ -173,7 +242,7 @@ export function RightsMatrix({ kind, id, readOnly = false }: { kind: Kind; id: s
         <span className="cab-right-title">
           {title}
           {note ? <span className="annot cab-right-note">{note}</span> : null}
-          {person ? (
+          {person && !noDept ? (
             <span className="cab-right-sub fin-soft">
               у отдела{deptTitle ? ` ${deptTitle}` : ""}: {deptLevel ? words[deptLevel as AccessLevel] : "как у договоров"}
             </span>
@@ -183,7 +252,7 @@ export function RightsMatrix({ kind, id, readOnly = false }: { kind: Kind; id: s
           value={choiceOf(resource)}
           levels={levels}
           words={words}
-          inherit={person}
+          inherit={person && !noDept}
           label={title}
           disabled={readOnly || state.sending}
           onChange={(next) => void save(resource, next === "inherit" ? null : next)}
@@ -199,8 +268,39 @@ export function RightsMatrix({ kind, id, readOnly = false }: { kind: Kind; id: s
     );
   };
 
+  const presetTitle =
+    preset === "inherit" ? "Как у отдела" : preset === "none" ? "Снять всё" : preset ? preset.title : "";
+
   return (
     <div className="cab-rights" data-person={person ? "true" : undefined}>
+      {readOnly ? null : (
+        <div className="cab-presets">
+          <span className="eyebrow">Набор</span>
+          {PRESETS.map((item) => (
+            <button key={item.key} type="button" className="fin-link-btn" disabled={presetBusy} onClick={() => setPreset(item)}>
+              {item.title}
+            </button>
+          ))}
+          <button
+            type="button"
+            className="fin-link-btn"
+            disabled={presetBusy}
+            onClick={() => setPreset(person && !noDept ? "inherit" : "none")}
+          >
+            {person && !noDept ? "Как у отдела" : "Снять всё"}
+          </button>
+          {presetError ? <span className="cab-line-error fin-fail">{presetError}</span> : null}
+        </div>
+      )}
+      <ConfirmDialog
+        open={preset !== null}
+        title={`Набор прав · ${presetTitle}`}
+        text="Права по всем разделам заменятся набором. Поля договора останутся как есть."
+        confirm="Заменить"
+        busy={presetBusy}
+        onConfirm={() => void applyPreset()}
+        onCancel={() => setPreset(null)}
+      />
       {person ? (
         <div className="cab-right cab-right-head" aria-hidden="true">
           <span />
@@ -234,6 +334,9 @@ export function RightsMatrix({ kind, id, readOnly = false }: { kind: Kind; id: s
                       disabled={readOnly || scopeInherited || rows.contracts?.sending}
                       className="cab-level"
                     />
+                    {noDept && scope.rows === "department" ? (
+                      <span className="cab-line-error fin-wait">Отдела нет — договоров своего отдела не увидит</span>
+                    ) : null}
                   </div>
                   <div className="cab-right cab-right-sub-row">
                     <span className="cab-right-title">Какими юрлицами</span>

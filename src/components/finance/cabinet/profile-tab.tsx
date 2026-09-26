@@ -24,12 +24,17 @@ export function ProfileTab({ me, onMe }: { me: Me; onMe: (next: Me) => void }) {
   const employee = me.employee;
   const department = employee?.department;
   const [changing, setChanging] = useState(false);
+  // Владелец, зарегистрированный без имени, заведён сотрудником под своей
+  // почтой. Показать почту в строке ФИО — значит выдать её за имя; пустая
+  // строка честнее и сама просит её заполнить.
+  const shownName = employee?.full_name || me.user?.full_name || "";
+  const name = shownName && shownName === me.user?.email ? "" : shownName;
 
   return (
     <div className="cab-lines">
       <EditLine
         label="ФИО"
-        value={employee?.full_name || me.user?.full_name || ""}
+        value={name}
         editable={admin}
         onSave={async (value) => onMe(await peopleApi.self.profile({ full_name: value }))}
       />

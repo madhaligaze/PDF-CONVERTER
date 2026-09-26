@@ -61,8 +61,14 @@ export function PeopleTab({
       source: employees,
       rows: { ...(prev.source === employees ? prev.rows : {}), [row.id]: row },
     }));
+  /** Только что заведённый — его карточка открывается сразу, до перечитывания списка. */
+  const [created, setCreated] = useState<EmployeeRow | null>(null);
 
-  const rows = useMemo(() => employees.map((row) => patched?.[row.id] ?? row), [employees, patched]);
+  const rows = useMemo(() => {
+    const list = employees.map((row) => patched?.[row.id] ?? row);
+    if (created && !list.some((row) => row.id === created.id)) list.push(created);
+    return list;
+  }, [employees, patched, created]);
 
   const tabs = useMemo(() => {
     const items = [{ key: ALL, label: "Все", count: rows.length }];
@@ -140,9 +146,14 @@ export function PeopleTab({
           departments={departments}
           department={current?.id ?? ""}
           onCancel={() => setAdding(null)}
-          onSaved={() => {
+          onSaved={(row) => {
             setAdding(null);
             onChanged();
+            // С доступом — следующий шаг в карточке: приглашение и права.
+            if (row.account) {
+              setCreated(row);
+              onOpen(row.id);
+            }
           }}
         />
       ) : null}
@@ -223,7 +234,11 @@ function PersonForm({
   const [digits, setDigits] = useState("");
   const [dept, setDept] = useState(department);
   const [job, setJob] = useState("");
-  const [access, setAccess] = useState(false);
+  // Номер — это логин и ничего больше: вписанный номер сам включает доступ.
+  // Раньше переключатель стоял выключенным, «Добавить» было доступно, и номер
+  // молча пропадал — человек заведён, а войти не может (26.09, «Асхат»).
+  const [accessChoice, setAccessChoice] = useState<boolean | null>(null);
+  const access = accessChoice ?? digits.length > 0;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -240,7 +255,7 @@ function PersonForm({
         try {
           const row = await peopleApi.employees.create({
             full_name: name.trim(),
-            phone: digits ? phoneValue(digits) : undefined,
+            phone: access && digits ? phoneValue(digits) : undefined,
             department_id: dept || null,
             job_title: job.trim(),
             access,
@@ -283,11 +298,12 @@ function PersonForm({
           type="button"
           className="cab-toggle"
           aria-pressed={access}
-          onClick={() => setAccess((value) => !value)}
+          onClick={() => setAccessChoice(!access)}
         >
           Доступ в систему
         </button>
         {access && digits.length !== 10 ? <span className="auth-hint">Для входа нужен телефон.</span> : null}
+        {!access && digits.length > 0 ? <span className="auth-hint">Без доступа номер не сохранится.</span> : null}
         <span className="cab-add-actions">
           <button type="button" className="btn-ghost btn-sm" onClick={onCancel}>
             Отмена

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { can, isOwner } from "@/components/finance/access";
-import { type Department, type EmployeeRow, type Me, peopleApi } from "@/components/finance/api";
+import { type Department, type EmployeeRow, type Me, type SubjectAccess, peopleApi } from "@/components/finance/api";
 import { ActionFeed } from "@/components/finance/cabinet/action-feed";
 import { EditLine } from "@/components/finance/cabinet/edit-line";
 import { RightsMatrix } from "@/components/finance/cabinet/rights";
@@ -26,11 +26,34 @@ import { ArrowDownIcon, ArrowUpIcon, CloseIcon } from "@/components/icons";
  *
  * Администратор не видит «Сбросить пароль» у владельца и других
  * администраторов; пароль владельца сбрасывается только на сервере.
+ *
+ * Учётка ждёт пароль — главной становится «Скопировать приглашение»: вход
+ * открыт, но человек об этом не знает, и спрашивать ему было не с чего
+ * («откуда я знаю какой пароль», 26.09). Ссылка открывает вход сразу на
+ * «Придумайте пароль» с номером.
  */
 type Tab = "profile" | "access" | "sessions" | "actions";
-type Confirm = "reset" | "block" | "end" | "close-access" | null;
+type Confirm = "reset" | "block" | "end" | "close-access" | "archive" | null;
 
 const WINDOW_HOURS = 72;
+
+/** Открытых разделов у человека — без полей договора: они не раздел. */
+function openSections(data: SubjectAccess): number {
+  return Object.entries(data.effective).filter(([key, level]) => !key.startsWith("contracts.field.") && level !== "none")
+    .length;
+}
+
+function inviteText(employee: EmployeeRow, company: string): string {
+  const digits = employee.phone.replace(/\D/g, "").slice(-10);
+  const link = `${window.location.origin}/finance?phone=${digits}`;
+  const until = employee.account?.pending_until ? ` до ${stamp(employee.account.pending_until)}` : "";
+  return [
+    `Вам открыт вход в учёт${company ? ` «${company}»` : ""}.`,
+    `Откройте ссылку и придумайте пароль${until}:`,
+    link,
+    `Логин — ваш номер ${formatPhone(employee.phone)}.`,
+  ].join("\n");
+}
 
 export function EmployeeCard({
   employee,
@@ -58,6 +81,8 @@ export function EmployeeCard({
   const [opening, setOpening] = useState(false);
   const [digits, setDigits] = useState("");
   const [note, setNote] = useState("");
+  /** Сколько разделов открыто; `null` — не спрашивали (нет учётки, админ). */
+  const [sections, setSections] = useState<number | null>(null);
 
   useEffect(() => {
     setError("");
@@ -65,7 +90,22 @@ export function EmployeeCard({
     setOpening(false);
     setDigits("");
     setConfirm(null);
+    setSections(null);
   }, [employee?.id]);
+
+  const accountRole = employee?.account?.role ?? null;
+  const employeeId = employee?.id ?? null;
+  useEffect(() => {
+    if (!employeeId || accountRole !== "employee" || !can(me, "people", "view")) return;
+    let alive = true;
+    peopleApi.access
+      .get("employee", employeeId)
+      .then((data) => alive && setSections(openSections(data)))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [employeeId, accountRole, me]);
 
   if (!employee) return null;
 
@@ -82,14 +122,18 @@ export function EmployeeCard({
   const hasRequest = employee.requests.some((item) => item.kind === "password_reset_requested");
   const hasAccount = employee.account !== null;
 
-  const act = async (action: () => Promise<EmployeeRow>, after?: string): Promise<boolean> => {
+  /** Строка итога берётся из ответа сервера, а не из того, что ожидали. */
+  const act = async (
+    action: () => Promise<EmployeeRow>,
+    after?: (row: EmployeeRow) => string,
+  ): Promise<boolean> => {
     setBusy(true);
     setError("");
     try {
       const row = await action();
       onChanged(row);
       setConfirm(null);
-      if (after) setNote(after);
+      if (after) setNote(after(row));
       return true;
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : "Не получилось");
@@ -101,6 +145,27 @@ export function EmployeeCard({
   };
 
   const windowEnd = stamp(new Date(Date.now() + WINDOW_HOURS * 3600 * 1000).toISOString());
+  const waitingNote = (row: EmployeeRow) =>
+    row.status === "pending" && row.account?.pending_until
+      ? `ждёт пароль до ${stamp(row.account.pending_until)}`
+      : row.status === "active"
+        ? "вход открыт · пароль прежний"
+        : employeeStatus(row).text;
+
+  const copyInvite = async () => {
+    const text = inviteText(employee, me.company?.title ?? "");
+    try {
+      await navigator.clipboard.writeText(text);
+      setNote("приглашение скопировано");
+    } catch {
+      setError("Скопировать не получилось — браузер не дал доступ к буферу");
+    }
+  };
+  const whatsapp = () => {
+    const text = inviteText(employee, me.company?.title ?? "");
+    const number = employee.phone.replace(/\D/g, "");
+    window.open(`https://wa.me/${number}?text=${encodeURIComponent(text)}`, "_blank", "noopener");
+  };
 
   const actions: { key: string; label: string; primary?: boolean; run: () => void }[] = [];
   if (touchable) {
@@ -116,20 +181,41 @@ export function EmployeeCard({
         run: () => void act(() => peopleApi.employees.unblock(employee.id)),
       });
     } else {
+      if (employee.status === "pending" && employee.phone) {
+        actions.push({ key: "invite", label: "Скопировать приглашение", primary: !hasRequest, run: () => void copyInvite() });
+        actions.push({ key: "whatsapp", label: "WhatsApp", run: whatsapp });
+      }
       actions.push({ key: "reset", label: "Сбросить пароль", primary: hasRequest, run: () => setConfirm("reset") });
       if (employee.status === "active") {
         actions.push({ key: "end", label: "Завершить сеансы", run: () => setConfirm("end") });
       }
       actions.push({ key: "block", label: "Заблокировать", run: () => setConfirm("block") });
     }
+    actions.push({ key: "archive", label: "Убрать", run: () => setConfirm("archive") });
   }
+  /** Почему кнопок нет — иначе пустая карточка выглядит сломанной. */
+  const untouchable =
+    manage && !self && hasAccount && !touchable
+      ? role === "owner"
+        ? "Учёткой владельца управляет только он сам"
+        : "Администратором управляет владелец"
+      : "";
 
   const dialogs: Record<Exclude<Confirm, null>, { title: string; text: string; confirm: string; run: () => void }> = {
     reset: {
       title: `Сбросить пароль · ${short}`,
       text: `Старый пароль перестанет действовать, открытые сеансы закроются. Задать новый можно до ${windowEnd}.`,
       confirm: "Сбросить",
-      run: () => void act(() => peopleApi.employees.reset(employee.id), `пароль сброшен · ждёт новый до ${windowEnd}`),
+      run: () => void act(() => peopleApi.employees.reset(employee.id), (row) => `пароль сброшен · ${waitingNote(row)}`),
+    },
+    archive: {
+      title: `Убрать · ${short}`,
+      text: "Человек уйдёт из списка, вход закроется. В договорах имя останется. Завести снова — тем же ФИО.",
+      confirm: "Убрать",
+      run: () =>
+        void act(() => peopleApi.employees.archive(employee.id)).then((ok) => {
+          if (ok) onClose();
+        }),
     },
     block: {
       title: `Заблокировать вход · ${short}`,
@@ -208,6 +294,15 @@ export function EmployeeCard({
             ))}
           </div>
         ) : null}
+        {untouchable ? <p className="cab-card-note fin-soft">{untouchable}</p> : null}
+        {sections === 0 && hasAccount && employee.status !== "blocked" ? (
+          <p className="cab-card-note fin-wait">
+            Разделов не открыто — войдёт в пустой кабинет ·{" "}
+            <button type="button" className="fin-link-btn" onClick={() => setTab("access")}>
+              Доступ
+            </button>
+          </p>
+        ) : null}
 
         {opening ? (
           <form
@@ -217,7 +312,7 @@ export function EmployeeCard({
               if (digits.length !== 10) return;
               void act(
                 () => peopleApi.employees.openAccount(employee.id, { phone: phoneValue(digits) }),
-                `ждёт пароль до ${windowEnd}`,
+                waitingNote,
               ).then((ok) => ok && setOpening(false));
             }}
           >
@@ -312,7 +407,14 @@ export function EmployeeCard({
               ) : null}
             </div>
           ) : null}
-          {shownTab === "access" ? <RightsMatrix kind="employee" id={employee.id} readOnly={!touchable} /> : null}
+          {shownTab === "access" ? (
+            <RightsMatrix
+              kind="employee"
+              id={employee.id}
+              readOnly={!touchable}
+              onChanged={(data) => setSections(openSections(data))}
+            />
+          ) : null}
           {shownTab === "sessions" ? <SessionsList employeeId={employee.id} /> : null}
           {shownTab === "actions" ? <ActionFeed fixed={{ employee_id: employee.id }} /> : null}
         </div>

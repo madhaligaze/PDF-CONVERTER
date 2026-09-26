@@ -85,8 +85,12 @@ export function employeeStatus(row: EmployeeRow, now = Date.now()): Status {
   const account = row.account;
   switch (row.status) {
     case "active": {
-      const seen = account?.last_seen_at ?? null;
-      if (seen && now - new Date(seen).getTime() < ONLINE_MS) return { text: "в системе", tone: "", rank: 2 };
+      // «Был в сети» живёт в сеансе, а «Выйти» сеанс удаляет: после выхода
+      // человек, который входил вчера, показывался «входа ещё не было».
+      // Последний вход хранится в учётке и переживает выход.
+      const live = account?.last_seen_at ?? null;
+      if (live && now - new Date(live).getTime() < ONLINE_MS) return { text: "в системе", tone: "", rank: 2 };
+      const seen = latest(live, account?.last_login_at ?? null);
       if (seen) return { text: `в системе ${ago(seen, now)}`, tone: "", rank: 3 };
       return { text: "входа ещё не было", tone: "", rank: 3 };
     }
@@ -101,9 +105,15 @@ export function employeeStatus(row: EmployeeRow, now = Date.now()): Status {
   }
 }
 
+function latest(a: string | null, b: string | null): string | null {
+  if (!a) return b;
+  if (!b) return a;
+  return new Date(a).getTime() >= new Date(b).getTime() ? a : b;
+}
+
 /** Время последнего входа для порядка внутри «в системе». */
 export function seenAt(row: EmployeeRow): number {
-  const seen = row.account?.last_seen_at;
+  const seen = latest(row.account?.last_seen_at ?? null, row.account?.last_login_at ?? null);
   return seen ? new Date(seen).getTime() : 0;
 }
 

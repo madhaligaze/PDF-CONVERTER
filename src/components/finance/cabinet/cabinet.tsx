@@ -67,10 +67,14 @@ export function Cabinet({
   onLogout,
   onOpenContract,
   onPending,
+  hasSections = true,
 }: {
   me: Me;
   onMe: (next: Me) => void;
   onBack: () => void;
+  /** Открыт ли хоть один раздел учёта. Нет — «К учёту» вести некуда: раньше
+   *  кнопка вела из кабинета в тот же кабинет и выглядела сломанной. */
+  hasSections?: boolean;
   onLogout: () => void;
   onOpenContract: (id: string) => void;
   /** Новое число запросов — для «N запросов» в раме. */
@@ -98,7 +102,9 @@ export function Cabinet({
     if (wanted && (MINE.some((t) => t.key === wanted) || (seePeople && ["people", "rights"].includes(wanted)) || (seeAudit && wanted === "audit"))) {
       return wanted;
     }
-    return managePeople ? "people" : "profile";
+    // Без разделов первым делом видно «Разделов пока не открыто» — ответ на
+    // вопрос «а где учёт?», а не профиль с именем и телефоном.
+    return managePeople ? "people" : hasSections ? "profile" : "access";
   });
   const [department, setDepartmentState] = useState<string>(() => readParam("d") ?? PEOPLE_ALL);
   const [openId, setOpenIdState] = useState<string | null>(() => readParam("id"));
@@ -189,9 +195,13 @@ export function Cabinet({
         <LiquidStage className="cab-liquid" intensity={0.45} delay={0.1} />
         <div className="cab-portrait-veil" aria-hidden="true" />
         <div className="cab-portrait-top">
-          <button type="button" className="btn-ghost btn-sm" onClick={onBack}>
-            <ArrowLeftIcon size={15} />К учёту
-          </button>
+          {hasSections ? (
+            <button type="button" className="btn-ghost btn-sm" onClick={onBack}>
+              <ArrowLeftIcon size={15} />К учёту
+            </button>
+          ) : (
+            <span />
+          )}
           <button type="button" className="btn-ghost btn-sm" onClick={onLogout}>
             Выйти
           </button>
@@ -220,7 +230,10 @@ export function Cabinet({
         ) : null}
 
         <div className="cab-tabs">
-          <div className="cab-tabs-row">
+          {/* Без подписи группы строка — одна колонка: иначе вкладки встают в
+              колонку 64px под подпись «Моё», и у сотрудника от них остаётся
+              обрезанный «Профиль» (26.09, прод). */}
+          <div className="cab-tabs-row" data-single={people.length ? undefined : "true"}>
             {people.length ? <span className="eyebrow cab-tabs-group">Моё</span> : null}
             <SelectLine
               items={MINE}

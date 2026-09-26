@@ -84,6 +84,18 @@ export function useRegistryBoot(me: Me): void {
   useEffect(() => holdLive(), []);
 }
 
+/** Пустой список словами той области, которая открыта человеку. */
+function emptyText(me: Me): string {
+  const scope = me.contracts_scope;
+  if (scope?.rows === "own") return "Договоров, где вы ответственный, пока нет";
+  if (scope?.rows === "department") {
+    const code = me.employee?.department?.code;
+    return code ? `Договоров отдела ${code} пока нет` : "Отдела нет — договоров своего отдела не видно";
+  }
+  if (scope?.entities?.length) return "Договоров ваших юрлиц пока нет";
+  return "Договоров пока нет";
+}
+
 export function Registry({ me, onGo }: { me: Me; onGo: (section: string) => void }) {
   useRegistryBoot(me);
   const phase = useRegistry((s) => s.phase);
@@ -319,7 +331,17 @@ export function Registry({ me, onGo }: { me: Me; onGo: (section: string) => void
             ]}
           />
         ) : (
-          <p className="creg-empty">Договоров пока нет</p>
+          <>
+            {/* При узкой области пусто не в реестре, а в том, что открыто, —
+                и сказать надо это: «Договоров пока нет» читалось как пустой
+                реестр, когда в нём сотни договоров. */}
+            <p className="creg-empty">{emptyText(me)}</p>
+            {canEdit ? (
+              <button type="button" className="btn-primary creg-empty-new" onClick={newContract}>
+                Новый договор
+              </button>
+            ) : null}
+          </>
         )}
         <ContractCard
           id={null}

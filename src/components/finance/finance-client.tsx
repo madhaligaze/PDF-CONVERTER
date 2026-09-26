@@ -41,6 +41,8 @@ import {
 import {
   type Dictionaries,
   type Overview,
+  AUTH_LOST_EVENT,
+  FORBIDDEN_EVENT,
   FinanceApiError,
   financeApi,
   peopleApi,
@@ -242,6 +244,34 @@ function sectionFromAddress(): Section | null {
 }
 
 /**
+ * Последний открытый раздел — туда же при следующем входе. Раньше вход всегда
+ * вёл в «Журнал», и компания, которая ведёт договоры, каждый раз начинала с
+ * пустого журнала, хотя колонка начинается с «Реестра».
+ */
+const LAST_KEY = "fin_last_section";
+
+function readLast(): Section | null {
+  try {
+    const value = localStorage.getItem(LAST_KEY);
+    return (SECTIONS.find((item) => item.key === value)?.key as Section | undefined) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function writeLast(section: Section): void {
+  if (!SECTIONS.some((item) => item.key === section)) return;
+  try {
+    localStorage.setItem(LAST_KEY, section);
+  } catch {
+    /* не запомнится — откроется первый раздел колонки */
+  }
+}
+
+/** Как часто перечитывать «кто я и что мне открыто», пока вкладка видна. */
+const ME_POLL_MS = 20000;
+
+/**
  * Закреплена ли колонка разделов — выбор человека, переживающий перезагрузку.
  *
  * Через `useSyncExternalStore`, а не «прочитать в эффекте и положить в
@@ -306,8 +336,15 @@ export function FinanceClient() {
     () => GROUPS.map((group) => ({ ...group, items: group.items.filter(visible) })).filter((g) => g.items.length),
     [visible],
   );
-  /** Без раздела в адресе — журнал, а кому он закрыт, — первый открытый. */
-  const home: Section = can(me, "journal") ? "journal" : (groups[0]?.items[0]?.key ?? "me");
+  const [last, setLast] = useState<Section | null>(null);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- хранилище читается только в браузере
+    setLast(readLast());
+  }, []);
+  /** Без раздела в адресе — последний открытый, иначе первый в колонке. */
+  const lastItem = last ? SECTIONS.find((item) => item.key === last) : undefined;
+  const home: Section = lastItem && visible(lastItem) ? lastItem.key : (groups[0]?.items[0]?.key ?? "me");
+  const hasSections = groups.length > 0;
   const section: Section = picked ?? home;
   const sectionItem = ALL_SECTIONS.find((item) => item.key === section);
   const allowed = sectionItem ? visible(sectionItem) : false;
@@ -315,10 +352,20 @@ export function FinanceClient() {
   const setSection = useCallback((next: Section | string) => {
     const key = (ALL_SECTIONS.find((item) => item.key === next)?.key ?? "journal") as Section;
     setSectionState(key);
+    writeLast(key);
     // Запись открытого договора, лист и вкладки кабинета принадлежат своему
     // экрану — при смене раздела они уходят из адреса.
     writeParams({ s: key, id: null, v: null, t: null, d: null }, true);
   }, []);
+  /**
+   * Без единого раздела человек стоит в кабинете, и кабинет закреплён: право,
+   * выданное, пока он читает «Разделов пока не открыто», не выдёргивает экран
+   * из-под него, а возвращает «К учёту».
+   */
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- закрепить кабинет, пока открывать нечего
+    if (me && picked === null && !hasSections) setSectionState("me");
+  }, [me, picked, hasSections]);
   /** Откуда пришли в кабинет — туда и возвращает «← К учёту». */
   const [cameFrom, setCameFrom] = useState<Section | null>(null);
   const openCabinet = useCallback(() => {
@@ -334,15 +381,28 @@ export function FinanceClient() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- число приходит вместе с me
     setPending(me?.pending_requests ?? 0);
   }, [me?.pending_requests]);
+  /**
+   * Просьбы о сбросе видно и с другой вкладки браузера: число в заголовке.
+   * Кнопка «N запросов» в раме видна, только пока смотришь на раздел.
+   */
+  const seesRequests = can(me, "people", "edit");
+  useEffect(() => {
+    const base = document.title.replace(/^\(\d+\)\s/, "");
+    document.title = seesRequests && pending > 0 ? `(${pending}) ${base}` : base;
+  }, [pending, seesRequests]);
 
   /**
    * Права могут поменяться, пока человек в разделе: `me` перечитывается раз в
-   * минуту, пока вкладка видна, — колонка перестраивается, «N запросов»
-   * обновляется. 403 на любом запросе перечитывает сразу (фронт-план, 3.4).
+   * 20 с, пока вкладка видна, — колонка перестраивается, «N запросов»
+   * обновляется. 403 на любом запросе перечитывает сразу (фронт-план, 3.4):
+   * раньше это было только обещанием плана, и отобранный реестр минуту стоял
+   * на экране с подписью «Нет связи».
    */
+  const [authNotice, setAuthNotice] = useState("");
   const refreshMe = useCallback(async () => {
     try {
       const next = await financeApi.me();
+      if (!next.authenticated) setAuthNotice("Сеанс завершён — войдите снова");
       setMe(next.authenticated ? next : null);
     } catch (exc) {
       if (exc instanceof FinanceApiError && exc.status === 401) setMe(null);
@@ -352,9 +412,32 @@ export function FinanceClient() {
     if (!me) return;
     const timer = setInterval(() => {
       if (document.visibilityState === "visible") void refreshMe();
-    }, 60000);
+    }, ME_POLL_MS);
     return () => clearInterval(timer);
   }, [me, refreshMe]);
+  const signedIn = me !== null;
+  useEffect(() => {
+    if (!signedIn) return;
+    // Сеанс закрыли (блокировка, сброс, «Завершить сеансы») — ко входу со
+    // словами, а не кабинет со своим именем и чужой ошибкой внутри.
+    const lost = () => {
+      setAuthNotice("Сеанс завершён — войдите снова");
+      setMe(null);
+    };
+    let lastCheck = 0;
+    const forbidden = () => {
+      const now = Date.now();
+      if (now - lastCheck < 3000) return;
+      lastCheck = now;
+      void refreshMe();
+    };
+    window.addEventListener(AUTH_LOST_EVENT, lost);
+    window.addEventListener(FORBIDDEN_EVENT, forbidden);
+    return () => {
+      window.removeEventListener(AUTH_LOST_EVENT, lost);
+      window.removeEventListener(FORBIDDEN_EVENT, forbidden);
+    };
+  }, [signedIn, setMe, refreshMe]);
 
   /** Сигнал «открыт раздел» в журнал действий; сервер сам держит «не чаще раза в минуту». */
   useEffect(() => {
@@ -525,7 +608,18 @@ export function FinanceClient() {
   }, [section, sectionItem, allowed, dictionaries, revision, reload, me, sheetRefresh, setSection]);
 
   if (loading) return <AuthLoading />;
-  if (!me) return <AuthGate onReady={(next) => setMe(next)} />;
+  if (!me) {
+    return (
+      <AuthGate
+        key={authNotice}
+        notice={authNotice}
+        onReady={(next) => {
+          setAuthNotice("");
+          setMe(next);
+        }}
+      />
+    );
+  }
   if (me.user?.must_change_password) {
     return (
       <PasswordChangeGate
@@ -670,13 +764,15 @@ export function FinanceClient() {
                 setMe(next);
                 reload();
               }}
-              onBack={() => setSection(cameFrom && cameFrom !== "me" ? cameFrom : home)}
+              onBack={() => setSection(cameFrom && cameFrom !== "me" && visible(ALL_SECTIONS.find((item) => item.key === cameFrom)!) ? cameFrom : home)}
               onLogout={async () => {
                 await financeApi.logout().catch(() => undefined);
+                setAuthNotice("");
                 setMe(null);
               }}
               onOpenContract={openContract}
               onPending={setPending}
+              hasSections={hasSections}
             />
           </main>
         </div>
