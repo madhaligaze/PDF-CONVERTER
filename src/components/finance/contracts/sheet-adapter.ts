@@ -168,15 +168,76 @@ function kindOf(key: string, field: RegistryField | null): ColumnKind {
  * Подписи шапки взяты из файла как есть: «Текущее состояние (действующий/
  * недействующий/ на исполении/ исполнен/ не состоялся)» в колонке шириной в
  * сто пикселей. В одну строку такая подпись обрезалась бы на «Текущее сост»,
- * и человек не узнал бы свою колонку.
+ * и человек не узнал бы свою колонку. Строки считаются переносом по словам
+ * тем же шрифтом, что у шапки: прикидка «шесть пикселей на букву» насчитывала
+ * пять строк там, где их шесть, и подпись статуса срезалась сверху и снизу.
  */
+function headerLines(label: string, width: number): number {
+  const room = Math.max(24, width - 10);
+  let lines = 1;
+  let used = 0;
+  for (const word of label.split(/\s+/).filter(Boolean)) {
+    const size = textWidth(word, HEAD_FONT);
+    const gap = used ? textWidth(" ", HEAD_FONT) : 0;
+    if (used && used + gap + size > room) {
+      lines += 1;
+      used = size;
+    } else {
+      used += gap + size;
+    }
+  }
+  return lines;
+}
+
 function headerHeight(columns: SheetColumn[]): number {
   let lines = 1;
-  for (const column of columns) {
-    const perLine = Math.max(4, Math.floor((column.width - 8) / 6.2));
-    lines = Math.max(lines, Math.min(5, Math.ceil(column.label.length / perLine)));
+  for (const column of columns) lines = Math.max(lines, Math.min(8, headerLines(column.label, column.width)));
+  return 12 + lines * 15;
+}
+
+// ── Ширина колонки по содержимому ────────────────────────────────────────────
+
+/** Шрифт ячеек Univer по умолчанию (Arial 11pt) и шапки (9pt) — ими и мерим. */
+const CELL_FONT = "14.667px Arial";
+const HEAD_FONT = "12px Arial";
+/** Поля ячейки слева и справа и запас на округление. */
+const CELL_PAD = 14;
+/** Сколько строк блока мерить: на десяти тысячах договоров хватает выборки. */
+const MEASURE_ROWS = 1500;
+/**
+ * Предел ширины по типу колонки. Ширина из файла — нижняя граница: колонку,
+ * которую человек сделал широкой в Excel, лист не сужает; узкую — расширяет
+ * до содержимого, но не дальше предела, иначе одно примечание на абзац делало
+ * бы колонку во весь экран.
+ */
+const WIDTH_CAP: Record<ColumnKind, number> = {
+  ordinal: 44, text: 320, money: 160, date: 112, party: 320, list: 280,
+  people: 240, department: 120, choice: 160, bool: 80, url: 240,
+};
+
+const NUMBER_CAP = 220;
+
+let measureCanvas: CanvasRenderingContext2D | null | undefined;
+const measureMemo = new Map<string, number>();
+
+function textWidth(text: string, font: string): number {
+  if (!text) return 0;
+  const key = `${font}|${text}`;
+  let width = measureMemo.get(key);
+  if (width === undefined) {
+    if (measureCanvas === undefined) {
+      measureCanvas = typeof document !== "undefined" ? document.createElement("canvas").getContext("2d") : null;
+    }
+    if (measureCanvas) {
+      measureCanvas.font = font;
+      width = measureCanvas.measureText(text).width;
+    } else {
+      width = text.length * 7.5;
+    }
+    if (measureMemo.size > 20000) measureMemo.clear();
+    measureMemo.set(key, width);
   }
-  return 10 + lines * 14;
+  return width;
 }
 
 const EMPTY_BLOCK: ViewBlock = {
@@ -418,7 +479,6 @@ export function paletteNow(): Palette {
 type Style = Record<string, unknown>;
 /** `WrapStrategy.CLIP`. */
 const WRAP_CLIP = 2;
-const LIST_KINDS = new Set<ColumnKind>(["list", "people", "department", "party", "choice", "bool"]);
 type Part = "title" | "header" | "body" | "empty";
 
 /**
@@ -448,9 +508,13 @@ function cellStyle(part: Part, column: SheetColumn | null, fmt: Face["fmt"], fla
   } else if (column?.readOnly) {
     style.cl = { rgb: PAPER.soft };
   }
-  // Ячейка со списком без явного переноса Univer переносит по словам («Omar
-  // Development &» над «Consulting» в строке высотой 24): обрезать явно.
-  if (column && LIST_KINDS.has(column.kind)) style.tb = WRAP_CLIP;
+  // Значение не выходит за свою колонку. По умолчанию Univer, как Excel,
+  // выпускает текст в пустую соседнюю ячейку: хвост «Предмета доп.
+  // соглашения» стоял в колонке «Дата расторжения» и читался её значением.
+  // А ячейку со списком без явного переноса он переносит по словам — «Omar
+  // Development &» над «Consulting» в строке высотой 24. Полный текст — в
+  // строке формул и в карточке; ширину колонки подгоняет `fitLayout`.
+  if (column && column.kind !== "ordinal") style.tb = WRAP_CLIP;
   if (fmt === "money") Object.assign(style, { n: { pattern: MONEY_PATTERN }, ht: 3 });
   if (fmt === "whole") Object.assign(style, { n: { pattern: WHOLE_PATTERN }, ht: 3 });
   if (fmt === "date") style.n = { pattern: DATE_PATTERN };
@@ -973,6 +1037,53 @@ function rulesOf(model: SheetModel, state: RegistryState, extra?: ReadonlyMap<st
   return out;
 }
 
+/**
+ * Ширины колонок и высоты шапок — по тому, что в колонках лежит.
+ *
+ * Только при сборке книги: отпечаток раскладки (`structureKey`) о ширинах по
+ * содержимому не знает, иначе каждая правка, удлинившая значение, пересобирала
+ * бы книгу целиком и сбрасывала прокрутку. У справочных колонок (сторона,
+ * список, человек) мерится самое длинное значение — их немного и все должны
+ * читаться, как и номер договора (с пределом уже); у свободного текста —
+ * девятое из десяти, чтобы один абзац примечания не растягивал колонку.
+ */
+function fitLayout(layout: ViewLayout, buckets: Map<string, string[]>, ctx: RenderCtx): ViewLayout {
+  const state = ctx.state;
+  const schema = state.schema;
+  if (!schema) return layout;
+  const valueCtx: Ctx = { schema, parties: state.parties, people: state.people };
+  const blocks = layout.blocks.map((block) => {
+    const all = buckets.get(`${layout.key}#${block.index}`) ?? [];
+    const step = Math.max(1, Math.ceil(all.length / MEASURE_ROWS));
+    const ids = step > 1 ? all.filter((_, index) => index % step === 0) : all;
+    const columns = block.columns.map((column) => {
+      if (column.kind === "ordinal") return column;
+      const widths: number[] = [];
+      for (const id of ids) {
+        const contract = state.byId.get(id);
+        const value = LIVE_KEYS.has(column.key) ? liveValue(state, id, column.key) : contract?.values[column.key];
+        const face = faceOf(column, value, contract, valueCtx);
+        // Univer рисует текст чуть шире, чем мерит канва (сглаживание, округление
+        // по пикселям): без запаса у «№ 333-2023-BBC-BUH» съедалась последняя буква.
+        if (face.v !== null) widths.push(textWidth(faceText(face), CELL_FONT) * 1.05);
+      }
+      widths.sort((a, b) => a - b);
+      // Номер договора — текст, но идентификатор: его читают целиком. Предел
+      // уже, чем у текста: у BBC есть «номера» в полстроки, и по ним колонка
+      // номера становилась шире «Заказчика».
+      const number = column.key === "number";
+      const share = !number && (column.kind === "text" || column.kind === "url") ? 0.9 : 1;
+      const content = widths.length ? widths[Math.min(widths.length - 1, Math.floor((widths.length - 1) * share))] + CELL_PAD : 0;
+      const word = Math.max(0, ...column.label.split(/\s+/).map((part) => textWidth(part, HEAD_FONT))) + 12;
+      const cap = number ? NUMBER_CAP : WIDTH_CAP[column.kind];
+      const width = Math.round(Math.max(column.width, Math.min(Math.max(content, word), cap)));
+      return width === column.width ? column : { ...column, width };
+    });
+    return { ...block, columns, headerHeight: headerHeight(columns) };
+  });
+  return { ...layout, blocks };
+}
+
 // ── Сборка книги ─────────────────────────────────────────────────────────────
 
 export type Built = {
@@ -994,7 +1105,6 @@ export type Built = {
 export function buildRegistry(state: RegistryState, pal: Palette): Built | null {
   const schema = state.schema;
   if (!schema) return null;
-  const layouts = layoutsOf(schema);
   const ctx: RenderCtx = {
     state,
     pal,
@@ -1015,6 +1125,7 @@ export function buildRegistry(state: RegistryState, pal: Palette): Built | null 
       else buckets.set(key, [id]);
     }
   }
+  const layouts = layoutsOf(schema).map((layout) => fitLayout(layout, buckets, ctx));
 
   const styleIds = new Map<string, string>();
   const styles: Record<string, Style> = {};
@@ -1081,8 +1192,9 @@ export function buildRegistry(state: RegistryState, pal: Palette): Built | null 
 
     const columnData: Record<number, { w: number }> = {};
     for (let column = 0; column < layout.width; column += 1) {
-      const owner = layout.blocks.find((block) => block.columns[column]);
-      columnData[column] = { w: owner?.columns[column].width ?? DEFAULT_WIDTH.text };
+      // Колонка общая у всех блоков листа — по самому широкому из них.
+      const widths = layout.blocks.map((block) => block.columns[column]?.width ?? 0);
+      columnData[column] = { w: Math.max(...widths) || DEFAULT_WIDTH.text };
     }
     // Лист из одного блока закрепляет свою шапку. У листа с несколькими
     // закрепить нечего: закреплённая первая шапка подписала бы чужие колонки
