@@ -574,6 +574,10 @@ select.input-field optgroup {
   background-color: var(--bg-raised);
   color: var(--text-primary);
 }
+/* Подсказка обязательного выбора («Выберите счёт», `PlaceholderOption`) — не
+   значение: в закрытом поле приглушена, иначе читалась бы выбранным счётом.
+   Пункты раскрытого списка красятся выше явно и приглушение не наследуют. */
+select.input-field:has(> option[data-placeholder]:checked) { color: var(--text-muted); }
 
 /* ─── Badges ──────────────────────────────────────────────────── */
 .badge {

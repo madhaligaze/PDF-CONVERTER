@@ -12,6 +12,7 @@ import {
   formatDate,
   formatMoney,
 } from "@/components/finance/api";
+import { PlaceholderOption } from "@/components/placeholder-option";
 
 /**
  * Предпросмотр разбора — общий для файла и для книги Google.
@@ -421,7 +422,7 @@ export function PreviewView({
                     void setAccountForAll(event.target.value);
                   }}
                 >
-                  <option value="">выберите счёт</option>
+                  <PlaceholderOption>выберите счёт</PlaceholderOption>
                   {accounts.map((account) => (
                     <option key={account.id} value={account.name}>
                       {account.name}
@@ -598,7 +599,7 @@ function FailedRow({
               defaultValue={values.kind ?? ""}
               onChange={(event) => onFix(row.line, { kind: event.target.value })}
             >
-              <option value="">вид операции</option>
+              <PlaceholderOption>вид операции</PlaceholderOption>
               <option value="income">поступление</option>
               <option value="expense">списание</option>
               <option value="transfer">перевод</option>
@@ -611,7 +612,7 @@ function FailedRow({
               defaultValue=""
               onChange={(event) => onFix(row.line, { [accountField(row)]: event.target.value })}
             >
-              <option value="">выберите счёт</option>
+              <PlaceholderOption>выберите счёт</PlaceholderOption>
               {accounts.map((account) => (
                 <option key={account.id} value={account.name}>
                   {account.name}

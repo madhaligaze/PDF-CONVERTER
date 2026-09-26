@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { CloseIcon } from "@/components/icons";
+import { PlaceholderOption } from "@/components/placeholder-option";
 import { useScrollLock } from "@/components/use-scroll-lock";
 import {
   type Dictionaries,
@@ -166,7 +167,7 @@ export function OperationDialog({ kind, plan, dictionaries, operation, onClose, 
                 value={accountFrom}
                 onChange={(event) => setAccountFrom(event.target.value)}
               >
-                <option value="">Выберите счёт</option>
+                <PlaceholderOption>Выберите счёт</PlaceholderOption>
                 {dictionaries.accounts.map((account) => (
                   <option key={account.id} value={account.id}>
                     {account.name}
@@ -185,7 +186,7 @@ export function OperationDialog({ kind, plan, dictionaries, operation, onClose, 
                 value={accountTo}
                 onChange={(event) => setAccountTo(event.target.value)}
               >
-                <option value="">Выберите счёт</option>
+                <PlaceholderOption>Выберите счёт</PlaceholderOption>
                 {dictionaries.accounts.map((account) => (
                   <option key={account.id} value={account.id}>
                     {account.name}
@@ -313,7 +314,7 @@ export function OperationDialog({ kind, plan, dictionaries, operation, onClose, 
                           )
                         }
                       >
-                        <option value="">статья</option>
+                        <PlaceholderOption>статья</PlaceholderOption>
                         {categories.map((category) => (
                           <option key={category.id} value={category.id}>
                             {category.name}

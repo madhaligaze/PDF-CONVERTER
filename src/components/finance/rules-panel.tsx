@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { type Dictionaries, type Rule, type RuleSuggestion, financeApi, formatMoney } from "@/components/finance/api";
 import { AutotagCard } from "@/components/finance/autotag-card";
+import { PlaceholderOption } from "@/components/placeholder-option";
 
 const FIELD_TITLES: Record<string, string> = {
   comment: "комментарий",
@@ -145,7 +146,7 @@ export function RulesPanel({
                     onChanged();
                   }}
                 >
-                  <option value="">в статью…</option>
+                  <PlaceholderOption>в статью…</PlaceholderOption>
                   {dictionaries.categories
                     .filter((item) => item.side === (hint.kind === "income" ? "income" : "expense"))
                     .map((item) => (
@@ -211,7 +212,7 @@ export function RulesPanel({
               value={category}
               onChange={(event) => setCategory(event.target.value)}
             >
-              <option value="">выберите статью</option>
+              <PlaceholderOption>выберите статью</PlaceholderOption>
               {dictionaries.categories.map((item) => (
                 <option key={item.id} value={item.name}>
                   {item.name} ({item.side === "income" ? "доход" : "расход"})
