@@ -349,6 +349,12 @@ export function FinanceClient() {
   const sectionItem = ALL_SECTIONS.find((item) => item.key === section);
   const allowed = sectionItem ? visible(sectionItem) : false;
   const money = canAny(me, MONEY_RESOURCES);
+  /**
+   * Сводка в колонке — остатки и долги — своим правом, а не «есть любой
+   * денежный раздел». Кассиру с журналом и таблицей она не открыта: журнал
+   * дают, чтобы вносить операции, а не чтобы знать, сколько денег у компании.
+   */
+  const summary = can(me, "reports.summary");
   const setSection = useCallback((next: Section | string) => {
     const key = (ALL_SECTIONS.find((item) => item.key === next)?.key ?? "journal") as Section;
     setSectionState(key);
@@ -502,15 +508,14 @@ export function FinanceClient() {
   const companyId = me?.company?.id ?? null;
 
   useEffect(() => {
-    // Сводка и справочники — у денег. Юристу с одними договорами они не
+    // Справочники — у денежных разделов. Юристу с одними договорами они не
     // открыты: запрос ответил бы 403 и повесил бы над реестром чужую ошибку.
     if (!companyId || !money) return;
     let alive = true;
     (async () => {
       try {
-        const [next, dicts] = await Promise.all([financeApi.overview(), financeApi.dictionaries()]);
+        const dicts = await financeApi.dictionaries();
         if (!alive) return;
-        setOverview(next);
         setDictionaries(dicts);
         setError("");
       } catch (exc) {
@@ -524,6 +529,37 @@ export function FinanceClient() {
     // Компания в зависимостях не для порядка: при переключении надо перечитать
     // всё, иначе на экране останутся счета и операции прежней компании.
   }, [revision, companyId, money]);
+
+  /**
+   * Сводка — отдельным запросом и только при своём праве.
+   *
+   * Раньше она шла в паре со справочниками через `Promise.all`: отказ сводки
+   * ронял и справочники, и журнал, открытый человеку, стоял пустым под
+   * плашкой «Раздел „Журнал“ вам не открыт».
+   */
+  useEffect(() => {
+    if (!companyId || !summary) {
+      // Право сняли — цифры не остаются в памяти страницы до перезагрузки.
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- сброс вслед за правом из `me`
+      setOverview(null);
+      return;
+    }
+    let alive = true;
+    (async () => {
+      try {
+        const next = await financeApi.overview();
+        if (alive) setOverview(next);
+      } catch (exc) {
+        // 403 — право сняли только что: `me` перечитается и уберёт блок сам,
+        // плашка с отказом над открытым журналом была бы чужой ошибкой.
+        if (!alive || (exc instanceof FinanceApiError && exc.status === 403)) return;
+        setError(exc instanceof Error ? exc.message : "Сводка по счетам не прочиталась");
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [revision, companyId, summary]);
 
   const currency = overview?.workspace.currency ?? "KZT";
   const symbol = currency === "KZT" ? "₸" : currency;
@@ -781,7 +817,7 @@ export function FinanceClient() {
         <aside
           className="fin-aside"
           data-open={railOpen ? "true" : undefined}
-          data-money={money ? undefined : "false"}
+          data-summary={summary ? undefined : "false"}
         >
           {/* Внутренний слой прилипает к экрану, а сама колонка тянется на
               всю высоту плиты — вместе с подложкой и разделительной линией.
@@ -816,14 +852,14 @@ export function FinanceClient() {
 
           {/* Главная цифра в свёрнутом виде: ради неё на панель и смотрят, не
               раскрывая её. В раскрытой колонке её место занимает полный блок. */}
-          {money ? (
+          {summary ? (
           <div className="fin-rail-foot" aria-hidden="true">
             <span className="fin-rail-sum">{compactMoney(overview?.total)}</span>
             <span className="fin-rail-cur">{symbol}</span>
           </div>
           ) : null}
 
-          {money ? (
+          {summary ? (
           <div className="fin-aside-full flex flex-col gap-3">
           <div className="fin-total">
             <span className="fin-total-label">Всего на счетах</span>

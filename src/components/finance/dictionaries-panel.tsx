@@ -465,6 +465,11 @@ function StartingBalance({
     }
   };
 
+  // Справочники открывают остатки сами, так что здесь цифра приходит всегда;
+  // проверка — чтобы «null» не стал надписью, если сервер решит иначе.
+  if (account.starting_balance === null) return null;
+  const start = account.starting_balance;
+
   if (!editing) {
     return (
       <button
@@ -472,12 +477,12 @@ function StartingBalance({
         className="fin-num"
         style={{ color: "var(--text-secondary)", textDecoration: "underline dotted", textUnderlineOffset: 3 }}
         onClick={() => {
-          setValue(String(account.starting_balance).replace(".", ","));
+          setValue(String(start).replace(".", ","));
           setEditing(true);
         }}
         title="Изменить начальный остаток"
       >
-        начальный {formatMoney(account.starting_balance)}
+        начальный {formatMoney(start)}
       </button>
     );
   }

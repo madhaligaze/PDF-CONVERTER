@@ -18,7 +18,8 @@ export type Account = {
   name: string;
   kind: string;
   currency: string;
-  starting_balance: Money;
+  /** `null` — остатки человеку не открыты (право «Остатки и долги» или справочники). */
+  starting_balance: Money | null;
   excluded_from_reports: boolean;
   /** Номер счёта в банке (IBAN). По нему выписка находит свой счёт. */
   number?: string;

@@ -74,6 +74,7 @@ export const RESOURCE_TITLES: { key: string; title: string; note?: string }[] = 
   { key: "recurrences", title: "Повторения" },
   { key: "import", title: "Загрузка" },
   { key: "sheets", title: "Книги Google" },
+  { key: "reports.summary", title: "Остатки и долги", note: "колонка слева" },
   { key: "reports.cash", title: "Деньги" },
   { key: "reports.profit", title: "Прибыль" },
   { key: "reports.debts", title: "Долги" },
