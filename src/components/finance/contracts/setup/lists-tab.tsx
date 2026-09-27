@@ -31,6 +31,7 @@ import { ConfirmDialog } from "@/components/finance/ui/confirm-dialog";
 import { InlineText } from "@/components/finance/contracts/setup/inline-text";
 import { ChoicePop, type PopOption } from "@/components/finance/contracts/setup/popover";
 import { useSetupAction, type SetupAction } from "@/components/finance/contracts/setup/use-setup-action";
+import { useSessionState } from "@/components/session-state";
 import {
   BILLING_WORDS,
   ECONOMIC_WORDS,
@@ -55,7 +56,8 @@ function contractsWord(count: number): string {
 
 export function ListsTab() {
   const schema = useRegistry((s) => s.schema);
-  const [current, setCurrent] = useState("status");
+  // Выбранный список переживает перезагрузку (`session-state.tsx`).
+  const [current, setCurrent] = useSessionState("setup.list", "status");
 
   const listFields = useMemo(() => {
     if (!schema) return [] as RegistryField[];
@@ -109,8 +111,8 @@ function ValuesPane({ field }: { field: RegistryField }) {
   const action = useSetupAction();
   const [picked, setPicked] = useState<string[]>([]);
   const [ask, setAsk] = useState<Ask | null>(null);
-  const [draft, setDraft] = useState("");
-  const [draftSystem, setDraftSystem] = useState("");
+  const [draft, setDraft] = useSessionState(`setup.list.${field.key}.new`, "");
+  const [draftSystem, setDraftSystem] = useSessionState(`setup.list.${field.key}.new-system`, "");
   const [addError, setAddError] = useState("");
 
   const shape = shapeOf(field.key);

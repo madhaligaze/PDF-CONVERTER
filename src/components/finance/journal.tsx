@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ChoiceSelect } from "@/components/choice-select";
+import { useSessionState } from "@/components/session-state";
 import {
   type Dictionaries,
   type Operation,
@@ -52,15 +53,16 @@ function periodRange(key: PeriodKey): { from?: string; to?: string } {
  * тому, кто просто смотрит журнал.
  */
 export function Journal({ dictionaries, revision, onChanged }: Props) {
-  const [period, setPeriod] = useState<PeriodKey>("this");
-  const [kinds, setKinds] = useState<string>("");
-  const [accountId, setAccountId] = useState("");
-  const [categoryId, setCategoryId] = useState("");
-  const [search, setSearch] = useState("");
+  // Отбор и открытая правка переживают перезагрузку (`session-state.tsx`).
+  const [period, setPeriod] = useSessionState<PeriodKey>("journal.period", "this");
+  const [kinds, setKinds] = useSessionState<string>("journal.kinds", "");
+  const [accountId, setAccountId] = useSessionState("journal.account", "");
+  const [categoryId, setCategoryId] = useSessionState("journal.category", "");
+  const [search, setSearch] = useSessionState("journal.search", "");
   const [page, setPage] = useState<OperationPage | null>(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
-  const [editing, setEditing] = useState<Operation | null>(null);
+  const [editing, setEditing] = useSessionState<Operation | null>("journal.editing", null);
   /**
    * Сколько страниц по 250 уже раскрыто.
    *

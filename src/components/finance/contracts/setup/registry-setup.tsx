@@ -26,6 +26,7 @@ import { EntitiesTab } from "@/components/finance/contracts/setup/entities-tab";
 import { FieldsTab } from "@/components/finance/contracts/setup/fields-tab";
 import { ListsTab } from "@/components/finance/contracts/setup/lists-tab";
 import { ViewsTab } from "@/components/finance/contracts/setup/views-tab";
+import { useSessionState } from "@/components/session-state";
 
 type Tab = "fields" | "lists" | "views" | "entities";
 
@@ -36,16 +37,6 @@ const TABS: { key: Tab; title: string }[] = [
   { key: "entities", title: "Наши юрлица" },
 ];
 
-const TAB_STORE = "fin_reg_setup_tab";
-
-function readTab(): Tab {
-  try {
-    const raw = sessionStorage.getItem(TAB_STORE);
-    return TABS.some((item) => item.key === raw) ? (raw as Tab) : "fields";
-  } catch {
-    return "fields";
-  }
-}
 
 export function RegistrySetup({ onBack }: { onBack: () => void }) {
   const phase = useRegistry((s) => s.phase);
@@ -53,11 +44,11 @@ export function RegistrySetup({ onBack }: { onBack: () => void }) {
   const schema = useRegistry((s) => s.schema);
   const company = useRegistry((s) => s.company);
   const me = useRegistry((s) => s.me);
-  // Вкладка переживает перезагрузку страницы: админ, который правит листы,
-  // после F5 должен оказаться там же, а не на «Полях». Читать хранилище
-  // браузера при первом рендере безопасно: сервер рисует ветку «Читаем
-  // реестр…», где вкладок нет, и расхождения при гидратации не будет.
-  const [tab, setTab] = useState<Tab>(readTab);
+  // Вкладка переживает перезагрузку страницы (`session-state.tsx`): админ,
+  // который правит листы, после F5 должен оказаться там же, а не на «Полях».
+  // Запомненная вкладка, которой больше нет, — «Поля».
+  const [stored, setTab] = useSessionState<Tab>("setup.tab", "fields");
+  const tab: Tab = TABS.some((item) => item.key === stored) ? stored : "fields";
   const [slow, setSlow] = useState(false);
 
   // Счётчики «в договорах» и число договоров блока считаются по хранилищу;
@@ -72,14 +63,7 @@ export function RegistrySetup({ onBack }: { onBack: () => void }) {
     return () => clearTimeout(timer);
   }, [phase]);
 
-  const choose = (next: Tab) => {
-    setTab(next);
-    try {
-      sessionStorage.setItem(TAB_STORE, next);
-    } catch {
-      /* вкладка живёт до перезагрузки */
-    }
-  };
+  const choose = (next: Tab) => setTab(next);
 
   const top = (
     <div className="creg-top setup-top">

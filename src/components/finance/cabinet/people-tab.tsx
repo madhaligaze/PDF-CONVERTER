@@ -9,6 +9,7 @@ import { EmployeeCard } from "@/components/finance/cabinet/employee-card";
 import { employeeStatus, sortPeople } from "@/components/finance/cabinet/status";
 import { PhoneInput, formatPhone, phoneValue } from "@/components/finance/ui/phone-input";
 import { SelectLine } from "@/components/finance/ui/select-line";
+import { useSessionDrop, useSessionState } from "@/components/session-state";
 
 /**
  * «Люди · Сотрудники» (фронт-план, 6.9).
@@ -46,8 +47,9 @@ export function PeopleTab({
   onOpen: (id: string | null) => void;
 }) {
   const manage = can(me, "people", "edit");
-  const [adding, setAdding] = useState<"person" | "department" | null>(null);
-  const [renaming, setRenaming] = useState(false);
+  // Открытая форма и набранное в ней переживают перезагрузку (`session-state.tsx`).
+  const [adding, setAdding] = useSessionState<"person" | "department" | null>("people.adding", null);
+  const [renaming, setRenaming] = useSessionState("people.renaming", false);
   // Ответ правки показывается сразу, до перечитывания списка; пришёл свежий
   // список — он главнее.
   // Правки привязаны к версии списка, от которой сделаны: новый список делает
@@ -231,14 +233,19 @@ function PersonForm({
   onCancel: () => void;
   onSaved: (row: EmployeeRow) => void;
 }) {
-  const [name, setName] = useState("");
-  const [digits, setDigits] = useState("");
-  const [dept, setDept] = useState(department);
-  const [job, setJob] = useState("");
+  const dropDraft = useSessionDrop();
+  const cancel = () => {
+    dropDraft("people.person");
+    onCancel();
+  };
+  const [name, setName] = useSessionState("people.person.name", "");
+  const [digits, setDigits] = useSessionState("people.person.phone", "");
+  const [dept, setDept] = useSessionState("people.person.dept", department);
+  const [job, setJob] = useSessionState("people.person.job", "");
   // Номер — это логин и ничего больше: вписанный номер сам включает доступ.
   // Раньше переключатель стоял выключенным, «Добавить» было доступно, и номер
   // молча пропадал — человек заведён, а войти не может (26.09, «Асхат»).
-  const [accessChoice, setAccessChoice] = useState<boolean | null>(null);
+  const [accessChoice, setAccessChoice] = useSessionState<boolean | null>("people.person.access", null);
   const access = accessChoice ?? digits.length > 0;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -261,6 +268,7 @@ function PersonForm({
             job_title: job.trim(),
             access,
           });
+          dropDraft("people.person");
           onSaved(row);
         } catch (exc) {
           setError(exc instanceof Error ? exc.message : "Не добавилось");
@@ -305,7 +313,7 @@ function PersonForm({
         {access && digits.length !== 10 ? <span className="auth-hint">Для входа нужен телефон.</span> : null}
         {!access && digits.length > 0 ? <span className="auth-hint">Без доступа номер не сохранится.</span> : null}
         <span className="cab-add-actions">
-          <button type="button" className="btn-ghost btn-sm" onClick={onCancel}>
+          <button type="button" className="btn-ghost btn-sm" onClick={cancel}>
             Отмена
           </button>
           <button type="submit" className="btn-primary btn-sm" disabled={!ready || busy}>
@@ -331,8 +339,14 @@ function DepartmentForm({
   onCancel: () => void;
   onSaved: (item: Department | null) => void;
 }) {
-  const [code, setCode] = useState(initial?.code ?? "");
-  const [title, setTitle] = useState(initial?.title ?? "");
+  const draft = `people.dept.${initial?.id ?? "new"}`;
+  const dropDraft = useSessionDrop();
+  const cancel = () => {
+    dropDraft(draft);
+    onCancel();
+  };
+  const [code, setCode] = useSessionState(`${draft}.code`, initial?.code ?? "");
+  const [title, setTitle] = useSessionState(`${draft}.title`, initial?.title ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   return (
@@ -347,6 +361,7 @@ function DepartmentForm({
           const item = initial
             ? await peopleApi.departments.update(initial.id, { code: code.trim(), title: title.trim() })
             : await peopleApi.departments.create({ code: code.trim(), title: title.trim() });
+          dropDraft(draft);
           onSaved(item);
         } catch (exc) {
           setError(exc instanceof Error ? exc.message : "Не сохранилось");
@@ -378,7 +393,7 @@ function DepartmentForm({
         />
       </label>
       <span className="cab-add-actions">
-        <button type="button" className="btn-ghost btn-sm" onClick={onCancel}>
+        <button type="button" className="btn-ghost btn-sm" onClick={cancel}>
           Отмена
         </button>
         <button type="submit" className="btn-primary btn-sm" disabled={!code.trim() || busy}>

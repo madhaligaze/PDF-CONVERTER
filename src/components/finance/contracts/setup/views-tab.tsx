@@ -31,6 +31,7 @@ import { InlineText } from "@/components/finance/contracts/setup/inline-text";
 import { ChoicePop, type PopOption } from "@/components/finance/contracts/setup/popover";
 import { useSetupAction, type SetupAction } from "@/components/finance/contracts/setup/use-setup-action";
 import { BILLING_WORDS, lowerFirst, slotTitles } from "@/components/finance/contracts/setup/words";
+import { useSessionState } from "@/components/session-state";
 
 type Slot = "executor" | "customer";
 
@@ -55,8 +56,10 @@ export function ViewsTab() {
   const schema = useRegistry((s) => s.schema);
   const byId = useRegistry((s) => s.byId);
   const action = useSetupAction();
-  const [current, setCurrent] = useState<string | null>(null);
-  const [title, setTitle] = useState("");
+  // Выбранный лист и набранное название нового переживают перезагрузку
+  // (`session-state.tsx`).
+  const [current, setCurrent] = useSessionState<string | null>("setup.view", null);
+  const [title, setTitle] = useSessionState("setup.view-new", "");
 
   const views = useMemo(() => [...(schema?.views ?? [])].sort((a, b) => a.position - b.position), [schema]);
   const counts = useMemo(() => viewCounts(views, byId.values()), [views, byId]);
@@ -176,7 +179,7 @@ export function ViewsTab() {
 function ViewEditor({ view, onGone }: { view: RegistryView; onGone: () => void }) {
   const byId = useRegistry((s) => s.byId);
   const action = useSetupAction();
-  const [open, setOpen] = useState<number | null>(view.blocks.length === 1 ? 0 : null);
+  const [open, setOpen] = useSessionState<number | null>(`setup.view.${view.key}.open`, view.blocks.length === 1 ? 0 : null);
   const [ask, setAsk] = useState<{ kind: "view" } | { kind: "block"; index: number } | null>(null);
   const [newBlock, setNewBlock] = useState<string | null>(null);
 
@@ -367,7 +370,10 @@ function BlockEditor({ view, index, block, action, saveBlocks, onRemove }: Block
   // Черновик правила сбрасывается, когда меняется записанное правило: после
   // «Применить» (черновик и есть записанное) или правки коллеги. Счётчик при
   // этом не пересоздаётся и поднимает новое число, а не мигает пустотой.
-  const [rule, setRule] = useState<{ saved: string; draft: ViewFilter }>(() => ({
+  // Черновик правила переживает перезагрузку (`session-state.tsx`); записанное
+  // правило поменялось, пока страница перезагружалась, — черновик сбросится
+  // той же проверкой ниже.
+  const [rule, setRule] = useSessionState<{ saved: string; draft: ViewFilter }>(`setup.view.${view.key}.${index}.rule`, () => ({
     saved,
     draft: JSON.parse(saved) as ViewFilter,
   }));

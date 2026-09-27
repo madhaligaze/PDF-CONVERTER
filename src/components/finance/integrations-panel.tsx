@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { ChoiceSelect } from "@/components/choice-select";
+import { useSessionDrop, useSessionState } from "@/components/session-state";
 import {
   type Account,
   type BankOption,
@@ -40,9 +41,12 @@ export function IntegrationsPanel({
 }) {
   const [items, setItems] = useState<Integration[]>([]);
   const [catalog, setCatalog] = useState<BankOption[]>([]);
-  const [picked, setPicked] = useState<BankOption | null>(null);
-  const [way, setWay] = useState("statement");
-  const [accountId, setAccountId] = useState("");
+  // Начатое подключение переживает перезагрузку (`session-state.tsx`).
+  // Токен — нет: он показывается один раз и в хранилище вкладки не ложится.
+  const [picked, setPicked] = useSessionState<BankOption | null>("intg.picked", null);
+  const [way, setWay] = useSessionState("intg.new.way", "statement");
+  const [accountId, setAccountId] = useSessionState("intg.new.account", "");
+  const dropDraft = useSessionDrop();
   const [token, setToken] = useState<{ title: string; value: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -79,6 +83,7 @@ export function IntegrationsPanel({
       });
       if (created.token) setToken({ title: created.title, value: created.token });
       setPicked(null);
+      dropDraft("intg.new");
       await load();
       onChanged();
     } catch (exc) {

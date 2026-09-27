@@ -11,6 +11,30 @@ import {
   financeApi,
 } from "@/components/finance/api";
 import { PreviewView } from "@/components/finance/preview-view";
+import { readSession, useSessionScope, writeSession } from "@/components/session-state";
+
+/** Сохранённая партия разбора → то, что показывает `PreviewView`. */
+function previewOf(saved: Awaited<ReturnType<typeof financeApi.importBatch>>): ImportPreview {
+  const counts = saved.counts as Record<string, number>;
+  return {
+    batch_id: saved.id,
+    file_name: saved.file_name,
+    header_line: 0,
+    counts: {
+      total: counts.total ?? 0,
+      ready: counts.imported ?? 0,
+      failed: counts.failed ?? 0,
+      skipped: counts.skipped ?? 0,
+    },
+    question: null,
+    date_order: String((saved.decisions as Record<string, unknown>)?.date_order ?? "dmy"),
+    date_evidence: "",
+    mapping: (saved.mapping as ImportPreview["mapping"]) ?? { columns: {}, width: 0 },
+    unused_columns: [],
+    accounts_missing: [],
+    rows: saved.rows as ImportRow[],
+  };
+}
 
 type Props = {
   accounts: Account[];
@@ -73,26 +97,7 @@ export function ImportPanel({ accounts, onChanged, onNext }: Props) {
     setBusy(true);
     setError("");
     try {
-      const saved = await financeApi.importBatch(batch.id);
-      const counts = saved.counts as Record<string, number>;
-      setPreview({
-        batch_id: saved.id,
-        file_name: saved.file_name,
-        header_line: 0,
-        counts: {
-          total: counts.total ?? 0,
-          ready: counts.imported ?? 0,
-          failed: counts.failed ?? 0,
-          skipped: counts.skipped ?? 0,
-        },
-        question: null,
-        date_order: String((saved.decisions as Record<string, unknown>)?.date_order ?? "dmy"),
-        date_evidence: "",
-        mapping: (saved.mapping as ImportPreview["mapping"]) ?? { columns: {}, width: 0 },
-        unused_columns: [],
-        accounts_missing: [],
-        rows: saved.rows as ImportRow[],
-      });
+      setPreview(previewOf(await financeApi.importBatch(batch.id)));
       setFile(null);
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : "Загрузка не открылась");
@@ -100,6 +105,39 @@ export function ImportPanel({ accounts, onChanged, onNext }: Props) {
       setBusy(false);
     }
   };
+
+  /**
+   * Разбор, открытый до перезагрузки страницы, встаёт обратно (`session-state.tsx`).
+   *
+   * По номеру партии, а не по файлу: файл браузер после перезагрузки не
+   * отдаёт, а разбор лежит на сервере вместе с решениями по строкам. Разбор,
+   * ждавший ответа на вопрос (порядок дат, счёт), партией ещё не стал — его
+   * без файла не вернуть, и номер не запоминается. Заведённая партия не
+   * возвращается — возвращать нечего.
+   */
+  const scope = useSessionScope();
+  const [resumeId] = useState(() => readSession<string | null>(scope, "import.batch", null));
+  useEffect(() => {
+    if (!resumeId) return;
+    let alive = true;
+    financeApi
+      .importBatch(resumeId)
+      .then((saved) => {
+        if (!alive) return;
+        if (saved.status === "preview") setPreview((was) => was ?? previewOf(saved));
+        else writeSession(scope, "import.batch", undefined);
+      })
+      .catch(() => writeSession(scope, "import.batch", undefined));
+    return () => {
+      alive = false;
+    };
+  }, [resumeId, scope]);
+  useEffect(() => {
+    // Пока возвращаемый разбор не пришёл, номер не трогаем — иначе пустой
+    // экран первого кадра стёр бы его.
+    if (!preview) return;
+    writeSession(scope, "import.batch", preview.question ? undefined : preview.batch_id);
+  }, [preview, scope]);
 
   const send = async (next: File) => {
     setBusy(true);
@@ -222,6 +260,7 @@ export function ImportPanel({ accounts, onChanged, onNext }: Props) {
             void loadBatches();
           }}
           onReset={() => {
+            writeSession(scope, "import.batch", undefined);
             setPreview(null);
             setFile(null);
           }}

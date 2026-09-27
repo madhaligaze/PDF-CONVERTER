@@ -50,6 +50,7 @@ import {
 } from "@/components/finance/contracts/store";
 import { readParam, writeParams } from "@/components/finance/address";
 import { MenuPopover } from "@/components/finance/ui/menu-popover";
+import { useSessionState } from "@/components/session-state";
 import { IndexList } from "@/components/stage/index-list";
 import { gsap, prefersReducedMotion } from "@/components/motion/gsap";
 
@@ -112,13 +113,15 @@ export function Registry({ me, onGo }: { me: Me; onGo: (section: string) => void
   const views = useMemo(() => [...(schema?.views ?? [])].sort((a, b) => a.position - b.position), [schema]);
   const [viewKey, setViewKey] = useState<string>(() => readParam("v") ?? "main");
   const view = views.find((item) => item.key === viewKey) ?? views[0];
-  const [query, setQuery] = useState("");
-  const [issuesOnly, setIssuesOnly] = useState(false);
+  // Поиск, отбор и начатый новый договор переживают перезагрузку
+  // (`session-state.tsx`); открытый договор — в адресе (`?id=`).
+  const [query, setQuery] = useSessionState("registry.query", "");
+  const [issuesOnly, setIssuesOnly] = useSessionState("registry.issues", false);
   // Сортировка своя у каждого листа и помнится в браузере. Выбранная здесь
   // привязана к листу, на котором её выбрали; на другом листе — его память.
   const [sortPick, setSortPick] = useState<{ view: string; sort: { key: SortKey; dir: 1 | -1 } | null } | null>(null);
   const [openId, setOpenId] = useState<string | null>(() => readParam("id"));
-  const [draft, setDraft] = useState<{ view?: string; block?: number } | null>(null);
+  const [draft, setDraft] = useSessionState<{ view?: string; block?: number } | null>("registry.new", null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [slowPhase, setSlowPhase] = useState(false);
   const search = useRef<HTMLInputElement>(null);
@@ -148,7 +151,7 @@ export function Registry({ me, onGo }: { me: Me; onGo: (section: string) => void
     setOpenId(id);
     setDraft(null);
     writeParams({ id }, !!id);
-  }, []);
+  }, [setDraft]);
   /** Стабильная — иначе `memo` строк не сработал бы ни разу. */
   const openRow = useCallback(
     (id: string) => {

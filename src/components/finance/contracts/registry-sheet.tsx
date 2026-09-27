@@ -286,6 +286,7 @@ export function RegistrySheet({ onOpenCard, openId }: Props) {
             listEdit={false}
             formatting={false}
             listArrow={!ask}
+            session="registry"
           />
         ) : state.phase === "error" ? (
           <p className="creg-sheet-note fin-fail" role="status" style={{ margin: "1rem" }}>

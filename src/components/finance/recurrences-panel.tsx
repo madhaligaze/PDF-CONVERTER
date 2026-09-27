@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { ChoiceSelect } from "@/components/choice-select";
+import { useSessionDrop, useSessionState } from "@/components/session-state";
 import {
   type Dictionaries,
   type Recurrence,
@@ -30,18 +31,21 @@ export function RecurrencesPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState("");
-  const [form, setForm] = useState(false);
+  // Открытая форма и набранное в ней переживают перезагрузку
+  // (`session-state.tsx`); заведённое повторение черновик стирает.
+  const [form, setForm] = useSessionState("rec.form", false);
+  const dropDraft = useSessionDrop();
 
-  const [title, setTitle] = useState("");
-  const [kind, setKind] = useState<"income" | "expense">("expense");
-  const [amount, setAmount] = useState("");
-  const [period, setPeriod] = useState("month");
-  const [day, setDay] = useState("5");
-  const [startAt, setStartAt] = useState(todayIso());
-  const [until, setUntil] = useState("");
-  const [accountId, setAccountId] = useState("");
-  const [categoryId, setCategoryId] = useState("");
-  const [counterpartyId, setCounterpartyId] = useState("");
+  const [title, setTitle] = useSessionState("rec.new.title", "");
+  const [kind, setKind] = useSessionState<"income" | "expense">("rec.new.kind", "expense");
+  const [amount, setAmount] = useSessionState("rec.new.amount", "");
+  const [period, setPeriod] = useSessionState("rec.new.period", "month");
+  const [day, setDay] = useSessionState("rec.new.day", "5");
+  const [startAt, setStartAt] = useSessionState("rec.new.start", todayIso);
+  const [until, setUntil] = useSessionState("rec.new.until", "");
+  const [accountId, setAccountId] = useSessionState("rec.new.account", "");
+  const [categoryId, setCategoryId] = useSessionState("rec.new.category", "");
+  const [counterpartyId, setCounterpartyId] = useSessionState("rec.new.counterparty", "");
 
   const load = useCallback(async () => {
     try {
@@ -91,6 +95,7 @@ export function RecurrencesPanel({
       setForm(false);
       setTitle("");
       setAmount("");
+      dropDraft("rec.new");
       return `Создано ожиданий: ${done.created}`;
     });
 

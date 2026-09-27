@@ -26,6 +26,7 @@ import {
   type Edit,
 } from "@/components/finance/contracts/store";
 import { contractMoney, formatDay, middleEllipsis, parseDay, shortName } from "@/components/finance/format";
+import { useSessionDrop, useSessionState } from "@/components/session-state";
 
 type Props = {
   contractId: string | null;
@@ -86,7 +87,11 @@ export function InlineField({ contractId, field, label, labelNote, wide, suffix,
   const people = useRegistry((s) => s.people);
   const contract = useRegistry((s) => (contractId ? s.byId.get(contractId) : undefined));
   const edit: Edit | undefined = useRegistry((s) => (contractId ? s.edits.get(contractId)?.get(field.key) : undefined));
-  const [editing, setEditing] = useState(false);
+  // Поле, открытое на правку, и набранный в нём текст переживают перезагрузку
+  // (`session-state.tsx`); принятая или отменённая правка черновик стирает.
+  const draftKey = `card.${contractId ?? "new"}.${field.key}`;
+  const dropDraft = useSessionDrop();
+  const [editing, setEditing] = useSessionState(`${draftKey}.editing`, false);
   const [done, setDone] = useState(false);
   const wasSending = useRef(false);
 
@@ -114,8 +119,13 @@ export function InlineField({ contractId, field, label, labelNote, wide, suffix,
 
   const commit = (next: unknown) => {
     setEditing(false);
+    dropDraft(draftKey);
     if (contractId) editField(contractId, field.key, next);
     else onDraft?.(field.key, next);
+  };
+  const stopEditing = () => {
+    setEditing(false);
+    dropDraft(draftKey);
   };
 
   const traceState = edit?.state === "sending" || edit?.state === "queued"
@@ -138,8 +148,9 @@ export function InlineField({ contractId, field, label, labelNote, wide, suffix,
         value={stored}
         otherOwn={otherOwn}
         onCommit={commit}
-        onCancel={() => setEditing(false)}
+        onCancel={stopEditing}
         placeholder={placeholder ?? label ?? field.title}
+        draftKey={`${draftKey}.text`}
       />
     );
   } else if (field.type === "url" && typeof value === "string" && value) {
@@ -239,6 +250,7 @@ function Editor({
   onCommit,
   onCancel,
   placeholder,
+  draftKey,
 }: {
   field: RegistryField;
   value: unknown;
@@ -246,6 +258,8 @@ function Editor({
   onCommit: (value: unknown) => void;
   onCancel: () => void;
   placeholder: string;
+  /** Где в сессии лежит набранный текст (`TextEditor`). */
+  draftKey: string;
 }) {
   const schema = useRegistry((s) => s.schema);
   const people = useRegistry((s) => s.people);
@@ -368,7 +382,7 @@ function Editor({
       />
     );
   }
-  return <TextEditor field={field} value={value} onCommit={onCommit} onCancel={onCancel} placeholder={placeholder} />;
+  return <TextEditor field={field} value={value} onCommit={onCommit} onCancel={onCancel} placeholder={placeholder} draftKey={draftKey} />;
 }
 
 function TextEditor({
@@ -377,12 +391,14 @@ function TextEditor({
   onCommit,
   onCancel,
   placeholder,
+  draftKey,
 }: {
   field: RegistryField;
   value: unknown;
   onCommit: (value: unknown) => void;
   onCancel: () => void;
   placeholder: string;
+  draftKey: string;
 }) {
   const initial =
     field.type === "date"
@@ -390,7 +406,7 @@ function TextEditor({
       : field.type === "money" || field.type === "number"
         ? value === undefined || value === null ? "" : String(value).replace(/\.00$/, "")
         : value === undefined || value === null ? "" : String(value);
-  const [draft, setDraft] = useState(initial);
+  const [draft, setDraft] = useSessionState(draftKey, initial);
   const [error, setError] = useState("");
   const multiline = ["note", "subject", "amount_terms", "amendments_text", "amendments_summary_text"].includes(field.key);
   const finish = () => {

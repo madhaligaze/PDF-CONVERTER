@@ -21,6 +21,7 @@ import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { type FieldType, type RegistryField, contractsApi } from "@/components/finance/api";
 import { useRegistry } from "@/components/finance/contracts/store";
 import { plural } from "@/components/finance/format";
+import { useSessionState } from "@/components/session-state";
 import { ArrowDownIcon, ArrowUpIcon } from "@/components/icons";
 import { ConfirmDialog } from "@/components/finance/ui/confirm-dialog";
 import { InlineText } from "@/components/finance/contracts/setup/inline-text";
@@ -44,8 +45,9 @@ export function FieldsTab() {
   const action = useSetupAction();
   const [ask, setAsk] = useState<Ask | null>(null);
   const [focusKey, setFocusKey] = useState<string | null>(null);
-  const [title, setTitle] = useState("");
-  const [type, setType] = useState<FieldType>("text");
+  // Набранное новое поле переживает перезагрузку (`session-state.tsx`).
+  const [title, setTitle] = useSessionState("setup.field-new.title", "");
+  const [type, setType] = useSessionState<FieldType>("setup.field-new.type", "text");
 
   const fields = useMemo(
     () => [...(schema?.fields ?? [])].sort((a, b) => a.position - b.position),

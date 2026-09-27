@@ -15,6 +15,7 @@ import { ConfirmDialog } from "@/components/finance/ui/confirm-dialog";
 import { PhoneInput, formatPhone, phoneValue } from "@/components/finance/ui/phone-input";
 import { SelectLine } from "@/components/finance/ui/select-line";
 import { ArrowDownIcon, ArrowUpIcon, CloseIcon } from "@/components/icons";
+import { useSessionState } from "@/components/session-state";
 
 /**
  * Карточка сотрудника — по центру, как карточка договора (фронт-план, 6.9).
@@ -74,12 +75,16 @@ export function EmployeeCard({
   onNext?: () => void;
   onChanged: (row: EmployeeRow) => void;
 }) {
-  const [tab, setTab] = useState<Tab>("profile");
+  // Вкладка карточки и начатое «Открыть вход» переживают перезагрузку
+  // (`session-state.tsx`). Форма входа — своя у каждого сотрудника: ключ
+  // сменился — значение перечитано, сбрасывать её эффектом не нужно (эффект
+  // стёр бы и восстановленное).
+  const [tab, setTab] = useSessionState<Tab>("emp.tab", "profile");
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [opening, setOpening] = useState(false);
-  const [digits, setDigits] = useState("");
+  const [opening, setOpening] = useSessionState(`emp.${employee?.id ?? "none"}.opening`, false);
+  const [digits, setDigits] = useSessionState(`emp.${employee?.id ?? "none"}.phone`, "");
   const [note, setNote] = useState("");
   /** Сколько разделов открыто; `null` — не спрашивали (нет учётки, админ). */
   const [sections, setSections] = useState<number | null>(null);
@@ -87,8 +92,6 @@ export function EmployeeCard({
   useEffect(() => {
     setError("");
     setNote("");
-    setOpening(false);
-    setDigits("");
     setConfirm(null);
     setSections(null);
   }, [employee?.id]);

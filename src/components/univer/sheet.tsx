@@ -28,7 +28,9 @@ import { IMenuManagerService } from "@univerjs/preset-sheets-core";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { useSessionScope } from "@/components/session-state";
 import { type ListArrow, type ListWatch, openList, watchLists } from "@/components/univer/lists";
+import { type PlaceKeeper, keepPlace } from "@/components/univer/place";
 import { isDarkTheme } from "@/components/univer/sheet-model";
 import { speedUp } from "@/components/univer/speed";
 import { lockScroll } from "@/components/use-scroll-lock";
@@ -106,6 +108,12 @@ type Props = {
    * бы поверх него.
    */
   listArrow?: boolean;
+  /**
+   * Имя места листа в сессии («journal», «registry», «tables.<id>»): лист
+   * книги, выбранная ячейка, прокрутка и «На весь экран» переживают
+   * перезагрузку страницы (`place.ts`). Без имени лист открывается с начала.
+   */
+  session?: string;
 };
 
 /** Пункты ленты, которые остаются у листа без оформления (`formatting={false}`). */
@@ -259,11 +267,14 @@ export function blankWorkbook(name = "Новая таблица"): WorkbookSnaps
 }
 
 export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverSheet(
-  { data, onReady, extras = false, fullscreen = true, listEdit = true, formatting = true, listArrow = true, onShown },
+  { data, onReady, extras = false, fullscreen = true, listEdit = true, formatting = true, listArrow = true, session, onShown },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [full, setFull] = useState(false);
+  const fullRef = useRef(full);
+  const sessionScope = useSessionScope();
+  const placeRef = useRef<PlaceKeeper | null>(null);
   const [arrow, setArrow] = useState<ListArrow | null>(null);
   const listArrowRef = useRef(listArrow);
   listArrowRef.current = listArrow;
@@ -362,14 +373,21 @@ export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverS
       allowed: () => listArrowRef.current,
     });
     listsRef.current = lists;
+    // Место на листе в сессии: `session` и область читаются на монтировании,
+    // как `data` — новый лист приходит пересозданием через `key`.
+    const place = session ? keepPlace(univerAPI, sessionScope, session, () => fullRef.current) : null;
+    placeRef.current = place;
 
     // «Лист виден»: стадия Rendered и два кадра — первый холст уже на экране.
+    // Тогда же лист встаёт на запомненное место: до отрисовки прокрутке не на
+    // что опереться.
     let shownFrame = 0;
     let shownSent = false;
     const shown = () => {
       if (shownSent) return;
       shownSent = true;
       shownFrame = requestAnimationFrame(() => {
+        if (place?.restore()) setFull(true);
         shownFrame = requestAnimationFrame(() => onShownRef.current?.());
       });
     };
@@ -397,6 +415,8 @@ export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverS
       system?.removeEventListener?.("change", retheme);
       lists.stop();
       listsRef.current = null;
+      place?.stop();
+      placeRef.current = null;
       try {
         stopTrim?.();
         lifecycle?.dispose?.();
@@ -473,6 +493,9 @@ export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverS
   }, [listArrow]);
 
   useEffect(() => {
+    // Развернули или свернули — место листа в сессии это помнит.
+    fullRef.current = full;
+    placeRef.current?.save();
     // Univer меряет холст по событию resize: без толчка после смены размера
     // лист остаётся прежней ширины внутри нового окна.
     const nudge = window.setTimeout(() => window.dispatchEvent(new Event("resize")), 60);

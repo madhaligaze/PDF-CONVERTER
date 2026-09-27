@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { ChoiceSelect } from "@/components/choice-select";
 import { CloseIcon } from "@/components/icons";
 import { PlaceholderOption } from "@/components/placeholder-option";
+import { useSessionDrop, useSessionState } from "@/components/session-state";
 import { useScrollLock } from "@/components/use-scroll-lock";
 import {
   type Dictionaries,
@@ -46,7 +47,7 @@ const TITLES: Record<OperationKind, string> = {
  * деньги считаются по дате платежа, прибыль — по дате сделки. Поэтому под ней
  * стоит подпись, объясняющая последствие, а не название.
  */
-export function OperationDialog({ kind, plan, dictionaries, operation, onClose, onSaved }: Props) {
+export function OperationDialog({ kind, plan, dictionaries, operation, onClose: closeDialog, onSaved: savedDialog }: Props) {
   const isTransfer = kind === "transfer";
   const side = kind === "income" ? "income" : "expense";
   const categories = useMemo(
@@ -54,19 +55,36 @@ export function OperationDialog({ kind, plan, dictionaries, operation, onClose, 
     [dictionaries.categories, side],
   );
 
-  const [accountFrom, setAccountFrom] = useState(operation?.account_from_id ?? "");
-  const [accountTo, setAccountTo] = useState(operation?.account_to_id ?? "");
-  const [amount, setAmount] = useState(operation?.amount ?? "");
-  const [categoryId, setCategoryId] = useState(operation?.category_id ?? "");
-  const [counterpartyId, setCounterpartyId] = useState(operation?.counterparty_id ?? "");
-  const [paidAt, setPaidAt] = useState(operation?.paid_at ?? todayIso());
-  const [accruedAt, setAccruedAt] = useState(operation?.accrued_at ?? "");
-  const [projectId, setProjectId] = useState(operation?.projects?.[0]?.id ?? "");
-  const [comment, setComment] = useState(operation?.comment ?? "");
-  const [status, setStatus] = useState<"fact" | "plan">(
+  /**
+   * Черновик окна (`session-state.tsx`): перезагрузка страницы возвращает окно
+   * с тем, что в нём успели набрать. Стирается, когда окно закрыл человек или
+   * операция записана.
+   */
+  const draft = `op.${operation?.id ?? "new"}.${kind}`;
+  const dropDraft = useSessionDrop();
+  const onClose = useCallback(() => {
+    dropDraft(draft);
+    closeDialog();
+  }, [dropDraft, draft, closeDialog]);
+  const onSaved = () => {
+    dropDraft(draft);
+    savedDialog();
+  };
+
+  const [accountFrom, setAccountFrom] = useSessionState(`${draft}.from`, operation?.account_from_id ?? "");
+  const [accountTo, setAccountTo] = useSessionState(`${draft}.to`, operation?.account_to_id ?? "");
+  const [amount, setAmount] = useSessionState(`${draft}.amount`, operation?.amount ?? "");
+  const [categoryId, setCategoryId] = useSessionState(`${draft}.category`, operation?.category_id ?? "");
+  const [counterpartyId, setCounterpartyId] = useSessionState(`${draft}.counterparty`, operation?.counterparty_id ?? "");
+  const [paidAt, setPaidAt] = useSessionState(`${draft}.paid`, () => operation?.paid_at ?? todayIso());
+  const [accruedAt, setAccruedAt] = useSessionState(`${draft}.accrued`, operation?.accrued_at ?? "");
+  const [projectId, setProjectId] = useSessionState(`${draft}.project`, operation?.projects?.[0]?.id ?? "");
+  const [comment, setComment] = useSessionState(`${draft}.comment`, operation?.comment ?? "");
+  const [status, setStatus] = useSessionState<"fact" | "plan">(
+    `${draft}.status`,
     operation?.status ?? (plan ? "plan" : "fact"),
   );
-  const [more, setMore] = useState(Boolean(operation?.accrued_at || operation?.projects?.length));
+  const [more, setMore] = useSessionState(`${draft}.more`, Boolean(operation?.accrued_at || operation?.projects?.length));
   /**
    * Части платежа по статьям. Пусто — платёж целиком в одной статье.
    *
@@ -74,7 +92,7 @@ export function OperationDialog({ kind, plan, dictionaries, operation, onClose, 
    * отчёт складывает и части, и остаток, поэтому платёж не теряется и не
    * удваивается.
    */
-  const [parts, setParts] = useState<Array<{ category_id: string; amount: string }>>([]);
+  const [parts, setParts] = useSessionState<Array<{ category_id: string; amount: string }>>(`${draft}.parts`, []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const firstField = useRef<HTMLSelectElement | null>(null);

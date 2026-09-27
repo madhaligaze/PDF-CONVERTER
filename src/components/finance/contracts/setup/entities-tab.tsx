@@ -20,6 +20,7 @@ import { InlineText } from "@/components/finance/contracts/setup/inline-text";
 import { MultiPop } from "@/components/finance/contracts/setup/popover";
 import { errorText, useSetupAction } from "@/components/finance/contracts/setup/use-setup-action";
 import { accountLabel, entityShort } from "@/components/finance/contracts/setup/words";
+import { useSessionState } from "@/components/session-state";
 
 export function EntitiesTab() {
   const schema = useRegistry((s) => s.schema);
@@ -30,7 +31,8 @@ export function EntitiesTab() {
   const [optimistic, setOptimistic] = useState<Record<string, string[]>>({});
   const [binError, setBinError] = useState<Record<string, string>>({});
   const [ask, setAsk] = useState<OwnEntity | null>(null);
-  const [name, setName] = useState("");
+  // Набранное новое юрлицо переживает перезагрузку (`session-state.tsx`).
+  const [name, setName] = useSessionState("setup.entity-new", "");
 
   useEffect(() => {
     let alive = true;

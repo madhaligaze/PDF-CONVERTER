@@ -76,7 +76,8 @@ import { boot } from "@/components/finance/contracts/store";
 import { RegistryImport } from "@/components/finance/contracts/import/registry-import";
 import { RegistrySetup } from "@/components/finance/contracts/setup/registry-setup";
 import { readParam, writeParams } from "@/components/finance/address";
-import type { Me } from "@/components/finance/api";
+import type { Me, OperationKind } from "@/components/finance/api";
+import { SessionScope, dropAllSessions, useSessionStateIn } from "@/components/session-state";
 
 /** «Настроить реестр» читает схему из хранилища реестра — поднимаем его, если
  *  экран открыли по ссылке, минуя «Реестр». */
@@ -482,9 +483,22 @@ export function FinanceClient() {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [dictionaries, setDictionaries] = useState<Dictionaries | null>(null);
   const [error, setError] = useState<string>("");
-  const [dialogKind, setDialogKind] = useState<"income" | "expense" | "transfer" | null>(null);
-  /** Карточка открывается с уже отмеченным ожиданием — из раздела «Долги». */
-  const [dialogPlan, setDialogPlan] = useState(false);
+  /**
+   * Чьё запомненное состояние (`session-state.tsx`): учётка и компания. До
+   * входа — пусто, и открытое перед перезагрузкой окно операции встаёт, как
+   * только вход известен.
+   */
+  const sessionScope = me?.user?.id ? `${me.user.id}:${me.company?.id ?? ""}` : "";
+  /**
+   * Открытое окно операции переживает перезагрузку, а поля в нём — свой
+   * черновик (`OperationDialog`). `plan` — окно открыто с уже отмеченным
+   * ожиданием, из раздела «Долги».
+   */
+  const [dialog, setDialog] = useSessionStateIn<{ kind: OperationKind; plan: boolean } | null>(
+    sessionScope,
+    sessionScope ? "fin.op-dialog" : null,
+    null,
+  );
   /**
    * Счётчик перезагрузок. Меняется, когда данные изменились где угодно в
    * разделе, и по нему обновляются и сводка слева, и открытый экран.
@@ -609,10 +623,7 @@ export function FinanceClient() {
         return <DebtsReport
             revision={revision}
             onChanged={reload}
-            onNewExpectation={(kind) => {
-              setDialogPlan(true);
-              setDialogKind(kind);
-            }}
+            onNewExpectation={(kind) => setDialog({ kind, plan: true })}
           />;
       case "projects":
         return <ProjectsReport revision={revision} />;
@@ -641,7 +652,7 @@ export function FinanceClient() {
       default:
         return null;
     }
-  }, [section, sectionItem, allowed, dictionaries, revision, reload, me, sheetRefresh, setSection]);
+  }, [section, sectionItem, allowed, dictionaries, revision, reload, me, sheetRefresh, setSection, setDialog]);
 
   if (loading) return <AuthLoading />;
   if (!me) {
@@ -668,6 +679,7 @@ export function FinanceClient() {
   }
 
   return (
+    <SessionScope scope={sessionScope}>
     <div className="fin-page">
       <header className="fin-head">
         <StageLink
@@ -724,23 +736,17 @@ export function FinanceClient() {
             вовсе, а не пустое место (фронт-план, 3.3). */}
         {can(me, "journal", "edit") ? (
         <div className="fin-actions">
-          <button type="button" className="fin-act" data-kind="income" onClick={() => {
-              setDialogPlan(false);
-              setDialogKind("income");
-            }}>
+          <button type="button" className="fin-act" data-kind="income" onClick={() => setDialog({ kind: "income", plan: false })}>
             + Доход
           </button>
-          <button type="button" className="fin-act" data-kind="expense" onClick={() => {
-              setDialogPlan(false);
-              setDialogKind("expense");
-            }}>
+          <button type="button" className="fin-act" data-kind="expense" onClick={() => setDialog({ kind: "expense", plan: false })}>
             − Расход
           </button>
           {/* «Перевод» на телефоне не прячется: перевод из кассы на счёт —
               обычная работа кассира. В одну строку с двумя другими кнопками он
               не влезал, поэтому на узком экране вся тройка переносится на свою
               строку (см. `.fin-head` в globals.css). */}
-          <button type="button" className="fin-act" onClick={() => setDialogKind("transfer")}>
+          <button type="button" className="fin-act" onClick={() => setDialog({ kind: "transfer", plan: false })}>
             ⇄ Перевод
           </button>
         </div>
@@ -803,8 +809,13 @@ export function FinanceClient() {
               onBack={() => setSection(cameFrom && cameFrom !== "me" && visible(ALL_SECTIONS.find((item) => item.key === cameFrom)!) ? cameFrom : home)}
               onLogout={async () => {
                 await financeApi.logout().catch(() => undefined);
+                // Компьютер бывает общим: черновики вышедшего не ждут следующего.
+                // Второй раз — после того как экраны снялись: лист, снимаясь,
+                // запоминает своё место.
+                dropAllSessions();
                 setAuthNotice("");
                 setMe(null);
+                window.setTimeout(dropAllSessions, 300);
               }}
               onOpenContract={openContract}
               onPending={setPending}
@@ -965,18 +976,19 @@ export function FinanceClient() {
       </div>
       )}
 
-      {dialogKind && dictionaries ? (
+      {dialog && dictionaries ? (
         <OperationDialog
-          kind={dialogKind}
-          plan={dialogPlan}
+          kind={dialog.kind}
+          plan={dialog.plan}
           dictionaries={dictionaries}
-          onClose={() => setDialogKind(null)}
+          onClose={() => setDialog(null)}
           onSaved={() => {
-            setDialogKind(null);
+            setDialog(null);
             reload();
           }}
         />
       ) : null}
     </div>
+    </SessionScope>
   );
 }

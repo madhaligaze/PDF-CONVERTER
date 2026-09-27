@@ -497,7 +497,15 @@ export function WebExcelWorkbench({ onShown }: Props) {
 
       <div className="we-grid">
         {ready ? (
-          <UniverSheet key={workbookKey} ref={sheetRef} data={workbook} onReady={onReady} onShown={onShown} extras />
+          <UniverSheet
+            key={workbookKey}
+            ref={sheetRef}
+            data={workbook}
+            onReady={onReady}
+            onShown={onShown}
+            extras
+            session={doc.id ? `tables.${doc.id}` : undefined}
+          />
         ) : (
           <p className="we-grid-wait">Загружаем полку…</p>
         )}

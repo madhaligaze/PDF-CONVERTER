@@ -750,7 +750,14 @@ export function TableView({
       ) : null}
       <div className="fin-sheet" ref={box} style={{ height }}>
         {workbook ? (
-          <UniverSheet key={`journal|${sheet?.generation ?? 0}`} data={workbook} onReady={onReady} listEdit={false} formatting={false} />
+          <UniverSheet
+            key={`journal|${sheet?.generation ?? 0}`}
+            data={workbook}
+            onReady={onReady}
+            listEdit={false}
+            formatting={false}
+            session="journal"
+          />
         ) : null}
       </div>
       {/* Строка состояния: таблица обязана говорить, что записала. Молчание

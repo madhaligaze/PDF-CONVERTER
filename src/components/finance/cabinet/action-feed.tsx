@@ -7,6 +7,7 @@ import { type AuditItem, type AuditQuery, type EmployeeRow, peopleApi } from "@/
 import { dayTitle, formatTime } from "@/components/finance/format";
 import { ConfirmDialog } from "@/components/finance/ui/confirm-dialog";
 import { SelectLine } from "@/components/finance/ui/select-line";
+import { useSessionState } from "@/components/session-state";
 
 /**
  * Лента действий (фронт-план, 6.9 «Журнал действий»).
@@ -74,11 +75,15 @@ export function ActionFeed({ fixed, full = false, people = [], days = 7, onOpenC
   const [cursor, setCursor] = useState<string | null>(null);
   const [phase, setPhase] = useState<"loading" | "ready" | "more" | "failed">("loading");
   const [error, setError] = useState("");
-  const [category, setCategory] = useState<CategoryKey>("all");
-  const [period, setPeriod] = useState<string>(String(days));
-  const [who, setWho] = useState("");
-  const [search, setSearch] = useState("");
-  const [query, setQuery] = useState("");
+  // Отбор ленты переживает перезагрузку (`session-state.tsx`) — свой у общей
+  // ленты, у своей и у ленты в карточке сотрудника.
+  const feed = `feed.${fixed?.employee_id ?? (fixed?.user_id ? "me" : "all")}`;
+  const [category, setCategory] = useSessionState<CategoryKey>(`${feed}.category`, "all");
+  const [period, setPeriod] = useSessionState<string>(`${feed}.period`, String(days));
+  const [who, setWho] = useSessionState(`${feed}.who`, "");
+  const [search, setSearch] = useSessionState(`${feed}.search`, "");
+  // Восстановленный поиск уходит на сервер сразу, а не после паузы в наборе.
+  const [query, setQuery] = useState(() => search.trim());
   const [undo, setUndo] = useState<AuditItem | null>(null);
   const [undoBusy, setUndoBusy] = useState(false);
   const request = useRef(0);

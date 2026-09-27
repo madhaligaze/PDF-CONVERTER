@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { type Dictionaries, type Rule, type RuleSuggestion, financeApi, formatMoney } from "@/components/finance/api";
 import { AutotagCard } from "@/components/finance/autotag-card";
 import { PlaceholderOption } from "@/components/placeholder-option";
+import { useSessionState } from "@/components/session-state";
 
 const FIELD_TITLES: Record<string, string> = {
   comment: "комментарий",
@@ -48,11 +49,11 @@ export function RulesPanel({
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState("");
 
-  // Новое правило.
-  const [keyword, setKeyword] = useState("");
-  const [field, setField] = useState("comment");
-  const [op, setOp] = useState("contains");
-  const [category, setCategory] = useState("");
+  // Новое правило — черновик переживает перезагрузку (`session-state.tsx`).
+  const [keyword, setKeyword] = useSessionState("rules.new.keyword", "");
+  const [field, setField] = useSessionState("rules.new.field", "comment");
+  const [op, setOp] = useSessionState("rules.new.op", "contains");
+  const [category, setCategory] = useSessionState("rules.new.category", "");
 
   const load = useCallback(async () => {
     try {

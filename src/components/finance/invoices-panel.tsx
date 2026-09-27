@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ChoiceSelect } from "@/components/choice-select";
+import { useSessionDrop, useSessionState } from "@/components/session-state";
 import {
   type Dictionaries,
   type Invoice,
@@ -32,19 +33,22 @@ export function InvoicesPanel({
 }) {
   const [items, setItems] = useState<Invoice[]>([]);
   const [summary, setSummary] = useState<{ receivable: InvoiceSide; payable: InvoiceSide } | null>(null);
-  const [side, setSide] = useState<"out" | "in">("out");
+  // Вкладка, открытая форма и набранный счёт переживают перезагрузку
+  // (`session-state.tsx`); выставленный счёт черновик стирает.
+  const [side, setSide] = useSessionState<"out" | "in">("inv.side", "out");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [form, setForm] = useState(false);
+  const [form, setForm] = useSessionState("inv.form", false);
+  const dropDraft = useSessionDrop();
 
-  const [lines, setLines] = useState<Line[]>([{ title: "", quantity: "1", price: "" }]);
-  const [issuedAt, setIssuedAt] = useState(todayIso());
-  const [dueAt, setDueAt] = useState(todayIso());
-  const [vatRate, setVatRate] = useState("12");
-  const [counterpartyId, setCounterpartyId] = useState("");
-  const [projectId, setProjectId] = useState("");
-  const [categoryId, setCategoryId] = useState("");
-  const [comment, setComment] = useState("");
+  const [lines, setLines] = useSessionState<Line[]>("inv.new.lines", [{ title: "", quantity: "1", price: "" }]);
+  const [issuedAt, setIssuedAt] = useSessionState("inv.new.issued", todayIso);
+  const [dueAt, setDueAt] = useSessionState("inv.new.due", todayIso);
+  const [vatRate, setVatRate] = useSessionState("inv.new.vat", "12");
+  const [counterpartyId, setCounterpartyId] = useSessionState("inv.new.counterparty", "");
+  const [projectId, setProjectId] = useSessionState("inv.new.project", "");
+  const [categoryId, setCategoryId] = useSessionState("inv.new.category", "");
+  const [comment, setComment] = useSessionState("inv.new.comment", "");
 
   const load = useCallback(async () => {
     try {
@@ -90,6 +94,7 @@ export function InvoicesPanel({
       setForm(false);
       setLines([{ title: "", quantity: "1", price: "" }]);
       setComment("");
+      dropDraft("inv.new");
       await load();
       onChanged();
     } catch (exc) {
