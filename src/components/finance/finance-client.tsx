@@ -298,6 +298,26 @@ function navKey(section: Section): Section {
 /** Загрузка и настройка реестра меняют шаблон компании — владелец и администратор. */
 const ADMIN_SECTIONS = new Set<Section>(["contracts-import", "contracts-setup"]);
 
+/**
+ * Мера раздела (`.fin-body[data-measure]` в globals.css): до какой ширины
+ * раздел растёт на широком окне. Листы Univer — во всю ширину, настройки и
+ * загрузки — узкой строкой, остальное — шириной таблиц и отчётов.
+ */
+const FULL_SECTIONS = new Set<Section>(["table", "contracts-sheet", "contracts-oneoff"]);
+const FORM_SECTIONS = new Set<Section>([
+  "import",
+  "sheets",
+  "integrations",
+  "rules",
+  "dictionaries",
+  "contracts-import",
+  "contracts-setup",
+]);
+function measureOf(section: Section): "full" | "form" | "data" {
+  if (FULL_SECTIONS.has(section)) return "full";
+  return FORM_SECTIONS.has(section) ? "form" : "data";
+}
+
 function sectionFromAddress(): Section | null {
   const wanted = readParam("s");
   return (ALL_SECTIONS.find((item) => item.key === wanted)?.key as Section | undefined) ?? null;
@@ -886,7 +906,7 @@ export function FinanceClient() {
 
       {section === "me" ? (
         <div className="fin-plate" data-cabinet="true">
-          <main className="fin-body fin-body-cabinet min-w-0">
+          <main className="fin-body fin-body-cabinet min-w-0" data-measure="full">
             <Cabinet
               me={me}
               onMe={(next) => {
@@ -1033,7 +1053,7 @@ export function FinanceClient() {
           </div>
         </aside>
 
-        <main className="fin-body min-w-0">
+        <main className="fin-body min-w-0" data-measure={measureOf(section)}>
           {/* Заголовок раздела. Пока разделы были лентой вкладок, лента и была
               верхом страницы; когда она ушла в колонку, содержимое упёрлось в
               край плиты, и страница читалась обрезанной. */}

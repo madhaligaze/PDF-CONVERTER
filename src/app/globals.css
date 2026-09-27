@@ -4451,6 +4451,30 @@ html, body { overflow-x: clip; }
 
 /* ─── Таблица журнала ─── */
 .fin-body { padding: 0 1rem 1.5rem; min-width: 0; color: var(--fin-text); }
+
+/* ─── Мера раздела ───
+   Раздел не растекается по окну шире, чем его можно прочесть. Без меры на
+   мониторе 2560 колонка «Контрагент» реестра была 1394px, подпись и значение
+   в «Долгах» и «Справочниках» стояли в 1900px друг от друга, а на ThinkPad
+   (1280 при 150%) тот же экран выглядел плотным — разница была только в
+   ширине окна. Дальше меры раздел встаёт по центру плиты.
+   Меры две: таблицам и отчётам нужна ширина под колонки, настройкам и
+   загрузкам — строка, которую глаз проходит, не теряя начала. Листы Univer
+   меры не имеют: им, как любой таблице-листу, нужна вся ширина. */
+:root {
+  --fin-measure-data: 1600px;
+  --fin-measure-form: 1200px;
+}
+.fin-body {
+  width: 100%;
+  max-width: calc(var(--fin-measure-data) + 2rem);
+  margin-inline: auto;
+}
+.fin-body[data-measure="form"] { max-width: calc(var(--fin-measure-form) + 2rem); }
+.fin-body[data-measure="full"] { max-width: none; }
+/* «Разовые» по сотрудникам — обычные таблицы, а не лист: переключатель живёт
+   внутри экрана, поэтому мера берётся по содержимому. */
+.fin-body[data-measure="full"]:has(.creg-staff) { max-width: calc(var(--fin-measure-data) + 2rem); }
 .fin-section-title {
   margin: 0;
   padding: 1.35rem 0 0.95rem;
@@ -5056,12 +5080,28 @@ html:has(.usheet) { overscroll-behavior-x: none; }
 
 /* ─── Список договоров ─── */
 .creg-list { container-type: inline-size; }
+/* Колонки. Растут четыре текстовые — №, контрагент, «Наше», вид — каждая
+   своим весом; сумма, срок, статус, люди и замечания прибиты: их содержимое
+   одной длины на любом окне. Раньше росла одна «Контрагент» (1fr), и на
+   мониторе 2560 она была 1394px, а «Абонентское обс…» и «Omar Devel…» так и
+   оставались обрезаны. Веса подобраны по живым данным (461 договор): на мере
+   раздела (1600) «Вид» и «Omar Development & Consulting» (203px) помещаются
+   целиком, «Контрагент» — ~500px.
+   Прибитые — по самому длинному значению: сумма цифрами до 94px
+   («1 200 000 /мес»; 112 — с запасом на восьмизначные), срок 72, замечания
+   72, люди 77 (96 — чтобы влез заголовок «Ответственные», 93px).
+   Нижние пределы в сумме дают 1096px — ровно порог ниже. Прежние (1276px) на
+   ThinkPad при 150% (1150px) не помещались, и колонка замечаний во всех
+   строках уходила за край плиты. На 1150 номер и вид остаются прежними
+   (104 и 128), а «Контрагент» теряет ~4px. */
 .creg-head,
 .creg-row {
   display: grid;
-  grid-template-columns: 104px minmax(240px, 1fr) 88px 128px 132px 96px 120px 152px 96px;
+  grid-template-columns:
+    minmax(104px, 1.2fr) minmax(200px, 4.8fr) minmax(80px, 2fr) minmax(128px, 1.8fr)
+    112px 76px 116px 96px 80px;
   align-items: center;
-  column-gap: 0.75rem;
+  column-gap: 10px;
   padding: 0 12px;
 }
 .creg-head {
@@ -5147,8 +5187,11 @@ html:has(.usheet) { overscroll-behavior-x: none; }
 .creg-empty { padding: 1.5rem 0.25rem; font-size: 0.875rem; color: var(--fin-text-soft); }
 .creg-empty-new { margin: 0 0.25rem; }
 
-@container (max-width: 1099px) {
-  .creg-head, .creg-row { grid-template-columns: 104px minmax(200px, 1fr) 88px 132px 120px 96px; }
+/* Порог — сумма нижних пределов широкой раскладки. Средняя раскладка тоже
+   помещается целиком: 718px при пороге узкой 760 (прежняя требовала 824, и
+   на окне ~900px замечания снова уходили за край). */
+@container (max-width: 1095px) {
+  .creg-head, .creg-row { grid-template-columns: minmax(104px, 1.2fr) minmax(160px, 4.8fr) minmax(72px, 2fr) 112px 116px 80px; }
   .creg-col-kind, .creg-col-term, .creg-col-people { display: none; }
 }
 @container (max-width: 759px) {
