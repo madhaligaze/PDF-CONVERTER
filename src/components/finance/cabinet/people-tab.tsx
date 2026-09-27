@@ -7,6 +7,7 @@ import { can } from "@/components/finance/access";
 import { type Department, type EmployeeRow, type Me, peopleApi } from "@/components/finance/api";
 import { EmployeeCard } from "@/components/finance/cabinet/employee-card";
 import { employeeStatus, sortPeople } from "@/components/finance/cabinet/status";
+import { ConfirmDialog } from "@/components/finance/ui/confirm-dialog";
 import { PhoneInput, formatPhone, phoneValue } from "@/components/finance/ui/phone-input";
 import { SelectLine } from "@/components/finance/ui/select-line";
 import { useSessionDrop, useSessionState } from "@/components/session-state";
@@ -119,8 +120,10 @@ export function PeopleTab({
             <DepartmentForm
               initial={current}
               onCancel={() => setRenaming(false)}
-              onSaved={() => {
+              onSaved={(item) => {
                 setRenaming(false);
+                // Отдел удалён — вкладка возвращается ко всем, а не к пустому.
+                if (!item) onDepartment(ALL);
                 onChanged();
               }}
             />
@@ -349,6 +352,7 @@ function DepartmentForm({
   const [title, setTitle] = useSessionState(`${draft}.title`, initial?.title ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [asking, setAsking] = useState(false);
   return (
     <form
       className="cab-add cab-add-dept"
@@ -393,6 +397,11 @@ function DepartmentForm({
         />
       </label>
       <span className="cab-add-actions">
+        {initial ? (
+          <button type="button" className="fin-link-btn cab-dept-remove" disabled={busy} onClick={() => setAsking(true)}>
+            Удалить отдел
+          </button>
+        ) : null}
         <button type="button" className="btn-ghost btn-sm" onClick={cancel}>
           Отмена
         </button>
@@ -400,6 +409,30 @@ function DepartmentForm({
           {initial ? "Сохранить" : "Добавить"}
         </button>
       </span>
+      <ConfirmDialog
+        open={asking}
+        title={initial ? `Удалить отдел ${initial.code}?` : ""}
+        text="Отдел уйдёт в корзину. Отдел с сотрудниками не удаляется — сначала переведите их в другой отдел. Вернуть — из корзины в личном кабинете."
+        confirm="Удалить"
+        danger
+        busy={busy}
+        onCancel={() => setAsking(false)}
+        onConfirm={async () => {
+          if (!initial) return;
+          setAsking(false);
+          setBusy(true);
+          setError("");
+          try {
+            await peopleApi.departments.update(initial.id, { archived: true });
+            dropDraft(draft);
+            onSaved(null);
+          } catch (exc) {
+            setError(exc instanceof Error ? exc.message : "Не удалился");
+          } finally {
+            setBusy(false);
+          }
+        }}
+      />
       {error ? (
         <p className="cab-error fin-fail" role="alert">
           {error}

@@ -338,7 +338,7 @@ function ValuesPane({ field }: { field: RegistryField }) {
                   }
                 }}
               >
-                В архив
+                Удалить
               </button>
             </span>
             {errors.length ? (
@@ -452,13 +452,13 @@ function ValuesPane({ field }: { field: RegistryField }) {
       />
       <ConfirmDialog
         open={ask?.kind === "archive"}
-        title={ask?.kind === "archive" ? `Убрать «${ask.value.value}» в архив?` : ""}
+        title={ask?.kind === "archive" ? `Удалить «${ask.value.value}»?` : ""}
         text={
           ask?.kind === "archive" && ask.count > 0
             ? `Значение стоит в ${contractsWord(ask.count)}: там его подпись останется, а для выбора его больше не будет.`
-            : "Значение ни в одном договоре не стоит и пропадёт из списка для выбора."
+            : "Значение ни в одном договоре не стоит и уйдёт из списка в корзину. Вернуть — из корзины в личном кабинете."
         }
-        confirm="В архив"
+        confirm="Удалить"
         onCancel={() => setAsk(null)}
         onConfirm={() => {
           if (ask?.kind !== "archive") return;

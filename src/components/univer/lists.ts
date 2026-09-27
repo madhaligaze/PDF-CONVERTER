@@ -7,12 +7,14 @@
  * умолчанию). Теперь раздел даёт только значения и строки, а как список
  * выглядит и ведёт себя — решается здесь и в `UniverSheet`:
  *
- * * **без капсул и стрелок в каждой ячейке** (`TEXT`): значение — обычный
- *   текст, а цвет в листе — только отказ (правило проекта об индикаторах);
- * * **стрелка — у выбранной ячейки**, как в Excel: её рисует `UniverSheet` по
- *   правилу под ячейкой, открывает список щелчок по ней или Alt+↓. Двигается
- *   по событиям листа, без вечного цикла кадров; на прокрутке колесом
- *   прячется и встаёт, когда лист остановился;
+ * * **без капсул** (`ARROW`): значение — обычный текст, а цвет в листе —
+ *   только отказ (правило проекта об индикаторах);
+ * * **стрелка — в каждой ячейке со списком**, как в Google Sheets: щелчок по
+ *   ней открывает список, Alt+↓ — тоже. До 27.09 стрелка стояла только у
+ *   выбранной ячейки (как в Excel), и список в строке был не виден, пока
+ *   на ячейку не встанешь: «выпадающий список на строках не виден, пока
+ *   курсором не наведёшь». Свою стрелку `UniverSheet` теперь рисует только
+ *   спискам в режиме `TEXT`, если такие где-то остались;
  * * **печать — это печать, а не выбор.** Univer открывает список вместе с
  *   редактором ячейки, и строка поиска списка забирает фокус на второй-третьей
  *   букве: «Ба» оставалось в ячейке, «нковский счёт» уходило в поиск, и Enter
@@ -32,8 +34,10 @@ import { cellRect } from "@/components/univer/cell-rect";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type UniverApi = any;
 
-/** `DataValidationRenderMode.TEXT`. */
+/** `DataValidationRenderMode.TEXT` — без стрелки; её тогда рисует `UniverSheet` у выбранной ячейки. */
 const RENDER_TEXT = 0;
+/** `DataValidationRenderMode.ARROW` — стрелка в каждой ячейке списка. */
+const RENDER_ARROW = 1;
 /** `DataValidationErrorStyle.WARNING` — ввод не запрещается. */
 const ERROR_WARNING = 2;
 /** `DeviceInputEventType.Keyboard`. */
@@ -65,7 +69,7 @@ export function listRule(uid: string, values: readonly string[], ranges: ListRan
     showDropDown: true,
     showErrorMessage: false,
     errorStyle: ERROR_WARNING,
-    renderMode: RENDER_TEXT,
+    renderMode: RENDER_ARROW,
   };
 }
 

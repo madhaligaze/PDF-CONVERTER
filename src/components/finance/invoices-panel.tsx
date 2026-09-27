@@ -260,7 +260,7 @@ export function InvoicesPanel({
                     className="fin-chip"
                     onClick={() => setLines((was) => was.filter((_, i) => i !== index))}
                   >
-                    убрать
+                    удалить
                   </button>
                 ) : null}
               </div>

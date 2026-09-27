@@ -240,7 +240,7 @@ export function FieldsTab() {
                     disabled={action.busy(`archive:${field.key}`)}
                     onClick={() => setAsk({ kind: "archive", field, count })}
                   >
-                    Убрать
+                    Удалить
                   </button>
                 )}
               </span>
@@ -291,13 +291,13 @@ export function FieldsTab() {
 
       <ConfirmDialog
         open={ask?.kind === "archive"}
-        title={ask ? `Убрать поле «${ask.field.title}»?` : ""}
+        title={ask ? `Удалить поле «${ask.field.title}»?` : ""}
         text={
           ask && ask.count > 0
-            ? `Значения в ${inContracts(ask.count)} уйдут вместе с ним.`
-            : "В договорах оно пока не заполнено."
+            ? `Значения в ${inContracts(ask.count)} уйдут вместе с ним в корзину. Вернуть — из корзины в личном кабинете.`
+            : "В договорах оно пока не заполнено. Вернуть — из корзины в личном кабинете."
         }
-        confirm="Убрать"
+        confirm="Удалить"
         danger
         busy={ask ? action.busy(`archive:${ask.field.key}`) : false}
         onCancel={() => setAsk(null)}

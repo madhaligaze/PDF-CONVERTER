@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { type Dictionaries, financeApi, formatMoney } from "@/components/finance/api";
+import { ConfirmDialog } from "@/components/finance/ui/confirm-dialog";
 
 type Props = {
   dictionaries: Dictionaries;
@@ -84,6 +85,7 @@ export function DictionariesPanel({ dictionaries, onChanged }: Props) {
               ) : null}
             </span>
             <StartingBalance account={account} onSaved={onChanged} onError={setError} />
+            <RemoveEntry kind="accounts" id={account.id} name={account.name} onDone={onChanged} onError={setError} />
           </div>
         ))}
 
@@ -254,6 +256,7 @@ function EntryList({
           {items.map((item) => (
             <div key={item.id} className="fin-acc-row">
               <span className="fin-acc-name">{item.name}</span>
+              <RemoveEntry kind={kind} id={item.id} name={item.name} onDone={onChanged} onError={setError} />
               <select
                 className="input-field"
                 style={{ width: "auto" }}
@@ -310,6 +313,7 @@ function EntryList({
                   {ROLES.find((entry) => entry.value === item.role)?.title ?? item.role}
                 </span>
               ) : null}
+              <RemoveEntry kind={kind} id={item.id} name={item.name} onDone={onChanged} onError={setError} compact />
             </span>
           ))
         ) : (
@@ -353,6 +357,66 @@ function EntryList({
   );
 }
 
+
+/**
+ * «Удалить» у записи справочника: запись уходит в корзину (личный кабинет →
+ * «Корзина»), операции с ней остаются как были — удаление мягкое, как и
+ * прежний «архив», только теперь его видно и откуда вернуть.
+ */
+function RemoveEntry({
+  kind,
+  id,
+  name,
+  onDone,
+  onError,
+  compact,
+}: {
+  kind: string;
+  id: string;
+  name: string;
+  onDone: () => void;
+  onError: (text: string) => void;
+  compact?: boolean;
+}) {
+  const [ask, setAsk] = useState(false);
+  const [busy, setBusy] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        className={compact ? "fin-dict-x" : "fin-link-btn fin-dict-remove"}
+        aria-label={`Удалить «${name}»`}
+        title="Удалить — в корзину"
+        disabled={busy}
+        onClick={() => setAsk(true)}
+      >
+        {compact ? "×" : "Удалить"}
+      </button>
+      <ConfirmDialog
+        open={ask}
+        title={`Удалить «${name}»?`}
+        text="Запись уйдёт из списков в корзину, операции с ней останутся как были. Вернуть — из корзины в личном кабинете."
+        confirm="Удалить"
+        danger
+        busy={busy}
+        onCancel={() => setAsk(false)}
+        onConfirm={async () => {
+          setBusy(true);
+          try {
+            await financeApi.archiveEntry(kind, id);
+            setAsk(false);
+            onDone();
+          } catch (exc) {
+            onError(exc instanceof Error ? exc.message : "Не удалилось");
+            setAsk(false);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      />
+    </>
+  );
+}
 
 /**
  * Номер счёта в банке — щелчком, как начальный остаток.

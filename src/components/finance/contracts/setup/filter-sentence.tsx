@@ -42,7 +42,7 @@ import { ECONOMIC_WORDS, PHASE_WORDS, lowerFirst } from "@/components/finance/co
 
 // ── Каталог полей ────────────────────────────────────────────────────────────
 
-type Kind = "list" | "party" | "person" | "text" | "bool" | "flag";
+type Kind = "list" | "party" | "person" | "text" | "bool" | "flag" | "number";
 
 /**
  * `archived` — значения в архиве: их не предлагают, но условие, написанное до
@@ -54,6 +54,8 @@ type Entry = { key: string; title: string; kind: Kind; options: PopOption[]; arc
 const FILTERABLE_SYSTEM = new Set([
   "status", "type", "subject", "economic_role", "department", "executor", "customer", "people",
   "billing", "end_kind", "number", "note", "amount_terms",
+  // Числа: «Срок, мес < 2» (листы «до 2 мес»), «Остаток (сводка) > 0» («Остатки»).
+  "amount", "age_months", "summary_paid", "summary_remaining",
 ]);
 
 const VIRTUAL_TITLES: Record<string, string> = {
@@ -96,7 +98,7 @@ function catalog({ schema, parties, people }: Ctx): Entry[] {
           archived: (schema.archived_values?.[field.key] ?? []).map((item) => ({
             value: item.id,
             label: item.value,
-            hint: "в архиве",
+            hint: "в корзине",
           })),
         });
         break;
@@ -129,6 +131,10 @@ function catalog({ schema, parties, people }: Ctx): Entry[] {
       case "bool":
         out.push({ key: field.key, title, kind: "bool", options: [] });
         break;
+      case "money":
+      case "number":
+        out.push({ key: field.key, title, kind: "number", options: [] });
+        break;
       default:
         out.push({ key: field.key, title, kind: "text", options: [] });
     }
@@ -151,7 +157,11 @@ function catalog({ schema, parties, people }: Ctx): Entry[] {
 
 // ── Условия: запись сервера ↔ часть фразы ────────────────────────────────────
 
-type OpKey = "in" | "not_in" | "empty" | "not_empty" | "contains" | "eq" | "neq" | "own" | "not_own" | "yes" | "no";
+type OpKey =
+  | "in" | "not_in" | "empty" | "not_empty" | "contains" | "eq" | "neq" | "own" | "not_own" | "yes" | "no"
+  | "lt" | "lte" | "gt" | "gte";
+
+const NUMBER_OPS = new Set<OpKey>(["lt", "lte", "gt", "gte"]);
 
 const OP_MENU: Record<Kind, { key: OpKey; label: string }[]> = {
   list: [
@@ -189,6 +199,14 @@ const OP_MENU: Record<Kind, { key: OpKey; label: string }[]> = {
     { key: "yes", label: "наши юрлица" },
     { key: "no", label: "не обе наши" },
   ],
+  number: [
+    { key: "lt", label: "меньше" },
+    { key: "lte", label: "не больше" },
+    { key: "gt", label: "больше" },
+    { key: "gte", label: "не меньше" },
+    { key: "empty", label: "пусто" },
+    { key: "not_empty", label: "не пусто" },
+  ],
 };
 
 type Read = { entry: Entry | null; key: string; op: OpKey; values: string[]; text: string };
@@ -219,6 +237,10 @@ function writeCondition(key: string, kind: Kind, op: OpKey, values: string[], te
   }
   if (op === "yes" || op === "no") return { field: key, op: "is", value: op === "yes" };
   if (op === "empty" || op === "not_empty") return { field: key, op, value: null };
+  if (NUMBER_OPS.has(op)) {
+    const number = Number(text.replace(/[\s  ]/g, "").replace(",", "."));
+    return { field: key, op, value: text.trim() && Number.isFinite(number) ? number : null };
+  }
   if (op === "contains" || op === "eq" || op === "neq") {
     if (kind === "text") return { field: key, op, value: text };
   }
@@ -231,6 +253,8 @@ function defaultCondition(entry: Entry): FilterCondition {
       return writeCondition(entry.key, "party", "own", [], "");
     case "text":
       return writeCondition(entry.key, "text", "contains", [], "");
+    case "number":
+      return writeCondition(entry.key, "number", "gt", [], "");
     case "bool":
     case "flag":
       return writeCondition(entry.key, entry.kind, "yes", [], "");
@@ -242,6 +266,7 @@ function defaultCondition(entry: Entry): FilterCondition {
 /** Условие, у которого не выбрано значение: сервер его примет, но оно не отберёт ничего. */
 function incomplete(condition: FilterCondition): boolean {
   if (condition.op === "in" || condition.op === "not_in") return asList(condition.value).length === 0;
+  if (NUMBER_OPS.has(condition.op as OpKey)) return typeof condition.value !== "number";
   if (condition.op === "contains" || condition.op === "eq" || condition.op === "neq") {
     return !String(condition.value ?? "").trim();
   }
@@ -260,7 +285,7 @@ function valuesText(values: string[], options: PopOption[], archived: PopOption[
     const live = options.find((item) => item.value === id);
     if (live) return live.label;
     const gone = archived.find((item) => item.value === id);
-    return gone ? `${gone.label} (в архиве)` : "убранное значение";
+    return gone ? `${gone.label} (в корзине)` : "удалённое значение";
   });
   if (labels.length <= 3) return labels.join(", ");
   return `${labels.slice(0, 3).join(", ")} и ещё ${labels.length - 3}`;
@@ -292,6 +317,14 @@ function opWord(kind: Kind, op: OpKey, count: number): string {
       return kind === "flag" ? "— наши юрлица" : "— да";
     case "no":
       return kind === "flag" ? "— не обе наши" : "— нет";
+    case "lt":
+      return "меньше";
+    case "lte":
+      return "не больше";
+    case "gt":
+      return "больше";
+    case "gte":
+      return "не меньше";
     default:
       return op;
   }
@@ -499,7 +532,8 @@ function Condition({ condition, byKey, fieldOptions, editable, autoOpen, onSettl
   }
   const kind = entry.kind;
   const withValues = (op: OpKey) => op === "in" || op === "not_in";
-  const withText = (op: OpKey) => kind === "text" && (op === "contains" || op === "eq" || op === "neq");
+  const withText = (op: OpKey) =>
+    (kind === "text" && (op === "contains" || op === "eq" || op === "neq")) || (kind === "number" && NUMBER_OPS.has(op));
   const missing = incomplete(condition);
   const label = `${entry.title} ${opWord(kind, read.op, read.values.length)}`;
 
@@ -562,7 +596,7 @@ function Condition({ condition, byKey, fieldOptions, editable, autoOpen, onSettl
         onCommit={(text) => onChange(writeCondition(entry.key, kind, read.op, [], text))}
       />
     ) : (
-      <span>«{read.text}»</span>
+      <span>{kind === "number" ? read.text : `«${read.text}»`}</span>
     );
   }
 

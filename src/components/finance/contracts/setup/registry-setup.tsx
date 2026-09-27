@@ -25,16 +25,18 @@ import { gsap, prefersReducedMotion } from "@/components/motion/gsap";
 import { EntitiesTab } from "@/components/finance/contracts/setup/entities-tab";
 import { FieldsTab } from "@/components/finance/contracts/setup/fields-tab";
 import { ListsTab } from "@/components/finance/contracts/setup/lists-tab";
+import { SummaryTab } from "@/components/finance/contracts/setup/summary-tab";
 import { ViewsTab } from "@/components/finance/contracts/setup/views-tab";
 import { useSessionState } from "@/components/session-state";
 
-type Tab = "fields" | "lists" | "views" | "entities";
+type Tab = "fields" | "lists" | "views" | "entities" | "summary";
 
 const TABS: { key: Tab; title: string }[] = [
   { key: "fields", title: "Поля" },
   { key: "lists", title: "Списки" },
   { key: "views", title: "Листы" },
   { key: "entities", title: "Наши юрлица" },
+  { key: "summary", title: "Сводка оплат" },
 ];
 
 
@@ -119,6 +121,7 @@ export function RegistrySetup({ onBack }: { onBack: () => void }) {
         {tab === "lists" ? <ListsTab /> : null}
         {tab === "views" ? <ViewsTab /> : null}
         {tab === "entities" ? <EntitiesTab /> : null}
+        {tab === "summary" ? <SummaryTab /> : null}
       </div>
     </div>
   );

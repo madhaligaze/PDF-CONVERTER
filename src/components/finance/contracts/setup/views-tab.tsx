@@ -48,6 +48,12 @@ function canon(filter: ViewFilter | null | undefined): string {
   });
 }
 
+/** Книги листов: реестр (карточки и «Таблица») и «Разовые». */
+const BOOKS = [
+  { key: "", title: "Реестр", pick: "в реестр" },
+  { key: "oneoff", title: "Разовые", pick: "в «Разовые»" },
+];
+
 function contractsCount(count: number): string {
   return `${count} ${plural(count, "договор", "договора", "договоров")}`;
 }
@@ -60,16 +66,25 @@ export function ViewsTab() {
   // (`session-state.tsx`).
   const [current, setCurrent] = useSessionState<string | null>("setup.view", null);
   const [title, setTitle] = useSessionState("setup.view-new", "");
+  const [newBook, setNewBook] = useSessionState("setup.view-book", "");
 
   const views = useMemo(() => [...(schema?.views ?? [])].sort((a, b) => a.position - b.position), [schema]);
   const counts = useMemo(() => viewCounts(views, byId.values()), [views, byId]);
+  // Листы реестра и «Разовых» — разными группами: у каждой книги свой порядок.
+  const groups = useMemo(
+    () =>
+      BOOKS.map((book) => ({ ...book, views: views.filter((item) => (item.book ?? "") === book.key) })).filter(
+        (group) => group.views.length || group.key === "",
+      ),
+    [views],
+  );
 
   if (!schema) return null;
   const view = views.find((item) => item.id === current) ?? views[0];
 
-  const move = async (index: number, dir: -1 | 1) => {
-    const one = views[index];
-    const other = views[index + dir];
+  const move = async (group: RegistryView[], index: number, dir: -1 | 1) => {
+    const one = group[index];
+    const other = group[index + dir];
     if (!one || !other) return;
     // Меняемся местами с соседом. Одинаковые позиции (старые данные) разводим
     // на единицу — иначе обмен ничего бы не поменял.
@@ -84,7 +99,8 @@ export function ViewsTab() {
   const add = async () => {
     const clean = title.trim();
     if (!clean) return;
-    const main = views.find((item) => item.main) ?? views[0];
+    const sameBook = views.filter((item) => (item.book ?? "") === newBook);
+    const main = sameBook.find((item) => item.main) ?? sameBook[0] ?? views.find((item) => item.main) ?? views[0];
     const base = main?.blocks[0];
     // Новый лист получает колонки главного: лист без колонок в таблице был бы
     // пустой полосой, а собирать 20 колонок заново никто не станет.
@@ -93,7 +109,7 @@ export function ViewsTab() {
     ];
     const made: { view: RegistryView | null } = { view: null };
     const ok = await action.run("add", async () => {
-      made.view = await contractsApi.setup.addView({ title: clean, blocks });
+      made.view = await contractsApi.setup.addView({ title: clean, blocks, book: newBook });
     });
     if (ok) {
       setTitle("");
@@ -105,7 +121,10 @@ export function ViewsTab() {
     <div className="setup-split">
       <div className="setup-side-wrap">
         <nav className="setup-side" aria-label="Листы">
-          {views.map((item, index) => (
+          {groups.map((group) => (
+            <div key={group.key || "main"} role="group" aria-label={group.title}>
+              {groups.length > 1 ? <p className="setup-side-book">{group.title}</p> : null}
+          {group.views.map((item, index) => (
             <div key={item.id} className="setup-side-row">
               <button
                 type="button"
@@ -122,7 +141,7 @@ export function ViewsTab() {
                   className="fin-icon-btn setup-move-btn"
                   aria-label={`Поднять лист «${item.title}»`}
                   disabled={index === 0 || action.busy(`move:${item.id}`)}
-                  onClick={() => void move(index, -1)}
+                  onClick={() => void move(group.views, index, -1)}
                 >
                   <ArrowUpIcon size={14} />
                 </button>
@@ -130,8 +149,8 @@ export function ViewsTab() {
                   type="button"
                   className="fin-icon-btn setup-move-btn"
                   aria-label={`Опустить лист «${item.title}»`}
-                  disabled={index === views.length - 1 || action.busy(`move:${item.id}`)}
-                  onClick={() => void move(index, 1)}
+                  disabled={index === group.views.length - 1 || action.busy(`move:${item.id}`)}
+                  onClick={() => void move(group.views, index, 1)}
                 >
                   <ArrowDownIcon size={14} />
                 </button>
@@ -141,6 +160,8 @@ export function ViewsTab() {
                   {action.error(`move:${item.id}`)}
                 </span>
               ) : null}
+            </div>
+          ))}
             </div>
           ))}
         </nav>
@@ -162,6 +183,13 @@ export function ViewsTab() {
           <button type="submit" className="btn-ghost btn-sm" disabled={!title.trim() || action.busy("add")}>
             + Лист
           </button>
+          <span className="setup-book-pick" role="group" aria-label="Книга нового листа">
+            {BOOKS.map((book) => (
+              <button key={book.key || "main"} type="button" aria-pressed={newBook === book.key} onClick={() => setNewBook(book.key)}>
+                {book.pick}
+              </button>
+            ))}
+          </span>
           {action.error("add") ? (
             <span className="setup-error setup-add-error" role="alert">
               {action.error("add")}
@@ -226,7 +254,7 @@ function ViewEditor({ view, onGone }: { view: RegistryView; onGone: () => void }
           <span className="annot">главный лист</span>
         ) : (
           <button type="button" className="fin-link-btn setup-quiet" onClick={() => setAsk({ kind: "view" })}>
-            Убрать лист
+            Удалить лист
           </button>
         )}
       </div>
@@ -311,9 +339,9 @@ function ViewEditor({ view, onGone }: { view: RegistryView; onGone: () => void }
 
       <ConfirmDialog
         open={ask?.kind === "view"}
-        title={`Убрать лист «${view.title}»?`}
-        text="Договоры останутся в реестре и в других листах."
-        confirm="Убрать"
+        title={`Удалить лист «${view.title}»?`}
+        text="Лист уйдёт в корзину, договоры останутся в реестре и в других листах. Вернуть — из корзины в личном кабинете."
+        confirm="Удалить"
         danger
         onCancel={() => setAsk(null)}
         onConfirm={async () => {
@@ -326,11 +354,11 @@ function ViewEditor({ view, onGone }: { view: RegistryView; onGone: () => void }
         open={ask?.kind === "block"}
         title={
           ask?.kind === "block"
-            ? `Убрать блок «${view.blocks[ask.index]?.title || "без названия"}»?`
+            ? `Удалить блок «${view.blocks[ask.index]?.title || "без названия"}»?`
             : ""
         }
         text="Договоры блока останутся в реестре; в этом листе они встанут в другой блок, если подходят под его правило."
-        confirm="Убрать"
+        confirm="Удалить"
         danger
         onCancel={() => setAsk(null)}
         onConfirm={async () => {
@@ -428,7 +456,7 @@ function BlockEditor({ view, index, block, action, saveBlocks, onRemove }: Block
     ...(schema?.lists[key] ?? []).map((item) => ({ value: item.id, label: item.value })),
     ...(schema?.archived_values?.[key] ?? [])
       .filter((item) => item.id === block.defaults?.[key])
-      .map((item) => ({ value: item.id, label: `${item.value} (в архиве)` })),
+      .map((item) => ({ value: item.id, label: `${item.value} (в корзине)` })),
     { value: "", label: "—" },
   ];
   const fieldTitle = (key: string) =>
@@ -619,7 +647,7 @@ function BlockEditor({ view, index, block, action, saveBlocks, onRemove }: Block
       {onRemove ? (
         <div className="setup-block-foot">
           <button type="button" className="fin-link-btn setup-quiet" onClick={onRemove}>
-            Убрать блок
+            Удалить блок
           </button>
         </div>
       ) : null}

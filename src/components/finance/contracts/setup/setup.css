@@ -521,3 +521,22 @@
 @media (prefers-reduced-motion: reduce) {
   .setup-side-move, .setup-rule-x { transition: none; }
 }
+
+/* ─── «Сводка оплат» ─── */
+.setup-summary { max-width: 720px; display: grid; gap: 1.25rem; }
+.setup-summary-now { display: grid; gap: 0.25rem; justify-items: start; padding-bottom: 1rem; border-bottom: 1px solid var(--fin-line); }
+.setup-summary-title { margin: 0; font-size: 0.9375rem; font-weight: 500; color: var(--fin-text); }
+.setup-summary-meta { margin: 0; font-size: 0.8125rem; color: var(--fin-text-soft); }
+.setup-summary-form { display: grid; grid-template-columns: minmax(0, 1fr) 14rem auto; gap: 0.5rem 0.75rem; align-items: end; }
+.setup-summary-form > .setup-error,
+.setup-summary-form > .setup-summary-meta { grid-column: 1 / -1; }
+.setup-summary-field { display: grid; gap: 0.25rem; font-size: 0.75rem; color: var(--fin-text-soft); min-width: 0; }
+@media (max-width: 640px) {
+  .setup-summary-form { grid-template-columns: minmax(0, 1fr); }
+}
+/* Книги листов в «Листах»: реестр и «Разовые» — разными группами. */
+.setup-side-book { margin: 0.75rem 0 0.25rem; padding: 0 0.5rem; font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.02em; color: var(--fin-text-soft); }
+.setup-side-book:first-child { margin-top: 0; }
+.setup-book-pick { display: flex; gap: 0.75rem; font-size: 0.75rem; color: var(--fin-text-soft); flex-basis: 100%; }
+.setup-book-pick button { padding: 0; border: 0; background: none; font: inherit; color: inherit; cursor: pointer; }
+.setup-book-pick button[aria-pressed="true"] { color: var(--fin-text); font-weight: 600; }

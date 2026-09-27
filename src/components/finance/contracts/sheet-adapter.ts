@@ -39,9 +39,11 @@
  * обратно на сервер.
  */
 import { IUndoRedoService } from "@univerjs/core";
+import { SheetsNotePopupService } from "@univerjs/preset-sheets-note";
 
 import type {
   Contract,
+  ContractIssue,
   Party,
   PersonRef,
   RegistryField,
@@ -53,6 +55,7 @@ import { departmentText, listText } from "@/components/finance/contracts/schema"
 import {
   create,
   edit,
+  forBook,
   forgetDeparted,
   getRegistry,
   type RegistryState,
@@ -61,6 +64,7 @@ import { parseDay, plural } from "@/components/finance/format";
 import { type CellRect, cellRect } from "@/components/univer/cell-rect";
 import { HEADER_STYLE, PAPER, ROW_H, fitWidth, headerHeight, sampled } from "@/components/univer/columns";
 import { LIST_MUTATION, type ListRange, listRule } from "@/components/univer/lists";
+import type { LookIds, LookKeeper } from "@/components/univer/look";
 import { guardSheets } from "@/components/univer/protect";
 import type { UniverApi, WorkbookSnapshot } from "@/components/univer/sheet";
 import {
@@ -83,10 +87,23 @@ import {
 export const ORDINAL_KEY = "row_number";
 /** «Как было в файле» — снимок на день выгрузки, только чтение. */
 const SNAPSHOT_KEYS = new Set(["paid_snapshot", "remaining_snapshot"]);
-/** «По выписке» — из журнала операций, приходят сводкой оплат, а не с договором. */
-const LIVE_KEYS = new Set(["paid", "remaining"]);
+/**
+ * Приходят своим запросом, а не с договором: «по выписке» — из журнала
+ * операций, «(сводка)» — из книги-сводки компании.
+ */
+const LIVE_KEYS = new Set(["paid", "remaining", "summary_paid", "summary_remaining"]);
+/**
+ * Поля, которых нет в листе без явного списка колонок: сводка и «Срок, мес»
+ * нужны «Разовым», а в «Все договоры» новой компании встали бы пустыми.
+ */
+const EXPLICIT_ONLY = new Set(["summary_paid", "summary_remaining", "age_months"]);
 
 function liveValue(state: RegistryState, id: string, key: string): unknown {
+  if (key === "summary_paid" || key === "summary_remaining") {
+    const entry = state.summary?.[id];
+    if (entry?.state !== "found") return undefined;
+    return key === "summary_paid" ? entry.paid : entry.remaining;
+  }
   const summary = state.payments?.[id];
   return key === "paid" ? summary?.paid : key === "remaining" ? summary?.remaining : undefined;
 }
@@ -185,7 +202,7 @@ export function layoutOf(schema: RegistrySchema, view: RegistryView): ViewLayout
   const fields = new Map(schema.fields.map((field) => [field.key, field]));
   // Отбор без своих колонок — поля схемы в их порядке (скрытых в листе нет).
   const defaults = [...schema.fields]
-    .filter((field) => !field.hidden)
+    .filter((field) => !field.hidden && !EXPLICIT_ONLY.has(field.key))
     .sort((a, b) => a.position - b.position)
     .map((field) => ({ key: field.key, label: field.title, width: null as number | null | undefined }));
   const source = view.blocks.length ? view.blocks : [EMPTY_BLOCK];
@@ -625,9 +642,7 @@ function render(model: SheetModel, row: number, ctx: RenderCtx): Rendered {
   const issueCols = new Map<number, string[]>();
   for (const issue of contract?.issues ?? []) {
     if (issue.acknowledged) continue;
-    let column = block.columns.findIndex((item) => item.key === issue.field);
-    if (column < 0) column = block.columns.findIndex((item) => item.key === "number");
-    if (column < 0) column = Math.min(1, block.columns.length - 1);
+    const column = issueColumn(block, issue.field);
     const list = issueCols.get(column) ?? [];
     list.push(issue.text);
     issueCols.set(column, list);
@@ -674,6 +689,25 @@ function render(model: SheetModel, row: number, ctx: RenderCtx): Rendered {
   out.notes = notes.size ? notes : null;
   return out;
 }
+
+/** Колонка блока, на которой стоит замечание поля: своя, иначе номер, иначе вторая. */
+function issueColumn(block: BlockLayout, field: string): number {
+  let column = block.columns.findIndex((item) => item.key === field);
+  if (column < 0) column = block.columns.findIndex((item) => item.key === "number");
+  if (column < 0) column = Math.min(1, block.columns.length - 1);
+  return column;
+}
+
+/** Что говорит подсказка ячейки: её текст и замечания, которые можно отметить «Учтено». */
+export type CellHint = {
+  sheet: string;
+  row: number;
+  col: number;
+  id: string | null;
+  block: number;
+  text: string;
+  issues: ContractIssue[];
+};
 
 type CellData = { v?: string | number; t?: number; s?: Style | string; custom?: Record<string, unknown> };
 
@@ -959,6 +993,8 @@ export type Built = {
   first: string;
   /** Правила выпадающих списков, уже лежащие в снимке: лист → правило → отпечаток. */
   rules: Map<string, Map<string, string>>;
+  /** Книга листов (`""` — реестр, `oneoff` — «Разовые»); `state` уже урезан по ней. */
+  book: string;
 };
 
 /**
@@ -967,7 +1003,8 @@ export type Built = {
  * складываются в словарь книги. Поштучных вызовов Univer нет — на пяти тысячах
  * договоров это разница между долей секунды и минутой.
  */
-export function buildRegistry(state: RegistryState, pal: Palette): Built | null {
+export function buildRegistry(whole: RegistryState, pal: Palette, book = ""): Built | null {
+  const state = forBook(whole, book);
   const schema = state.schema;
   if (!schema) return null;
   const ctx: RenderCtx = {
@@ -1092,6 +1129,7 @@ export function buildRegistry(state: RegistryState, pal: Palette): Built | null 
     ctx,
     first: layouts[0]?.key ?? "",
     rules,
+    book,
     snapshot: {
       id: unitId,
       name: "Реестр договоров",
@@ -1125,6 +1163,12 @@ export type BindingEvents = {
   sheet: (view: string) => void;
   /** Лист поменяли в обход нас (вставили строку) — собрать книгу заново. */
   rebuild: () => void;
+  /**
+   * Подсказка ячейки: Univer собирался показать свою заметку (наведение или
+   * выбор ячейки) — вместо неё раздел показывает свою, с «Учтено». `null` —
+   * спрятать. `temp` — по наведению: уходит, когда мышь ушла на другую ячейку.
+   */
+  hint?: (at: { sheet: string; row: number; col: number; temp: boolean } | null) => void;
 };
 
 const M = {
@@ -1185,6 +1229,10 @@ export class RegistryBinding {
   private rules: Map<string, Map<string, string>>;
   /** Своё значение, напечатанное в открытом списке, до прихода его в справочник. */
   private extra = new Map<string, string[]>();
+  /** Книга листов: хранилище общее, а лист видит только свою. */
+  private readonly book: string;
+  /** Личный вид листа — его команды оформления правкой не считаются. */
+  private look: LookKeeper | null = null;
 
   constructor(
     private readonly api: UniverApi,
@@ -1196,6 +1244,7 @@ export class RegistryBinding {
     this.ctx = built.ctx;
     this.unitId = built.unitId;
     this.rules = built.rules;
+    this.book = built.book;
   }
 
   // ── Жизненный цикл ──
@@ -1262,6 +1311,7 @@ export class RegistryBinding {
         }
       }),
     );
+    this.takeOverNotes();
     // Тема приложения сменилась — лист следует за ней.
     if (typeof MutationObserver !== "undefined") {
       const observer = new MutationObserver(() => this.retheme());
@@ -1614,7 +1664,8 @@ export class RegistryBinding {
    * поменялась запись или правка; справочники (контрагенты, люди, схема) —
    * повод пересверить весь лист, но записывается всё равно только разница.
    */
-  sync(next: RegistryState): void {
+  sync(whole: RegistryState): void {
+    const next = forBook(whole, this.book);
     const prev = this.ctx.state;
     if (next === prev) return;
     this.ctx.state = next;
@@ -1644,6 +1695,17 @@ export class RegistryBinding {
       if (next.departed !== prev.departed) {
         for (const id of next.departed.keys()) changed.add(id);
         for (const id of prev.departed.keys()) changed.add(id);
+      }
+      if (next.summary !== prev.summary) {
+        // Сводка из книги перечитана — только строки, где «(сводка)» поменялись.
+        const ids = new Set([...Object.keys(prev.summary ?? {}), ...Object.keys(next.summary ?? {})]);
+        for (const id of ids) {
+          const before = prev.summary?.[id];
+          const after = next.summary?.[id];
+          if (before?.paid !== after?.paid || before?.remaining !== after?.remaining || before?.state !== after?.state) {
+            changed.add(id);
+          }
+        }
       }
       if (next.payments !== prev.payments) {
         // Сводка оплат пришла заново — перерисовать только строки, у которых
@@ -1761,6 +1823,9 @@ export class RegistryBinding {
 
   private onCommand(command: { id: string; params?: unknown }): void {
     if (this.writing > 0 || !this.alive) return;
+    // Жирный, заливка, ширина — личный вид (`univer/look.ts`), а не правка
+    // договора: перерисовка строки стёрла бы его сразу.
+    if (this.look?.busy()) return;
     const params = command.params as
       | {
           unitId?: string;
@@ -2229,6 +2294,132 @@ export class RegistryBinding {
     const column: SheetColumn = { key, label: key, width: 0, kind: kindOf(key, field), field, readOnly: false };
     const contract = this.ctx.state.byId.get(id);
     return faceText(faceOf(column, value, contract, { schema, parties: this.ctx.state.parties, people: this.ctx.state.people }));
+  }
+
+  // ── Личный вид ──
+
+  setLook(look: LookKeeper | null): void {
+    this.look = look;
+  }
+
+  /**
+   * Адреса листа для личного вида: строка — договор («c:<id>»), шапка и
+   * название блока («h:<блок>», «t:<блок>»); ячейка — поле своего блока;
+   * физическая колонка — поле первого блока (ширина общая у всех блоков).
+   */
+  lookIds(): LookIds {
+    const models = this.models;
+    const slotId = (slot: Slot | undefined): string | null => {
+      if (!slot) return null;
+      if (slot.kind === "row" && slot.id) return `c:${slot.id}`;
+      if (slot.kind === "header") return `h:${slot.block}`;
+      if (slot.kind === "title") return `t:${slot.block}`;
+      return null;
+    };
+    const blockOf = (sheet: string, row: number) => {
+      const model = models.get(sheet);
+      const slot = model?.slots[row];
+      return slot ? model.layout.blocks[slot.block] : undefined;
+    };
+    return {
+      rowId: (sheet, row) => slotId(models.get(sheet)?.slots[row]),
+      rowOf: (sheet, id) => {
+        const model = models.get(sheet);
+        if (!model) return null;
+        if (id.startsWith("c:")) return model.rowOf.get(id.slice(2)) ?? null;
+        const at = model.slots.findIndex((slot) => slotId(slot) === id);
+        return at >= 0 ? at : null;
+      },
+      fieldAt: (sheet, row, col) => blockOf(sheet, row)?.columns[col]?.key ?? null,
+      colOfField: (sheet, row, field) => {
+        const at = blockOf(sheet, row)?.columns.findIndex((column) => column.key === field) ?? -1;
+        return at >= 0 ? at : null;
+      },
+      colKey: (sheet, col) => {
+        const model = models.get(sheet);
+        return model ? (model.layout.blocks[0]?.columns[col]?.key ?? `#${col}`) : null;
+      },
+      colOf: (sheet, key) => {
+        const model = models.get(sheet);
+        if (!model) return null;
+        if (key.startsWith("#")) return Number(key.slice(1));
+        const at = model.layout.blocks[0]?.columns.findIndex((column) => column.key === key) ?? -1;
+        return at >= 0 ? at : null;
+      },
+      rows: function* (sheet) {
+        const model = models.get(sheet);
+        if (!model) return;
+        for (let row = 0; row < model.slots.length; row += 1) {
+          const id = slotId(model.slots[row]);
+          if (id) yield [row, id] as [number, string];
+        }
+      },
+    };
+  }
+
+  // ── Подсказка ячейки ──
+
+  /**
+   * Заметки Univer на этом листе показывает раздел, а не Univer.
+   *
+   * Заметка Univer — поле ввода: в ней нельзя ни нажать «Учтено», ни открыть
+   * договор, и красное замечание «номер уже есть у …» горело вечно, хотя
+   * человек его проверил. Сервис заметок остаётся (он решает, когда
+   * показать: наведение, выбор ячейки), подменяется только показ — на этом
+   * экземпляре, другие листы продукта не затронуты.
+   */
+  private takeOverNotes(): void {
+    const events = this.events;
+    if (!events.hint) return;
+    try {
+      const service = this.api._injector.get(SheetsNotePopupService) as {
+        showPopup: (location: Record<string, unknown>, onHide?: () => void) => void;
+        hidePopup: (force?: boolean) => void;
+      };
+      const original = { show: service.showPopup, hide: service.hidePopup };
+      let active: { temp: boolean } | null = null;
+      service.showPopup = (location) => {
+        active = { temp: Boolean(location.temp) };
+        events.hint?.({
+          sheet: String(location.subUnitId ?? ""),
+          row: Number(location.row),
+          col: Number(location.col),
+          temp: Boolean(location.temp),
+        });
+      };
+      service.hidePopup = (force) => {
+        if (!active || (!force && !active.temp)) return;
+        active = null;
+        events.hint?.(null);
+      };
+      this.disposers.push(() => {
+        service.showPopup = original.show;
+        service.hidePopup = original.hide;
+      });
+    } catch (exc) {
+      // Своя подсказка — удобство: без неё останется заметка Univer.
+      console.warn("подсказки ячеек остались заметками Univer:", exc);
+    }
+  }
+
+  /** Подсказка ячейки: текст заметки и замечания её колонки. `null` — заметки нет. */
+  hintAt(sheet: string, row: number, col: number): CellHint | null {
+    const model = this.models.get(sheet);
+    const text = model?.rows[row]?.notes?.get(col);
+    const slot = model?.slots[row];
+    if (!model || !slot || !text) return null;
+    const id = (slot.kind === "row" || slot.kind === "gone") && slot.id ? slot.id : null;
+    const contract = id ? this.ctx.state.byId.get(id) : undefined;
+    const block = model.layout.blocks[slot.block];
+    const issues = block
+      ? (contract?.issues ?? []).filter((issue) => !issue.acknowledged && issueColumn(block, issue.field) === col)
+      : [];
+    return { sheet, row, col, id, block: slot.block, text, issues };
+  }
+
+  /** Где ячейка на экране (подсказка встаёт рядом). */
+  cellRectAt(sheet: string, row: number, col: number): CellRect | null {
+    return cellRect(this.api, this.host, sheet, row, col);
   }
 
   // ── Слой вопроса над ячейкой ──

@@ -20,7 +20,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import type { ChangeMode as ChangeModeValue } from "@/components/finance/api";
+import { type ChangeMode as ChangeModeValue, contractsApi } from "@/components/finance/api";
 import { ChangeMode } from "@/components/finance/contracts/change-mode";
 import {
   RegistryBinding,
@@ -29,6 +29,7 @@ import {
   structureKey,
   type AskGroup,
   type Built,
+  type CellHint,
 } from "@/components/finance/contracts/sheet-adapter";
 import {
   answer,
@@ -36,11 +37,16 @@ import {
   cancel,
   ensurePayments,
   ensureStaff,
+  ensureSummary,
+  forBook,
   getRegistry,
   holdLive,
+  put,
   useRegistry,
 } from "@/components/finance/contracts/store";
 import { formatDay } from "@/components/finance/format";
+import { lookStore } from "@/components/finance/look-store";
+import { type LookKeeper, keepLook } from "@/components/univer/look";
 import { UniverSheet, type UniverApi } from "@/components/univer/sheet";
 import { useFillHeight } from "@/components/univer/use-fill-height";
 
@@ -49,16 +55,21 @@ type Props = {
   onOpenCard: (id: string | null, ctx?: { view: string; block: number }) => void;
   /** Договор открытой карточки: его строка отмечена, лист к ней прокручивается. */
   openId: string | null;
+  /** Книга листов: `""` — реестр («Таблица»), `oneoff` — «Разовые». */
+  book?: string;
 };
 
 type Note = { text: string; fail: boolean; at: number };
+
+/** Строки заметки ячейки разделены переводом строки (`sheet-adapter`, `render`). */
+const NEWLINE = String.fromCharCode(10);
 
 function stillAsking(group: AskGroup): { id: string; key: string }[] {
   const edits = getRegistry().edits;
   return group.items.filter((item) => edits.get(item.id)?.get(item.key)?.state === "asking");
 }
 
-export function RegistrySheet({ onOpenCard, openId }: Props) {
+export function RegistrySheet({ onOpenCard, openId, book = "" }: Props) {
   const state = useRegistry((value) => value);
   const { ref: box, height } = useFillHeight(360, 4);
   const [note, setNote] = useState<Note | null>(null);
@@ -71,6 +82,13 @@ export function RegistrySheet({ onOpenCard, openId }: Props) {
   const openRef = useRef(openId);
   const onOpenRef = useRef(onOpenCard);
   const pop = useRef<HTMLDivElement>(null);
+  const [hint, setHint] = useState<CellHint | null>(null);
+  const [hintSpot, setHintSpot] = useState<{ left: number; top: number; above: boolean } | null>(null);
+  const [acking, setAcking] = useState("");
+  const [ackError, setAckError] = useState("");
+  const hintBox = useRef<HTMLDivElement>(null);
+  const [keeper, setKeeper] = useState<LookKeeper | null>(null);
+  const [lookEmpty, setLookEmpty] = useState(true);
 
   useEffect(() => {
     onOpenRef.current = onOpenCard;
@@ -98,8 +116,35 @@ export function RegistrySheet({ onOpenCard, openId }: Props) {
     };
   }, []);
 
+  // «Оплачено/Остаток (сводка)» — из книги-сводки: раз в минуту, пока вкладка
+  // на виду, и сразу при возвращении на неё (сервер держит книгу пять минут).
+  const usesSummary = useMemo(
+    () =>
+      (state.schema?.views ?? []).some(
+        (view) =>
+          (view.book ?? "") === book &&
+          view.blocks.some((block) => block.columns.some((column) => column.key.startsWith("summary_"))),
+      ),
+    [state.schema, book],
+  );
+  useEffect(() => {
+    if (!usesSummary) return;
+    void ensureSummary();
+    const refresh = () => {
+      if (document.visibilityState === "visible") void ensureSummary();
+    };
+    const timer = window.setInterval(refresh, 60_000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [usesSummary]);
+
   const ready = state.phase === "ready" && state.schema !== null;
-  const structure = useMemo(() => (state.schema ? structureKey(state.schema) : ""), [state.schema]);
+  const scoped = useMemo(() => forBook(state, book).schema, [state, book]);
+  const structure = useMemo(() => (scoped ? structureKey(scoped) : ""), [scoped]);
+  const empty = ready && scoped !== null && scoped.views.length === 0;
 
   /**
    * Книга собирается заново только при смене раскладки (колонки, листы, права)
@@ -109,9 +154,9 @@ export function RegistrySheet({ onOpenCard, openId }: Props) {
    */
   const built = useMemo<Built | null>(() => {
     // `generation` — просьба связки собрать книгу заново (лист поменяли в обход).
-    if (!ready || !structure || generation < 0) return null;
-    return buildRegistry(getRegistry(), paletteNow());
-  }, [ready, structure, generation]);
+    if (!ready || !structure || empty || generation < 0) return null;
+    return buildRegistry(getRegistry(), paletteNow(), book);
+  }, [ready, structure, empty, generation, book]);
 
   const onReady = useCallback(
     (api: UniverApi) => {
@@ -127,22 +172,48 @@ export function RegistrySheet({ onOpenCard, openId }: Props) {
             activeView.current = view;
           },
           rebuild: () => setGeneration((value) => value + 1),
+          hint: (at) => {
+            setAckError("");
+            if (!at) {
+              setHint(null);
+              return;
+            }
+            const found = binding.current?.hintAt(at.sheet, at.row, at.col) ?? null;
+            setHint(found);
+            const rect = found ? binding.current?.cellRectAt(at.sheet, at.row, at.col) : null;
+            if (!rect?.visible) {
+              setHintSpot(null);
+              return;
+            }
+            // Под ячейкой; у нижнего края окна — над ней.
+            const above = rect.bottom + 180 > window.innerHeight;
+            setHintSpot({ left: Math.round(rect.left), top: Math.round(above ? rect.top - 6 : rect.bottom + 6), above });
+          },
         },
         box.current,
       );
       binding.current = next;
       const stop = next.start(activeView.current, openRef.current);
       next.sync(getRegistry());
+      // Личный вид: ширины, цвета, перенос — у каждого свои (`univer/look.ts`).
+      const look = keepLook(api, next.lookIds(), lookStore(book ? `registry.${book}` : "registry", getRegistry().company ?? ""));
+      next.setLook(look);
+      setKeeper(look);
+      setLookEmpty(look.empty());
+      const unwatch = look.subscribe(() => setLookEmpty(look.empty()));
       if (process.env.NODE_ENV !== "production") {
         // Только в разработке: пробники Playwright читают лист.
         (window as unknown as Record<string, unknown>).__cregSheet = { api, binding: next, build: buildRegistry, palette: paletteNow };
       }
       return () => {
+        unwatch();
+        look.stop();
+        next.setLook(null);
         stop();
         if (binding.current === next) binding.current = null;
       };
     },
-    [built, box],
+    [built, box, book],
   );
 
   useEffect(() => {
@@ -256,6 +327,50 @@ export function RegistrySheet({ onOpenCard, openId }: Props) {
     return () => document.removeEventListener("pointerdown", onDown, true);
   }, [ask, settle]);
 
+  // Подсказка уходит, когда лист прокрутили (ячейка уехала), по Esc и по
+  // щелчку мимо неё. Наведение на другую ячейку прячет её само (сервис заметок).
+  useEffect(() => {
+    if (!hint) return;
+    const hide = () => setHint(null);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") hide();
+    };
+    const onDown = (event: PointerEvent) => {
+      if (hintBox.current && event.target instanceof Node && hintBox.current.contains(event.target)) return;
+      hide();
+    };
+    const host = box.current;
+    host?.addEventListener("wheel", hide, { passive: true });
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onDown, true);
+    return () => {
+      host?.removeEventListener("wheel", hide);
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onDown, true);
+    };
+  }, [hint, box]);
+
+  const acknowledge = async (id: string, code: string) => {
+    setAcking(code);
+    setAckError("");
+    try {
+      put(await contractsApi.acknowledge(id, code, true));
+      setHint((current) => {
+        if (!current) return current;
+        const issues = current.issues.filter((issue) => issue.code !== code);
+        const text = current.text
+          .split(NEWLINE)
+          .filter((line) => !current.issues.some((issue) => issue.code === code && issue.text === line))
+          .join(NEWLINE);
+        return text.trim() ? { ...current, issues, text } : null;
+      });
+    } catch (exc) {
+      setAckError(exc instanceof Error ? exc.message : "Отметка не сохранилась");
+    } finally {
+      setAcking("");
+    }
+  };
+
   const count = ask ? stillAsking(ask).length : 0;
   // Рамка листа стоит с первого кадра, даже пока реестр читается: замер
   // высоты вешается на неё один раз при монтировании. Когда рамка появлялась
@@ -284,10 +399,14 @@ export function RegistrySheet({ onOpenCard, openId }: Props) {
             data={built.snapshot}
             onReady={onReady}
             listEdit={false}
-            formatting={false}
+            formatting="look"
             listArrow={!ask}
-            session="registry"
+            session={book ? `registry.${book}` : "registry"}
           />
+        ) : empty ? (
+          <p className="creg-sheet-note" role="status" style={{ margin: "1rem" }}>
+            Листов в этой книге нет — их заводят в «Настроить реестр» → «Листы»
+          </p>
         ) : state.phase === "error" ? (
           <p className="creg-sheet-note fin-fail" role="status" style={{ margin: "1rem" }}>
             {state.error || "Реестр не прочитался"} ·{" "}
@@ -305,9 +424,25 @@ export function RegistrySheet({ onOpenCard, openId }: Props) {
           </p>
         )}
       </div>
-      <p className={note?.fail ? "creg-sheet-note fin-fail" : "creg-sheet-note"} role="status" aria-live="polite">
-        {note?.text ?? ""}
-      </p>
+      <div className="creg-sheet-foot">
+        <p className={note?.fail ? "creg-sheet-note fin-fail" : "creg-sheet-note"} role="status" aria-live="polite">
+          {note?.text ?? ""}
+        </p>
+        {keeper && !lookEmpty ? (
+          <button
+            type="button"
+            className="fin-link-btn creg-look-reset"
+            title="Ширины, цвета и перенос — ваши, коллеги их не видят"
+            onClick={async () => {
+              await keeper.reset();
+              // Вид снимается пересборкой листа: стили уже лежат в ячейках.
+              setGeneration((value) => value + 1);
+            }}
+          >
+            Сбросить мой вид
+          </button>
+        ) : null}
+      </div>
       {ask && spot && count
         ? createPortal(
             <div ref={pop}>
@@ -318,6 +453,56 @@ export function RegistrySheet({ onOpenCard, openId }: Props) {
                 onFromDate={(iso) => settle(ask, { kind: "from_date", effective_from: iso })}
                 onCancel={() => settle(ask, null)}
               />
+            </div>,
+            document.body,
+          )
+        : null}
+      {hint && hintSpot && !ask
+        ? createPortal(
+            <div
+              ref={hintBox}
+              className="creg-hint"
+              role="dialog"
+              aria-label="Подсказка ячейки"
+              style={{
+                left: hintSpot.left,
+                top: hintSpot.top,
+                transform: hintSpot.above ? "translateY(-100%)" : undefined,
+              }}
+            >
+              {hint.text.split(NEWLINE).map((line, index) => {
+                const issue = hint.issues.find((item) => item.text === line);
+                return (
+                  <div key={`${index}-${line}`} className="creg-hint-line">
+                    <span>{line}</span>
+                    {issue && hint.id && state.schema?.access.edit ? (
+                      <button
+                        type="button"
+                        className="creg-hint-ack"
+                        disabled={acking === issue.code}
+                        onClick={() => void acknowledge(hint.id as string, issue.code)}
+                        title="Проверено: так и должно быть — замечание перестанет гореть"
+                      >
+                        {acking === issue.code ? "…" : "Учтено"}
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })}
+              {ackError ? <p className="creg-hint-fail">{ackError}</p> : null}
+              {hint.id ? (
+                <button
+                  type="button"
+                  className="fin-link-btn creg-hint-open"
+                  onClick={() => {
+                    const id = hint.id as string;
+                    setHint(null);
+                    onOpenRef.current(id, { view: hint.sheet, block: hint.block });
+                  }}
+                >
+                  Открыть договор
+                </button>
+              ) : null}
             </div>,
             document.body,
           )

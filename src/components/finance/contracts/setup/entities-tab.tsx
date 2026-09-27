@@ -15,6 +15,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { type Account, type OwnEntity, contractsApi, financeApi } from "@/components/finance/api";
 import { useRegistry } from "@/components/finance/contracts/store";
+import { plural } from "@/components/finance/format";
 import { ConfirmDialog } from "@/components/finance/ui/confirm-dialog";
 import { InlineText } from "@/components/finance/contracts/setup/inline-text";
 import { MultiPop } from "@/components/finance/contracts/setup/popover";
@@ -30,7 +31,7 @@ export function EntitiesTab() {
   const [accountsError, setAccountsError] = useState("");
   const [optimistic, setOptimistic] = useState<Record<string, string[]>>({});
   const [binError, setBinError] = useState<Record<string, string>>({});
-  const [ask, setAsk] = useState<OwnEntity | null>(null);
+  const [ask, setAsk] = useState<{ entity: OwnEntity; count: number } | null>(null);
   // Набранное новое юрлицо переживает перезагрузку (`session-state.tsx`).
   const [name, setName] = useSessionState("setup.entity-new", "");
 
@@ -212,19 +213,9 @@ export function EntitiesTab() {
                 type="button"
                 className="fin-link-btn setup-quiet"
                 disabled={action.busy(`archive:${entity.id}`)}
-                onClick={() => {
-                  // Юрлицо с договорами сервер не убирает — без диалога ради
-                  // заведомого отказа: запрос сразу, его текст — под строкой.
-                  if (count > 0) {
-                    void action.run(`archive:${entity.id}`, () =>
-                      contractsApi.setup.updateEntity(entity.id, { archived: true }),
-                    );
-                    return;
-                  }
-                  setAsk(entity);
-                }}
+                onClick={() => setAsk({ entity, count })}
               >
-                В архив
+                Удалить
               </button>
             </span>
             {errors.length ? (
@@ -264,14 +255,18 @@ export function EntitiesTab() {
 
       <ConfirmDialog
         open={!!ask}
-        title={ask ? `Убрать «${ask.name}» из наших юрлиц?` : ""}
-        text="Договоров за ним нет. Как контрагент оно останется в справочнике."
-        confirm="Убрать"
+        title={ask ? `Удалить «${ask.entity.name}» из наших юрлиц?` : ""}
+        text={
+          ask?.count
+            ? `За ним ${ask.count} ${plural(ask.count, "договор", "договора", "договоров")}: они останутся в реестре, но это юрлицо перестанет считаться нашим — договоры уйдут из листов по «нашему исполнителю» и получат замечание «ни одна сторона не наша». Вернуть — из корзины в личном кабинете.`
+            : "Договоров за ним нет. Как контрагент оно останется в справочнике; вернуть — из корзины в личном кабинете."
+        }
+        confirm="Удалить"
         danger
         onCancel={() => setAsk(null)}
         onConfirm={() => {
           if (!ask) return;
-          const entity = ask;
+          const { entity } = ask;
           setAsk(null);
           void action.run(`archive:${entity.id}`, () =>
             contractsApi.setup.updateEntity(entity.id, { archived: true }),

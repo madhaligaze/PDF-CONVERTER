@@ -113,7 +113,7 @@ export function Journal({ dictionaries, revision, onChanged }: Props) {
       onChanged();
       await load();
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Не удалось убрать операцию");
+      setError(exc instanceof Error ? exc.message : "Не удалось удалить операцию");
     }
   };
 
@@ -305,9 +305,9 @@ export function Journal({ dictionaries, revision, onChanged }: Props) {
                         type="button"
                         className="fin-chip"
                         onClick={() => remove(operation)}
-                        title="Убрать операцию"
+                        title="Удалить операцию — в корзину"
                       >
-                        Убрать
+                        Удалить
                       </button>
                     </div>
                   </td>

@@ -120,11 +120,11 @@ export function TeamPanel({ me, onChanged }: { me: Me; onChanged: () => void }) 
                           await financeApi.removeMember(row.id);
                           await load();
                         } catch (exc) {
-                          setError(exc instanceof Error ? exc.message : "Не убрался");
+                          setError(exc instanceof Error ? exc.message : "Не удалился");
                         }
                       }}
                     >
-                      Убрать
+                      Удалить
                     </button>
                   </>
                 )}

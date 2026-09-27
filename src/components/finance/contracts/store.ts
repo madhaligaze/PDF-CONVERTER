@@ -29,6 +29,8 @@ import {
   type PaymentSummary,
   type PersonRef,
   type RegistrySchema,
+  type SummaryEntry,
+  type SummarySource,
   FinanceApiError,
   contractsApi,
 } from "@/components/finance/api";
@@ -67,6 +69,14 @@ export type RegistryState = {
    * `null` — не прочитано или журнал человеку не открыт.
    */
   payments: Readonly<Record<string, PaymentSummary>> | null;
+  /**
+   * «Оплачено/Остаток (сводка)» — договор → что о нём знает книга-сводка
+   * (`ensureSummary`). `null` — не прочитано или сводка не подключена.
+   */
+  summary: Readonly<Record<string, SummaryEntry>> | null;
+  summarySource: SummarySource | null;
+  /** По какой сводке сервер посчитал листы («Остатки») в последнем полном чтении. */
+  listSummaryRev: string;
   edits: ReadonlyMap<string, ReadonlyMap<string, Edit>>;
   live: { online: boolean; lastOkAt: number | null; failures: number };
   remote: readonly RemoteNote[];
@@ -97,6 +107,9 @@ const EMPTY: RegistryState = {
   people: {},
   staff: null,
   payments: null,
+  summary: null,
+  summarySource: null,
+  listSummaryRev: "",
   edits: new Map(),
   live: { online: true, lastOkAt: null, failures: 0 },
   remote: [],
@@ -200,6 +213,7 @@ function loadAll(schema: RegistrySchema, all: ContractsAll): void {
     byId,
     order: sortOrder(byId),
     parties: all.parties,
+    listSummaryRev: all.summary_rev ?? "",
     // Справочник сотрудников держится поверх: полное чтение приносит только
     // тех, кто стоит в договорах.
     people: { ...Object.fromEntries((state.staff ?? []).map((person) => [person.id, person])), ...all.people },
@@ -604,6 +618,42 @@ export function ensurePayments(force = false): Promise<void> {
   return paymentsLoading;
 }
 
+/** Сводка старше этого — перечитывается при следующем обращении (сервер держит книгу 5 мин). */
+const SUMMARY_TTL = 60_000;
+let summaryAt = 0;
+let summaryLoading: Promise<void> | null = null;
+
+/**
+ * «Оплачено/Остаток (сводка)» — своим запросом, как оплаты по выписке: книгу
+ * правят бухгалтеры, а не реестр, и номер изменений реестра о ней не знает.
+ *
+ * Листы вроде «Остатков» сервер раскладывает по уже прочитанной сводке.
+ * Пришла сводка новее той, по которой собран реестр, — реестр перечитывается
+ * целиком, иначе строка с погашенным остатком стояла бы в «Остатках» до
+ * перезагрузки страницы.
+ */
+export function ensureSummary(force = false): Promise<void> {
+  const company = state.company;
+  if (!company) return Promise.resolve();
+  const fresh = state.summary !== null && Date.now() - summaryAt < SUMMARY_TTL;
+  if (!force && (summaryLoading || fresh)) return summaryLoading ?? Promise.resolve();
+  summaryLoading = (async () => {
+    try {
+      const result = await contractsApi.summary(force);
+      if (state.company !== company) return;
+      summaryAt = Date.now();
+      emit({ summary: result.source ? result.contracts : null, summarySource: result.source });
+      const rev = result.source?.rev ?? "";
+      if (rev && rev !== state.listSummaryRev && state.phase === "ready") await reloadAll();
+    } catch {
+      /* колонка «по сводке» останется пустой до следующей попытки */
+    } finally {
+      summaryLoading = null;
+    }
+  })();
+  return summaryLoading;
+}
+
 /** Справочник старше этого — перечитывается при следующем выборе. */
 const STAFF_TTL = 20_000;
 let staffAt = 0;
@@ -637,6 +687,44 @@ export function ensureStaff(force = false): Promise<void> {
     }
   })();
   return staffLoading;
+}
+
+// ── Книги листов ─────────────────────────────────────────────────────────────
+
+const schemaBooks = new WeakMap<RegistrySchema, Map<string, RegistrySchema>>();
+const stateBooks = new WeakMap<RegistryState, Map<string, RegistryState>>();
+const scopedSchemas = new WeakSet<RegistrySchema>();
+
+/** Лист в книге `book`: `""` — реестр, `oneoff` — «Разовые». */
+export function inBook(view: { book?: string }, book: string): boolean {
+  return (view.book ?? "") === book;
+}
+
+/**
+ * Состояние, в схеме которого только листы одной книги. Тот же объект на то
+ * же состояние: лист сверяет схему по ссылке, и новая копия на каждый вызов
+ * значила бы полную перерисовку на каждой правке.
+ */
+export function forBook(value: RegistryState, book: string): RegistryState {
+  const schema = value.schema;
+  // Уже урезанное состояние не урезается второй раз: новая копия схемы
+  // выглядела бы для листа сменой схемы.
+  if (!schema || scopedSchemas.has(schema)) return value;
+  let states = stateBooks.get(value);
+  if (!states) stateBooks.set(value, (states = new Map()));
+  const hit = states.get(book);
+  if (hit) return hit;
+  let schemas = schemaBooks.get(schema);
+  if (!schemas) schemaBooks.set(schema, (schemas = new Map()));
+  let scoped = schemas.get(book);
+  if (!scoped) {
+    scoped = { ...schema, views: schema.views.filter((view) => inBook(view, book)) };
+    schemas.set(book, scoped);
+    scopedSchemas.add(scoped);
+  }
+  const next = { ...value, schema: scoped };
+  states.set(book, next);
+  return next;
 }
 
 if (typeof window !== "undefined" && process.env.NODE_ENV !== "production") {

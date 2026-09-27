@@ -103,7 +103,7 @@ export const CARD_ORDER = [
 /** Поля, которые карточка рисует своими блоками, а не в сетке. */
 export const OWN_BLOCKS = new Set([
   "amendments_text", "amendments_summary_text", "paid_snapshot", "remaining_snapshot", "end_kind", "currency",
-  "paid", "remaining",
+  "paid", "remaining", "summary_paid", "summary_remaining", "age_months",
 ]);
 export const WIDE_FIELDS = new Set(["subject", "note", "amount_terms", "folder_url"]);
 

@@ -194,7 +194,7 @@ export function EmployeeCard({
       }
       actions.push({ key: "block", label: "Заблокировать", run: () => setConfirm("block") });
     }
-    actions.push({ key: "archive", label: "Убрать", run: () => setConfirm("archive") });
+    actions.push({ key: "archive", label: "Удалить", run: () => setConfirm("archive") });
   }
   /** Почему кнопок нет — иначе пустая карточка выглядит сломанной. */
   const untouchable =
@@ -212,9 +212,9 @@ export function EmployeeCard({
       run: () => void act(() => peopleApi.employees.reset(employee.id), (row) => `пароль сброшен · ${waitingNote(row)}`),
     },
     archive: {
-      title: `Убрать · ${short}`,
-      text: "Человек уйдёт из списка, вход закроется. В договорах имя останется. Завести снова — тем же ФИО.",
-      confirm: "Убрать",
+      title: `Удалить · ${short}`,
+      text: "Человек уйдёт из списка в корзину, вход закроется. В договорах имя останется. Вернуть — из корзины в личном кабинете.",
+      confirm: "Удалить",
       run: () =>
         void act(() => peopleApi.employees.archive(employee.id)).then((ok) => {
           if (ok) onClose();

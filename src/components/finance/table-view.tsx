@@ -5,11 +5,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HEADER_STYLE, PAPER, ROW_H, fitWidth, headerHeight, sampled } from "@/components/univer/columns";
 import { listRule, putLists } from "@/components/univer/lists";
 import { type PollOutcome, pollWhileVisible } from "@/components/univer/live";
+import { type LookKeeper, keepLook } from "@/components/univer/look";
 import { guardSheets } from "@/components/univer/protect";
 import { UniverSheet, type UniverApi, type WorkbookSnapshot } from "@/components/univer/sheet";
 import { DATE_PATTERN, MONEY_PATTERN, WRAP_CLIP, dateOf, serialOf } from "@/components/univer/sheet-model";
 import { useFillHeight } from "@/components/univer/use-fill-height";
 import { writeCells } from "@/components/univer/write";
+import { lookStore } from "@/components/finance/look-store";
+import { useSessionScope } from "@/components/session-state";
 import {
   type GridColumn,
   type GridPayload,
@@ -317,6 +320,14 @@ export function TableView({
   useEffect(() => {
     canEditRef.current = canEdit;
   }, [canEdit]);
+  /** Чей вид листа: учётка и компания (`session-state.tsx`). */
+  const scope = useSessionScope();
+  const scopeRef = useRef(scope);
+  scopeRef.current = scope;
+  const [keeper, setKeeper] = useState<LookKeeper | null>(null);
+  const [lookEmpty, setLookEmpty] = useState(true);
+  /** Пересобрать лист с тем же ответом — после «Сбросить мой вид». */
+  const [remount, setRemount] = useState(0);
 
   // Чтение — с отменой: ответ, пришедший после ухода с раздела, не должен
   // собирать лист в уже снятом компоненте. `refresh` — кнопка «Перечитать» в
@@ -362,6 +373,42 @@ export function TableView({
     if (!mine) return;
     putLists(api, SHEET_ID, listRules(mine.payload, canEditRef.current));
     const { columns } = mine.payload;
+    // Личный вид: ширины, цвета, перенос — у каждого свои (`univer/look.ts`).
+    // Строка — операция («o:<id>»), шапка — «h»; колонка — ключ поля.
+    const fieldIndex = (key: string) => {
+      const at = columns.findIndex((column) => column.key === key);
+      return at >= 0 ? at : null;
+    };
+    const look = keepLook(
+      api,
+      {
+        rowId: (sheetId, row) => {
+          if (sheetId !== SHEET_ID) return null;
+          if (row === HEADER_ROW) return "h";
+          const id = mine.rows.get(row)?.id;
+          return id ? `o:${id}` : null;
+        },
+        rowOf: (sheetId, id) =>
+          sheetId !== SHEET_ID ? null : id === "h" ? HEADER_ROW : (mine.ids.get(id.slice(2)) ?? null),
+        fieldAt: (sheetId, _row, col) => (sheetId === SHEET_ID ? (columns[col]?.key ?? null) : null),
+        colOfField: (sheetId, _row, field) => (sheetId === SHEET_ID ? fieldIndex(field) : null),
+        colKey: (sheetId, col) => (sheetId === SHEET_ID ? (columns[col]?.key ?? null) : null),
+        colOf: (sheetId, key) => (sheetId === SHEET_ID ? fieldIndex(key) : null),
+        rows: function* (sheetId) {
+          if (sheetId !== SHEET_ID) return;
+          yield [HEADER_ROW, "h"] as [number, string];
+          for (const [row, item] of mine.rows) yield [row, `o:${item.id}`] as [number, string];
+        },
+      },
+      lookStore("journal", scopeRef.current),
+    );
+    setKeeper(look);
+    setLookEmpty(look.empty());
+    const unwatch = look.subscribe(() => setLookEmpty(look.empty()));
+    disposers.push(() => {
+      unwatch();
+      look.stop();
+    });
 
     const active = () => api.getActiveWorkbook()?.getActiveSheet();
     let alive = true;
@@ -689,6 +736,8 @@ export function TableView({
         }>;
       }) => {
         if (writing.current > 0) return;
+        // Оформление — личный вид, а не правка операции.
+        if (look.busy()) return;
         // Все ячейки всех затронутых диапазонов, а не левая верхняя. Вставка
         // столбца сумм из буфера приходит одним диапазоном; раньше из него
         // записывалась первая ячейка, а остальные оставались на экране и не
@@ -751,11 +800,11 @@ export function TableView({
       <div className="fin-sheet" ref={box} style={{ height }}>
         {workbook ? (
           <UniverSheet
-            key={`journal|${sheet?.generation ?? 0}`}
+            key={`journal|${sheet?.generation ?? 0}|${remount}`}
             data={workbook}
             onReady={onReady}
             listEdit={false}
-            formatting={false}
+            formatting="look"
             session="journal"
           />
         ) : null}
@@ -775,6 +824,19 @@ export function TableView({
         >
           {beat ? beat.text : ""}
         </p>
+        {keeper && !lookEmpty ? (
+          <button
+            type="button"
+            className="btn-ghost text-xs"
+            title="Ширины, цвета и перенос — ваши, коллеги их не видят"
+            onClick={async () => {
+              await keeper.reset();
+              setRemount((value) => value + 1);
+            }}
+          >
+            Сбросить мой вид
+          </button>
+        ) : null}
         <a className="btn-ghost text-xs" href={financeApi.exportJournalUrl({})} download>
           Скачать в Excel
         </a>

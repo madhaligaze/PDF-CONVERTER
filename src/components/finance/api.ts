@@ -1029,6 +1029,8 @@ export type RegistryView = {
   key: string;
   title: string;
   main: boolean;
+  /** Книга листа: `""` — реестр (карточки и «Таблица»), `oneoff` — «Разовые». */
+  book?: string;
   position: number;
   blocks: ViewBlock[];
   sort: unknown[];
@@ -1053,6 +1055,8 @@ export type RegistrySchema = {
   archived_values?: Record<string, ListValue[]>;
   departments: { id: string; code: string; title: string; position: number }[];
   views: RegistryView[];
+  /** Откуда «Оплачено (сводка)»; `null` — сводка не подключена. */
+  summary?: SummarySource | null;
   own_entities: OwnEntity[];
   mode_fields: string[];
   virtual_fields: Record<string, string>;
@@ -1061,6 +1065,34 @@ export type RegistrySchema = {
   status_phases: string[];
   today: string;
   access: { edit: boolean; setup: boolean };
+};
+
+/** Книга-сводка компании: откуда «Оплачено (сводка)» (`contracts/summary.py`). */
+export type SummarySource = {
+  spreadsheet_id: string;
+  worksheet: string;
+  title: string;
+  url: string;
+  read_at: string | null;
+  rows: number;
+  rev: string;
+  drift: string;
+  error: string;
+};
+
+/**
+ * Что сводка знает о договоре. `found` — строки нашлись; `missing` — номера
+ * в сводке нет; `other_client` — номер есть, клиент другой; `ambiguous` —
+ * подходят разные клиенты, и выбрать нельзя.
+ */
+export type SummaryEntry = {
+  state: "found" | "missing" | "other_client" | "ambiguous";
+  paid?: string;
+  remaining?: string | null;
+  months?: string[];
+  rows?: number;
+  customer?: string;
+  candidates?: string[];
 };
 
 export type ContractIssue = { code: string; field: string; text: string; ref: string; acknowledged: boolean };
@@ -1093,6 +1125,8 @@ export type ContractsAll = {
   people: Record<string, PersonRef>;
   seq: number;
   schema_rev: number;
+  /** По какой сводке посчитаны листы вроде «Остатки» (`""` — без сводки). */
+  summary_rev?: string;
 };
 
 export type ChangesBatch = ContractsAll & { removed: string[] };
@@ -1223,6 +1257,11 @@ export const contractsApi = {
         body: JSON.stringify({ operation_id: operationId, action }),
       }),
   },
+  /** «Оплачено/Остаток (сводка)» видимых договоров; `force` — перечитать книгу. */
+  summary: (force = false) =>
+    request<{ source: SummarySource | null; contracts: Record<string, SummaryEntry> }>(
+      `${C}/summary${qs({ force: force ? "true" : undefined })}`,
+    ),
   exportUrl: (views?: string[]) => `${API}${C}/export.xlsx${qs({ views: views?.join(",") })}`,
   imports: {
     upload: (file: File) => {
@@ -1268,6 +1307,12 @@ export const contractsApi = {
       request<RegistryView>(`${C}/setup/views`, { method: "POST", body: JSON.stringify(data) }),
     updateView: (id: string, data: Record<string, unknown>) =>
       request<RegistryView>(`${C}/setup/views/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    connectSummary: (link: string, worksheet: string) =>
+      request<{ title: string; worksheet: string; rows: number; drift: string }>(`${C}/setup/summary`, {
+        method: "POST",
+        body: JSON.stringify({ link, worksheet }),
+      }),
+    disconnectSummary: () => request<{ ok: boolean }>(`${C}/setup/summary`, { method: "DELETE" }),
     preview: (filter: ViewFilter) =>
       request<{ count: number; sample: string[] }>(`${C}/setup/views/preview`, {
         method: "POST",
@@ -1466,4 +1511,37 @@ export const peopleApi = {
     profile: (data: { full_name?: string; phone?: string }) =>
       request<Me>("/auth/profile", { method: "PATCH", body: JSON.stringify(data) }),
   },
+};
+
+// ── Корзина ──────────────────────────────────────────────────────────────────
+
+/** Удалённое: договор, операция, юрлицо, поле, значение, лист, отдел, сотрудник, запись справочника. */
+export type TrashItem = {
+  kind: string;
+  kind_title: string;
+  /** Где это жило: «Реестр», «Журнал», «Настройка реестра», «Кабинет», «Справочники». */
+  where: string;
+  id: string;
+  title: string;
+  deleted_at: string | null;
+  /** Кто удалил — из журнала действий; пусто, если там нет записи о записи. */
+  by: string;
+};
+
+export const trashApi = {
+  list: () => request<{ items: TrashItem[] }>("/trash"),
+  restore: (kind: string, id: string) =>
+    request<{ kind: string; id: string; title: string; where: string }>(`/trash/${kind}/${id}/restore`, { method: "POST" }),
+  purge: (kind: string, id: string) =>
+    request<{ kind: string; id: string; title: string }>(`/trash/${kind}/${id}`, { method: "DELETE" }),
+};
+
+// ── Личный вид листов ────────────────────────────────────────────────────────
+
+/** Вид листа — как его собирает `univer/look.ts`; сервер держит как есть. */
+export const looksApi = {
+  get: (key: string) => request<{ look: Record<string, unknown> }>(`/looks/${key}`),
+  put: (key: string, look: unknown) =>
+    request<{ ok: boolean }>(`/looks/${key}`, { method: "PUT", body: JSON.stringify({ look }) }),
+  reset: (key: string) => request<{ ok: boolean }>(`/looks/${key}`, { method: "DELETE" }),
 };

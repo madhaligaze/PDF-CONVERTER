@@ -95,13 +95,14 @@ type Props = {
    */
   onShown?: () => void;
   /**
-   * Оформление, формулы и вставка в ленте. У листов, которые пишут в базу
-   * только значения (реестр договоров, журнал), жирный, заливка, границы,
-   * формула и ссылка молча пропадали при следующей перерисовке строки — лента
-   * предлагала то, чего лист не хранит. `false` оставляет то, что работает с
-   * данными: отмену, поиск, фильтр и сортировку.
+   * Оформление, формулы и вставка в ленте. `false` оставляет то, что работает
+   * с данными: отмену, поиск, фильтр и сортировку. `"look"` — ещё и всё, что
+   * меняет только вид (шрифт, цвета, выравнивание, перенос, границы): лист,
+   * который пишет в базу только значения, держит такое оформление личным видом
+   * учётки (`look.ts`), а формулы, слияние, вставка и проверки остаются
+   * закрыты — они меняли бы данные или раскладку листа.
    */
-  formatting?: boolean;
+  formatting?: boolean | "look";
   /**
    * Стрелка списка у выбранной ячейки. `false` — пока раздел держит над
    * ячейкой свой слой (вопрос реестра «опечатка или с даты»): стрелка легла
@@ -115,6 +116,31 @@ type Props = {
    */
   session?: string;
 };
+
+/**
+ * Пункты ленты, которые меняют только вид ячейки (`formatting="look"`). Формат
+ * чисел сюда не входит: он у сумм и дат свой, и «Процент» на сумме договора
+ * читался бы как другое число.
+ */
+const LOOK_MENU = new Set([
+  "sheet.command.set-range-font-family",
+  "sheet.command.set-range-fontsize",
+  "sheet.command.set-range-font-increase",
+  "sheet.command.set-range-font-decrease",
+  "sheet.command.set-range-bold",
+  "sheet.command.set-range-italic",
+  "sheet.command.set-range-underline",
+  "sheet.command.set-range-stroke",
+  "sheet.command.set-range-text-color",
+  "sheet.command.reset-range-text-color",
+  "sheet.command.set-background-color",
+  "sheet.command.reset-background-color",
+  "sheet.command.set-border-basic",
+  "sheet.command.set-horizontal-text-align",
+  "sheet.command.set-vertical-text-align",
+  "sheet.command.set-text-wrap",
+  "sheet.command.set-text-rotation",
+]);
 
 /** Пункты ленты, которые остаются у листа без оформления (`formatting={false}`). */
 const DATA_ONLY_MENU = new Set([
@@ -144,7 +170,7 @@ const RIBBON_TABS = ["ribbon.start", "ribbon.insert", "ribbon.formulas", "ribbon
  * изменении подаётся, только если нашлось новое (иначе своё же изменение
  * запускало бы обход снова и снова).
  */
-function keepDataOnly(univerAPI: UniverApi): () => void {
+function keepDataOnly(univerAPI: UniverApi, extra: ReadonlySet<string> = new Set()): () => void {
   try {
     const injector = univerAPI._injector;
     const menus = injector.get(IMenuManagerService);
@@ -153,14 +179,17 @@ function keepDataOnly(univerAPI: UniverApi): () => void {
     type Node = { item?: { id: string }; children?: Node[] };
     const sweep = () => {
       const fresh: Record<string, { hidden: true }> = {};
-      const walk = (nodes: Node[] | undefined) => {
+      // Вложенные пункты разрешённого (цвета палитры, варианты выравнивания)
+      // разрешены вместе с ним.
+      const walk = (nodes: Node[] | undefined, allowed: boolean) => {
         for (const node of nodes ?? []) {
           const id = node.item?.id;
-          if (id && !DATA_ONLY_MENU.has(id) && !hidden[id]) fresh[id] = hidden[id] = { hidden: true };
-          if (node.children) walk(node.children);
+          const ok = allowed || (id ? DATA_ONLY_MENU.has(id) || extra.has(id) : false);
+          if (id && !ok && !hidden[id]) fresh[id] = hidden[id] = { hidden: true };
+          if (node.children) walk(node.children, ok);
         }
       };
-      for (const tab of RIBBON_TABS) walk(menus.getMenuByPositionKey(tab) as Node[]);
+      for (const tab of RIBBON_TABS) walk(menus.getMenuByPositionKey(tab) as Node[], false);
       if (!Object.keys(fresh).length) return;
       config.setConfig("menu", fresh, { merge: true });
       // Лента перечитывает меню по сигналу изменения — пустое слияние его даёт.
@@ -359,7 +388,8 @@ export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverS
     const stopSpeed = speedUp(univerAPI);
     // Меню плагинов листа заводятся вместе с книгой — урезать ленту можно
     // только после неё.
-    const stopTrim = formatting ? null : keepDataOnly(univerAPI);
+    const stopTrim =
+      formatting === true ? null : keepDataOnly(univerAPI, formatting === "look" ? LOOK_MENU : undefined);
     // `onReady` берётся из пропа по той же причине, что и `data`: компонент
     // монтируется один раз на книгу, новая приходит пересозданием через `key`.
     const detach = onReadyRef.current?.(univerAPI);
@@ -402,6 +432,19 @@ export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverS
       shown();
     }
 
+    // Тачпад: лист докрутили до края вбок — и браузер принимал тот же жест за
+    // «Назад»/«Вперёд» и уводил со страницы (Chrome и Safari на Mac, Edge на
+    // Windows). Univer у края событие не гасит, и оно доходило до окна.
+    // Гасим горизонтальное колесо над листом на всплытии — после Univer, так
+    // что прокрутку листа это не трогает, а вбок странице ехать некуда
+    // (`overflow-x: clip` у html). Вертикальное не трогаем: у нижнего края
+    // листа страница должна прокручиваться дальше.
+    const host = containerRef.current;
+    const onSideWheel = (event: WheelEvent) => {
+      if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) event.preventDefault();
+    };
+    host.addEventListener("wheel", onSideWheel, { passive: false });
+
     // Смена темы в приложении — атрибут `data-theme`; «Как в системе» — ещё и
     // системная настройка, которая меняется без атрибута.
     const themeObserver = new MutationObserver(retheme);
@@ -411,6 +454,7 @@ export const UniverSheet = forwardRef<UniverSheetHandle, Props>(function UniverS
 
     return () => {
       cancelAnimationFrame(shownFrame);
+      host.removeEventListener("wheel", onSideWheel);
       themeObserver.disconnect();
       system?.removeEventListener?.("change", retheme);
       lists.stop();

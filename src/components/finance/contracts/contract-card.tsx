@@ -37,6 +37,7 @@ import {
   edit as editField,
   ensurePayments,
   ensureStaff,
+  ensureSummary,
   put,
   refreshOne,
   remove,
@@ -131,7 +132,7 @@ export function ContractCard({ id, open, dock = "center", draftContext, onClose,
               },
             },
             {
-              label: "Убрать договор",
+              label: "Удалить договор",
               danger: true,
               hidden: !contract || !schema?.access.edit,
               onSelect: () => setConfirmRemove(true),
@@ -171,6 +172,7 @@ export function ContractCard({ id, open, dock = "center", draftContext, onClose,
             <Amendments contractId={contract.id} seq={contract.seq} />
             <SourceText contractId={contract.id} seq={contract.seq} />
             <Snapshot contractId={contract.id} />
+            <FromSummary contractId={contract.id} />
             <Payments contractId={contract.id} seq={contract.seq} />
             <History contractId={contract.id} seq={contract.seq} />
           </>
@@ -179,9 +181,9 @@ export function ContractCard({ id, open, dock = "center", draftContext, onClose,
 
       <ConfirmDialog
         open={confirmRemove}
-        title={`Убрать договор ${number}?`.trim()}
-        text="Он пропадёт из реестра и листов. Вернуть можно из журнала действий."
-        confirm="Убрать"
+        title={`Удалить договор ${number}?`.trim()}
+        text="Он уйдёт из реестра и листов в корзину. Вернуть — из корзины в личном кабинете."
+        confirm="Удалить"
         danger
         busy={removing}
         onCancel={() => setConfirmRemove(false)}
@@ -348,7 +350,7 @@ function Issues({ contractId }: { contractId: string }) {
               disabled={busy === issue.code}
               onClick={() => acknowledge(issue.code, !issue.acknowledged)}
             >
-              {issue.acknowledged ? "так и должно быть · снять" : "так и должно быть"}
+              {issue.acknowledged ? "учтено · снять отметку" : "Учтено"}
             </button>
           ) : null}
         </div>
@@ -602,6 +604,59 @@ function Snapshot({ contractId }: { contractId: string }) {
           <br />
           {snap.remaining ? contractMoney(snap.remaining) : "—"}
         </span>
+      </div>
+    </Section>
+  );
+}
+
+/**
+ * «Оплачено» из книги-сводки компании (у BBC — «Осн.Общая сводка»): та же
+ * цифра, что колонка «Оплачено» в «Разовых». Нет сводки или договора в ней —
+ * раздела нет; номер нашёлся у другого клиента — так и сказано, в «Оплачено»
+ * такой договор не идёт (правило «не угадывать»).
+ */
+function FromSummary({ contractId }: { contractId: string }) {
+  const entry = useRegistry((s) => s.summary?.[contractId]);
+  const source = useRegistry((s) => s.summarySource ?? s.schema?.summary ?? null);
+  const visible = useRegistry((s) => Boolean(s.schema?.fields.some((field) => field.key === "summary_paid")));
+  useEffect(() => {
+    if (visible && source) void ensureSummary();
+  }, [visible, source]);
+  if (!visible || !source || !entry || entry.state === "missing") return null;
+  const where = <span className="fin-muted">{source.title || "сводка"}</span>;
+  if (entry.state !== "found") {
+    return (
+      <Section title="По сводке" end={where}>
+        <p className="fin-soft" style={{ margin: 0 }}>
+          {entry.state === "other_client"
+            ? `Номер в сводке есть, но у другого клиента: ${(entry.candidates ?? []).join(", ")}`
+            : `Номер в сводке у нескольких похожих клиентов: ${(entry.candidates ?? []).join(", ")} — «Оплачено» не посчитано`}
+        </p>
+      </Section>
+    );
+  }
+  return (
+    <Section title="По сводке" end={where}>
+      <div className="snapshot">
+        <span>
+          <span className="eyebrow">Оплачено</span>
+          <br />
+          <span style={{ color: "var(--fin-text)" }}>{contractMoney(entry.paid)}</span>
+        </span>
+        {entry.remaining !== null && entry.remaining !== undefined ? (
+          <span>
+            <span className="eyebrow">Остаток</span>
+            <br />
+            <span style={{ color: "var(--fin-text)" }}>{contractMoney(entry.remaining)}</span>
+          </span>
+        ) : null}
+        {entry.months?.length ? (
+          <span>
+            <span className="eyebrow">Месяц в сводке</span>
+            <br />
+            {entry.months.map((month) => month.toLowerCase()).join(", ")}
+          </span>
+        ) : null}
       </div>
     </Section>
   );

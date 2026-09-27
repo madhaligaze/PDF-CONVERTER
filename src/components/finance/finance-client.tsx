@@ -72,12 +72,14 @@ import { PlanActualReport } from "@/components/finance/plan-actual";
 import { DictionariesPanel } from "@/components/finance/dictionaries-panel";
 import { Registry, useRegistryBoot } from "@/components/finance/contracts/registry-cards";
 import { ContractCard } from "@/components/finance/contracts/contract-card";
-import { boot } from "@/components/finance/contracts/store";
+import { boot, ensureSummary } from "@/components/finance/contracts/store";
+import { OneoffStaff, SummaryLine } from "@/components/finance/contracts/oneoff";
 import { RegistryImport } from "@/components/finance/contracts/import/registry-import";
 import { RegistrySetup } from "@/components/finance/contracts/setup/registry-setup";
 import { readParam, writeParams } from "@/components/finance/address";
+import { forgetLooks } from "@/components/finance/look-store";
 import type { Me, OperationKind } from "@/components/finance/api";
-import { SessionScope, dropAllSessions, useSessionStateIn } from "@/components/session-state";
+import { SessionScope, dropAllSessions, useSessionState, useSessionStateIn } from "@/components/session-state";
 
 /** «Настроить реестр» читает схему из хранилища реестра — поднимаем его, если
  *  экран открыли по ссылке, минуя «Реестр». */
@@ -118,6 +120,42 @@ function SheetScreen({ me }: { me: Me }) {
 }
 
 /**
+ * «Разовые»: листы книги `oneoff` (те же договоры вида «Разовая услуга») и
+ * сводка по сотрудникам — как книга юротдела BBC «Разовые». Карточка — та же,
+ * что у «Таблицы».
+ */
+function OneoffScreen({ me, onGo }: { me: Me; onGo: (section: string) => void }) {
+  useRegistryBoot(me);
+  const [openId, setOpenId] = useState<string | null>(() => readParam("id"));
+  const [staff, setStaff] = useSessionState("oneoff.staff", false);
+  const open = useCallback((id: string | null) => {
+    setOpenId(id);
+    writeParams({ id }, id !== null);
+  }, []);
+  useEffect(() => {
+    const onPop = () => setOpenId(readParam("id"));
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+  // Сводка по сотрудникам считает остатки — сводка нужна и без листа.
+  useEffect(() => {
+    void ensureSummary();
+  }, []);
+  return (
+    <>
+      <div className="creg-oneoff-top">
+        <SummaryLine onSetup={isAdmin(me) ? () => onGo("contracts-setup") : undefined} />
+        <button type="button" className="fin-link-btn" aria-pressed={staff} onClick={() => setStaff((value) => !value)}>
+          {staff ? "Листы" : "По сотрудникам"}
+        </button>
+      </div>
+      {staff ? <OneoffStaff /> : <RegistrySheet book="oneoff" onOpenCard={open} openId={openId} />}
+      <ContractCard id={openId} open={!!openId} dock="bottom" onClose={() => open(null)} onCreated={(id) => open(id)} />
+    </>
+  );
+}
+
+/**
  * Табличный вид грузится только по требованию: Univer тянет за собой канвас и
  * при импорте обращается к `window`, поэтому серверная отрисовка его роняет
  * («Path2D is not defined»). Тот же приём, что в «Книгах» и «Таблицах».
@@ -130,6 +168,7 @@ const TableView = dynamic(() => import("./table-view").then((m) => m.TableView),
 type Section =
   | "contracts"
   | "contracts-sheet"
+  | "contracts-oneoff"
   | "contracts-import"
   | "contracts-setup"
   | "journal"
@@ -181,10 +220,11 @@ const GROUPS: { title: string; items: SectionItem[] }[] = [
     // Договоры — первыми: колонка идёт в порядке цепочки учёта, от договора к
     // деньгам и отчётам (план, «Картина целиком»).
     title: "Договоры",
-    items: [
-      { key: "contracts", title: "Реестр", icon: ContractIcon, resource: "contracts" },
-      { key: "contracts-sheet", title: "Реестр · таблица", icon: ContractGridIcon, resource: "contracts" },
-    ],
+    // Один пункт на реестр: карточки, таблица и разовые — виды одних и тех же
+    // договоров, переключаются рядом с заголовком (`REGISTRY_MODES`). Два
+    // пункта «Реестр» и «Реестр · таблица» засоряли колонку и читались как
+    // два разных реестра.
+    items: [{ key: "contracts", title: "Реестр", icon: ContractIcon, resource: "contracts" }],
   },
   {
     title: "Учёт",
@@ -229,6 +269,8 @@ const GROUPS: { title: string; items: SectionItem[] }[] = [
  * своё видит каждый, а вкладки людей решают права `people` и `audit`.
  */
 const HIDDEN_SECTIONS: SectionItem[] = [
+  { key: "contracts-sheet", title: "Таблица", icon: ContractGridIcon, resource: "contracts" },
+  { key: "contracts-oneoff", title: "Разовые", icon: ContractGridIcon, resource: "contracts" },
   { key: "contracts-import", title: "Загрузка реестра", icon: UploadIcon, resource: "contracts" },
   { key: "contracts-setup", title: "Настроить реестр", icon: BookIcon, resource: "contracts" },
   { key: "me", title: "Личный кабинет", icon: PersonIcon, resource: "" },
@@ -236,6 +278,23 @@ const HIDDEN_SECTIONS: SectionItem[] = [
 
 const SECTIONS: SectionItem[] = GROUPS.flatMap((group) => group.items);
 const ALL_SECTIONS: SectionItem[] = [...SECTIONS, ...HIDDEN_SECTIONS];
+
+/**
+ * Виды реестра — переключатель у заголовка, а не пункты колонки. Порядок
+ * постоянный: выбранный вид — крупный заголовок, остальные — мельче рядом.
+ * Состояние передаёт размер и вес, не цвет (правило индикаторов).
+ */
+const REGISTRY_MODES: { key: Section; title: string }[] = [
+  { key: "contracts", title: "Реестр" },
+  { key: "contracts-sheet", title: "Таблица" },
+  { key: "contracts-oneoff", title: "Разовые" },
+];
+const REGISTRY_MODE_KEYS = new Set<Section>(REGISTRY_MODES.map((mode) => mode.key));
+
+/** Пункт колонки, который горит для раздела: у видов реестра — «Реестр». */
+function navKey(section: Section): Section {
+  return REGISTRY_MODE_KEYS.has(section) ? "contracts" : section;
+}
 /** Загрузка и настройка реестра меняют шаблон компании — владелец и администратор. */
 const ADMIN_SECTIONS = new Set<Section>(["contracts-import", "contracts-setup"]);
 
@@ -254,14 +313,18 @@ const LAST_KEY = "fin_last_section";
 function readLast(): Section | null {
   try {
     const value = localStorage.getItem(LAST_KEY);
-    return (SECTIONS.find((item) => item.key === value)?.key as Section | undefined) ?? null;
+    return (
+      (SECTIONS.find((item) => item.key === value)?.key as Section | undefined) ??
+      REGISTRY_MODES.find((mode) => mode.key === value)?.key ??
+      null
+    );
   } catch {
     return null;
   }
 }
 
 function writeLast(section: Section): void {
-  if (!SECTIONS.some((item) => item.key === section)) return;
+  if (!SECTIONS.some((item) => item.key === section) && !REGISTRY_MODE_KEYS.has(section)) return;
   try {
     localStorage.setItem(LAST_KEY, section);
   } catch {
@@ -343,7 +406,7 @@ export function FinanceClient() {
     setLast(readLast());
   }, []);
   /** Без раздела в адресе — последний открытый, иначе первый в колонке. */
-  const lastItem = last ? SECTIONS.find((item) => item.key === last) : undefined;
+  const lastItem = last ? ALL_SECTIONS.find((item) => item.key === last) : undefined;
   const home: Section = lastItem && visible(lastItem) ? lastItem.key : (groups[0]?.items[0]?.key ?? "me");
   const hasSections = groups.length > 0;
   const section: Section = picked ?? home;
@@ -480,6 +543,28 @@ export function FinanceClient() {
     window.scrollTo({ top: 0, behavior: "auto" });
   }, [section]);
   const toggleRail = useCallback(() => writeRail(!readRail()), []);
+  /**
+   * Высота липкой шапки — переменной `--fin-head-h` на странице.
+   *
+   * Колонка разделов, шапка списка договоров и полоса записи разбора липнут
+   * к окну, а шапка «Финансов» липнет поверх них. Отступ был прибит в 0.75rem
+   * от края окна, и после прокрутки верх колонки («Договоры», «Реестр»)
+   * уезжал под шапку: на MacBook (окно ~790px) и в длинной «Настройке
+   * реестра» — всегда. Высота шапки меняется (перенос кнопок, другая ширина),
+   * поэтому она меряется, а не записывается числом.
+   */
+  const headObserver = useRef<ResizeObserver | null>(null);
+  const measureHead = useCallback((node: HTMLElement | null) => {
+    headObserver.current?.disconnect();
+    headObserver.current = null;
+    if (!node) return;
+    const page = node.parentElement;
+    const put = () => page?.style.setProperty("--fin-head-h", `${Math.round(node.getBoundingClientRect().height)}px`);
+    put();
+    if (typeof ResizeObserver === "undefined") return;
+    headObserver.current = new ResizeObserver(put);
+    headObserver.current.observe(node);
+  }, []);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [dictionaries, setDictionaries] = useState<Dictionaries | null>(null);
   const [error, setError] = useState<string>("");
@@ -592,6 +677,8 @@ export function FinanceClient() {
         return <Registry me={me} onGo={setSection} />;
       case "contracts-sheet":
         return <SheetScreen me={me} />;
+      case "contracts-oneoff":
+        return <OneoffScreen me={me} onGo={setSection} />;
       case "contracts-import":
         return (
           <RegistryImport
@@ -681,7 +768,7 @@ export function FinanceClient() {
   return (
     <SessionScope scope={sessionScope}>
     <div className="fin-page">
-      <header className="fin-head">
+      <header className="fin-head" ref={measureHead}>
         <StageLink
           href="/services"
           label="Сервисы"
@@ -813,6 +900,7 @@ export function FinanceClient() {
                 // Второй раз — после того как экраны снялись: лист, снимаясь,
                 // запоминает своё место.
                 dropAllSessions();
+                forgetLooks();
                 setAuthNotice("");
                 setMe(null);
                 window.setTimeout(dropAllSessions, 300);
@@ -847,7 +935,7 @@ export function FinanceClient() {
                     key={item.key}
                     type="button"
                     className="fin-nav-item"
-                    data-on={section === item.key}
+                    data-on={navKey(section) === item.key}
                     title={item.title}
                     onClick={() => setSection(item.key)}
                   >
@@ -954,9 +1042,28 @@ export function FinanceClient() {
               надписи, и сменить её текст на месте React уже не сможет. Ключи
               у соседей разные: одинаковые (оба `section`) React в сборке не
               различал, и старые заголовки не удалялись — копились над новыми. */}
-          <SplitReveal key={`title-${section}`} as="h1" className="fin-section-title" duration={0.9}>
-            {sectionItem?.title ?? ""}
-          </SplitReveal>
+          {REGISTRY_MODE_KEYS.has(section) ? (
+            // Виды реестра: выбранный — заголовком, соседние — рядом, мельче.
+            // На узком окне заголовков нет (там лента разделов) — виды
+            // встают своим рядом под лентой (`fin-modes` ниже).
+            <nav className="fin-title-row" aria-label="Вид реестра">
+              {REGISTRY_MODES.map((mode) =>
+                mode.key === section ? (
+                  <SplitReveal key={`title-${section}`} as="h1" className="fin-section-title" duration={0.9}>
+                    {mode.title}
+                  </SplitReveal>
+                ) : (
+                  <button key={mode.key} type="button" className="fin-title-alt" onClick={() => setSection(mode.key)}>
+                    {mode.title}
+                  </button>
+                ),
+              )}
+            </nav>
+          ) : (
+            <SplitReveal key={`title-${section}`} as="h1" className="fin-section-title" duration={0.9}>
+              {sectionItem?.title ?? ""}
+            </SplitReveal>
+          )}
           {/* На телефоне колонка не работает — там разделы остаются лентой. */}
           <nav className="fin-tabs" aria-label="Разделы финансов">
             {groups.flatMap((group) => group.items).map((item) => (
@@ -964,13 +1071,28 @@ export function FinanceClient() {
                 key={item.key}
                 type="button"
                 className="fin-tab"
-                data-on={section === item.key}
+                data-on={navKey(section) === item.key}
                 onClick={() => setSection(item.key)}
               >
                 {item.title}
               </button>
             ))}
           </nav>
+          {REGISTRY_MODE_KEYS.has(section) ? (
+            <nav className="fin-modes" aria-label="Вид реестра">
+              {REGISTRY_MODES.map((mode) => (
+                <button
+                  key={mode.key}
+                  type="button"
+                  className="fin-mode"
+                  aria-current={mode.key === section ? "page" : undefined}
+                  onClick={() => setSection(mode.key)}
+                >
+                  {mode.title}
+                </button>
+              ))}
+            </nav>
+          ) : null}
           <FadeIn key={`body-${section}`}>{content}</FadeIn>
         </main>
       </div>

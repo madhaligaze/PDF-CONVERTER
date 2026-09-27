@@ -45,6 +45,7 @@ import {
   boot,
   forgetDeparted,
   holdLive,
+  inBook,
   pendingCount,
   useRegistry,
 } from "@/components/finance/contracts/store";
@@ -110,7 +111,11 @@ export function Registry({ me, onGo }: { me: Me; onGo: (section: string) => void
   const removed = useRegistry((s) => s.departed);
   const wasIn = useRegistry((s) => s.wasIn);
 
-  const views = useMemo(() => [...(schema?.views ?? [])].sort((a, b) => a.position - b.position), [schema]);
+  // Только листы реестра: «Разовые» — своя книга рядом с заголовком.
+  const views = useMemo(
+    () => [...(schema?.views ?? [])].filter((view) => inBook(view, "")).sort((a, b) => a.position - b.position),
+    [schema],
+  );
   const [viewKey, setViewKey] = useState<string>(() => readParam("v") ?? "main");
   const view = views.find((item) => item.key === viewKey) ?? views[0];
   // Поиск, отбор и начатый новый договор переживают перезагрузку

@@ -11,6 +11,7 @@ import { PEOPLE_ALL, PeopleTab } from "@/components/finance/cabinet/people-tab";
 import { MyAccess, ProfileTab } from "@/components/finance/cabinet/profile-tab";
 import { RightsMatrix } from "@/components/finance/cabinet/rights";
 import { SessionsList } from "@/components/finance/cabinet/sessions-list";
+import { TrashTab } from "@/components/finance/cabinet/trash-tab";
 import { ROLE_TITLES } from "@/components/finance/cabinet/status";
 import { SelectLine } from "@/components/finance/ui/select-line";
 import { formatPhone } from "@/components/finance/ui/phone-input";
@@ -31,7 +32,7 @@ import { SplitReveal } from "@/components/motion/split-reveal";
  * Вход без «Загрузка…»: кто вошёл, уже известно (`me`), поэтому портрет и
  * вкладки рисуются сразу, а данные вкладки подгружаются.
  */
-type Tab = "profile" | "access" | "sessions" | "actions" | "people" | "rights" | "audit";
+type Tab = "profile" | "access" | "sessions" | "actions" | "people" | "rights" | "audit" | "trash";
 
 const MINE: { key: Tab; label: string }[] = [
   { key: "profile", label: "Профиль" },
@@ -95,11 +96,24 @@ export function Cabinet({
     if (seeAudit) out.push({ key: "audit", label: "Журнал действий" });
     return out;
   }, [seePeople, seeAudit, staffCount]);
-  const allowed = useMemo(() => new Set<Tab>([...MINE.map((t) => t.key), ...people.map((t) => t.key)]), [people]);
+  // Корзина — у владельца и администратора: восстановить и стереть насовсем
+  // можно что угодно, от договора до сотрудника.
+  const keepsTrash = isAdmin(me);
+  const ledgerTabs = useMemo(() => (keepsTrash ? [{ key: "trash" as Tab, label: "Корзина" }] : []), [keepsTrash]);
+  const allowed = useMemo(
+    () => new Set<Tab>([...MINE.map((t) => t.key), ...people.map((t) => t.key), ...ledgerTabs.map((t) => t.key)]),
+    [people, ledgerTabs],
+  );
 
   const [tab, setTabState] = useState<Tab>(() => {
     const wanted = (readParam("t") as Tab | null) ?? recallTab();
-    if (wanted && (MINE.some((t) => t.key === wanted) || (seePeople && ["people", "rights"].includes(wanted)) || (seeAudit && wanted === "audit"))) {
+    if (
+      wanted &&
+      (MINE.some((t) => t.key === wanted) ||
+        (seePeople && ["people", "rights"].includes(wanted)) ||
+        (seeAudit && wanted === "audit") ||
+        (isAdmin(me) && wanted === "trash"))
+    ) {
       return wanted;
     }
     // Без разделов первым делом видно «Разделов пока не открыто» — ответ на
@@ -255,6 +269,18 @@ export function Cabinet({
               />
             </div>
           ) : null}
+          {ledgerTabs.length ? (
+            <div className="cab-tabs-row">
+              <span className="eyebrow cab-tabs-group">Учёт</span>
+              <SelectLine
+                items={ledgerTabs}
+                value={ledgerTabs.some((t) => t.key === shownTab) ? shownTab : null}
+                onChange={setTab}
+                label="Учёт"
+                className="cab-tabs-line"
+              />
+            </div>
+          ) : null}
         </div>
 
         {loadError && seePeople ? (
@@ -316,6 +342,7 @@ export function Cabinet({
               </div>
             )
           ) : null}
+          {shownTab === "trash" ? <TrashTab /> : null}
           {shownTab === "audit" ? (
             <ActionFeed full people={data?.employees ?? []} onOpenContract={onOpenContract} />
           ) : null}

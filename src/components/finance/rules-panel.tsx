@@ -297,7 +297,7 @@ export function RulesPanel({
                       await load();
                     }}
                   >
-                    Убрать
+                    Удалить
                   </button>
                 </span>
               </div>
