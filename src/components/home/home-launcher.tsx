@@ -20,12 +20,11 @@ const ENTRIES: IndexEntry[] = [
  * ни логотипа, ни приветствия, ни орнамента. Названия набраны так крупно, что
  * сами и есть интерфейс.
  *
- * Фон — жидкая сцена (см. `motion/liquid-stage.tsx`): масса тянется за
- * курсором, а наведение на раздел подтягивает её к строке и разогревает.
+ * Фон — тихая земляная жидкость на кости: песок, манильская бумага и
+ * жареные чернила. Наведение на раздел подтягивает массу к строке.
  *
- * Порядок входа — из прежнего задания: сначала проявляется фон, потом
- * собирается интерфейс. Экран всегда тёмный, какая бы тема ни стояла, — см.
- * `.home-stage` в globals.css.
+ * Порядок входа — сначала фон, потом интерфейс. Экран берёт палитру
+ * страницы, а не отдельную чёрную сцену.
  */
 export function HomeLauncher() {
   const liquidRef = useRef<LiquidStageHandle>(null);
@@ -39,7 +38,7 @@ export function HomeLauncher() {
 
   return (
     <div className="home-stage">
-      <LiquidStage ref={liquidRef} className="home-liquid" intensity={0.92} />
+      <LiquidStage ref={liquidRef} className="home-liquid" intensity={0.38} />
       <div className="home-veil" aria-hidden="true" />
 
       <header className="home-top">

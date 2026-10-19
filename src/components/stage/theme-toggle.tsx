@@ -17,14 +17,14 @@ const LABELS: Record<Theme, string> = { dark: "Тёмная", light: "Светл
  * localStorage, больше ничего.
  */
 export function ThemeToggle({ compact = false }: { compact?: boolean }) {
-  const [theme, setTheme] = useState<Theme>("system");
+  const [theme, setTheme] = useState<Theme>("light");
 
   useEffect(() => {
     try {
       const stored = localStorage.getItem("theme");
       // Разовая сверка с тем, что уже выставил скрипт в <head> до гидратации.
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setTheme(stored === "dark" || stored === "light" ? stored : "system");
+      setTheme(stored === "dark" || stored === "light" || stored === "system" ? stored : "light");
     } catch {
       /* приватный режим — остаётся «Авто» */
     }
@@ -35,7 +35,7 @@ export function ThemeToggle({ compact = false }: { compact?: boolean }) {
     setTheme(next);
     try {
       if (next === "system") {
-        localStorage.removeItem("theme");
+        localStorage.setItem("theme", "system");
         const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
         document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
       } else {

@@ -35,7 +35,7 @@ export function AuthStage({ owner, title, backHref, backLabel = "Разделы"
   return (
     <div className="auth-stage">
       <section className="auth-poster" aria-hidden="false">
-        <LiquidStage className="auth-liquid" intensity={0.95} delay={0.1} />
+        <LiquidStage className="auth-liquid" intensity={0.38} delay={0.1} />
         <div className="auth-poster-veil" aria-hidden="true" />
         {backHref ? (
           <StageLink href={backHref} label={backLabel} className="btn-ghost btn-sm auth-back">

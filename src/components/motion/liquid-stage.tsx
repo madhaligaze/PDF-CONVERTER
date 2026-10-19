@@ -95,9 +95,9 @@ float fbm(vec2 p) {
 }
 
 vec3 film(float x) {
-  vec3 sage = vec3(0.627, 0.878, 0.671);
-  vec3 amber = vec3(1.0, 0.675, 0.180);
-  vec3 blood = vec3(0.647, 0.176, 0.145);
+  vec3 sage = vec3(0.792, 0.792, 0.690);
+  vec3 amber = vec3(0.949, 0.914, 0.812);
+  vec3 blood = vec3(0.282, 0.251, 0.212);
   float k = abs(fract(x) * 2.0 - 1.0);
   vec3 c = mix(sage, amber, smoothstep(0.28, 0.66, k));
   return mix(c, blood, smoothstep(0.66, 1.0, k));
@@ -174,7 +174,7 @@ type EngineOptions = {
 };
 
 export const LiquidStage = forwardRef<LiquidStageHandle, Props>(function LiquidStage(
-  { className, intensity = 0.9, delay = 0, base = [0.055, 0.063, 0.059] },
+  { className, intensity = 0.9, delay = 0, base = [0.980, 0.961, 0.922] },
   handle,
 ) {
   const canvasRef = useRef<HTMLCanvasElement>(null);

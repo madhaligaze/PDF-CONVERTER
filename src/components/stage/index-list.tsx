@@ -17,6 +17,8 @@ export type IndexEntry = {
   href?: string;
   /** Или действие на месте — например, окно сервиса. */
   onSelect?: () => void;
+  /** Строка видна, но не ведёт никуда. */
+  disabled?: boolean;
 };
 
 type Props = {
@@ -89,7 +91,6 @@ export function IndexList({ entries, size = "hero", delay = 0, onHover, label }:
     const num = row.querySelector<HTMLElement>(".ix-num");
     gsap.to(title, {
       x: size === "hero" ? 28 : 16,
-      fontWeight: 620,
       duration: 0.9,
       ease: "expo.out",
       overwrite: "auto",
@@ -113,7 +114,6 @@ export function IndexList({ entries, size = "hero", delay = 0, onHover, label }:
     if (prefersReducedMotion()) return;
     gsap.to(row.querySelector(".ix-title"), {
       x: 0,
-      fontWeight: size === "hero" ? 400 : 450,
       duration: 0.9,
       ease: "expo.out",
       overwrite: "auto",
@@ -152,6 +152,13 @@ export function IndexList({ entries, size = "hero", delay = 0, onHover, label }:
           onFocus: (event: React.FocusEvent<HTMLElement>) => enter(event.currentTarget),
           onBlur: (event: React.FocusEvent<HTMLElement>) => leave(event.currentTarget),
         };
+        if (entry.disabled) {
+          return (
+            <div key={entry.key} className="ix-row" data-disabled="true" aria-disabled="true">
+              {body}
+            </div>
+          );
+        }
         return entry.href ? (
           <StageLink key={entry.key} href={entry.href} label={entry.title} className="ix-row" {...handlers}>
             {body}

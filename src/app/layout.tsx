@@ -1,33 +1,34 @@
 import type { Metadata, Viewport } from "next";
-import { Geologica, Martian_Mono } from "next/font/google";
+import { Inter, Literata, Unbounded } from "next/font/google";
 
 import { StageTransitionProvider } from "@/components/motion/stage-transition";
 import "./globals.css";
 
 /**
- * Шрифты — Geologica и Martian Mono. Оба с кириллицей, это условие номер один:
- * гарнитуры референсов (Mori у GSAP, Roobert у monopo) кириллицы не имеют.
- *
- * Geologica — тёплый гуманистический гротеск, то, что в Mori делает кремовый
- * текст на чёрном «живым», и геометрический Manrope этого не давал. Он
- * переменный: вес и острота (`SHRP`) двигаются плавно, и указатель разделов
- * твинит вес при наведении, а не щёлкает между начертаниями. Табличные цифры
- * у него есть — без них суммы в реестрах гуляли бы по колонке.
- *
- * Martian Mono — голос пометок в фигурных скобках и мелких меток. Ширина у
- * него тоже переменная: в плотных местах он поджимается осью `wdth`.
+ * Forner называет гарнитуры Surt, Clash Display и Big Daily Short.
+ * У них нет кириллицы, а интерфейс русский, поэтому стоят замены с тем же
+ * характером: Inter — основной гротеск, Unbounded — архитектурные заголовки,
+ * курсив Literata — редкая помета.
  */
-const geologica = Geologica({
-  variable: "--font-geologica",
+const surt = Inter({
+  variable: "--font-surt-family",
   subsets: ["latin", "cyrillic"],
-  axes: ["SHRP"],
+  weight: "400",
   display: "swap",
 });
 
-const martian = Martian_Mono({
-  variable: "--font-martian",
+const clash = Unbounded({
+  variable: "--font-clashdisplay-family",
   subsets: ["latin", "cyrillic"],
-  axes: ["wdth"],
+  weight: "400",
+  display: "swap",
+});
+
+const note = Literata({
+  variable: "--font-bigdailyshort-family",
+  subsets: ["latin", "cyrillic"],
+  weight: "400",
+  style: "italic",
   display: "swap",
 });
 
@@ -50,7 +51,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#0e100f",
+  themeColor: "#faf5eb",
 };
 
 /*
@@ -70,9 +71,11 @@ const bootScript = `
     var t = localStorage.getItem('theme');
     if (t === 'light' || t === 'dark') {
       html.setAttribute('data-theme', t);
-    } else {
+    } else if (t === 'system') {
       var dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
       html.setAttribute('data-theme', dark ? 'dark' : 'light');
+    } else {
+      html.setAttribute('data-theme', 'light');
     }
   } catch(e) {}
   try {
@@ -92,9 +95,9 @@ export default function RootLayout({
   return (
     <html
       lang="ru"
-      data-theme="dark"
+      data-theme="light"
       suppressHydrationWarning
-      className={`${geologica.variable} ${martian.variable} antialiased`}
+      className={`${surt.variable} ${clash.variable} ${note.variable} antialiased`}
     >
       <head>
         <meta charSet="utf-8" />
